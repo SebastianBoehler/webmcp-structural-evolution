@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest",
     "test:run": "vitest run",
-    "wasm:build": "wasm-pack build crates/reference --target web --out-dir ../../src/reference/pkg",
+    "wasm:build": "sh scripts/build-reference-wasm.sh",
     "check": "pnpm wasm:build && pnpm test:run && pnpm build && cargo test --manifest-path crates/reference/Cargo.toml"
   },
   "dependencies": { "react": "19.2.8", "react-dom": "19.2.8", "three": "0.185.1", "zod": "4.4.3" },

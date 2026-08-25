@@ -65,3 +65,54 @@ All pnpm commands used the required bundled Node directory prepended to `PATH`.
 
 - wasm-pack reported that no prebuilt wasm-bindgen CLI binary matched the platform and used its cargo-installed `wasm-bindgen 0.2.127`; the build completed successfully and subsequent builds reuse the cached binary.
 - wasm-pack also emitted optional metadata/license-file discovery warnings for the nested crate. The crate declares SPDX `Apache-2.0`, and the repository root contains the full Apache-2.0 license; no duplicate crate-local license file was added.
+
+## Fix Round 1
+
+### Scope
+
+Resolved the two Task 3 review findings only: false equality caused by f64-to-f32 underflow and the machine-local Wasm build toolchain contract. No later-task work was added.
+
+### RED evidence
+
+1. Representational underflow:
+   - Command: `cargo test --manifest-path crates/reference/Cargo.toml nonzero_result_that_underflows_f32_is_rejected`
+   - Result: exit 101; the exact reviewer fixture `expected = [f32::MAX, f32::MIN_POSITIVE]`, `actual = [f32::MAX, 0.0]` failed because `unwrap_err()` received `Ok(0.0)`.
+2. Checked build bootstrap:
+   - Command: `PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm vitest run scripts/build-reference-wasm.test.ts`
+   - Result: exit 1; 4/4 tests failed because `wasm:build` still called wasm-pack directly and the checked script did not exist.
+
+### Implementation decisions
+
+- Added stable `result-underflow` error code and message. A mathematically nonzero f64 ratio that rounds to zero as f32 is rejected; the existing exact-equality test continues to return `Ok(0.0)`.
+- Added root `rust-toolchain.toml` pinned to channel `1.98.0`, profile `minimal`, and target `wasm32-unknown-unknown`.
+- Routed `pnpm wasm:build` through a 22-line POSIX `sh` script. It accepts only the exact output `wasm-pack 0.15.0`, reports the required `cargo install wasm-pack --version 0.15.0 --locked` command when absent, unreadable, or wrong, and never installs or changes global tools itself.
+- Bootstrap regressions exercise absent, wrong, and exact wasm-pack versions through isolated temporary PATH entries, and prove the package command routes through the script with the intended build arguments.
+- Rebuilt and committed the changed Wasm binary from the pinned Rust and wasm-pack versions.
+
+### GREEN and final verification
+
+All pnpm commands used bundled Node `v24.19.0`; the repository toolchain resolved to rustc `1.98.0`, cargo `1.98.0`, with `wasm32-unknown-unknown` installed, and the checked builder resolved to `wasm-pack 0.15.0`.
+
+- Focused underflow regression: exit 0; 1 passed.
+- `pnpm vitest run scripts/build-reference-wasm.test.ts`: exit 0; 4 passed.
+- `cargo test --manifest-path crates/reference/Cargo.toml`: exit 0; 8 passed, 0 failed, plus 0 doc tests. This includes exact equality returning zero.
+- `pnpm wasm:build`: exit 0 through `sh scripts/build-reference-wasm.sh`; optimized package regenerated.
+- `pnpm vitest run src/reference`: exit 0; 1 file passed, 4 tests passed.
+- Combined wrapper/bootstrap focus: exit 0; 2 files passed, 8 tests passed.
+- `pnpm test:run`: exit 0; 5 files passed, 28 tests passed.
+- `pnpm build`: exit 0; TypeScript validation and Vite production build passed, 16 modules transformed.
+- `cargo fmt --check`, `git diff --check`, and staged diff check: exit 0.
+
+### Files changed in Fix Round 1
+
+- `crates/reference/src/lib.rs`
+- `src/reference/pkg/webmcp_reference_bg.wasm`
+- `package.json`
+- `rust-toolchain.toml`
+- `scripts/build-reference-wasm.sh`
+- `scripts/build-reference-wasm.test.ts`
+- `.superpowers/sdd/2026-08-26-webgpu-webmcp-foundation/task-3-report.md`
+
+### Concerns
+
+No blocking concerns. wasm-pack continues to print its existing optional metadata/license discovery warnings and cached wasm-bindgen fallback notice; the checked build completes successfully.

@@ -9,6 +9,7 @@ pub enum RelativeL2Error {
     NonFiniteInput { vector: &'static str, index: usize },
     ZeroDenominator,
     ResultOutOfRange,
+    ResultUnderflow,
 }
 
 impl RelativeL2Error {
@@ -19,6 +20,7 @@ impl RelativeL2Error {
             Self::NonFiniteInput { .. } => "non-finite-input",
             Self::ZeroDenominator => "zero-denominator",
             Self::ResultOutOfRange => "result-out-of-range",
+            Self::ResultUnderflow => "result-underflow",
         }
     }
 }
@@ -44,6 +46,10 @@ impl fmt::Display for RelativeL2Error {
             Self::ResultOutOfRange => write!(
                 formatter,
                 "relative L2 result cannot be represented as a finite f32"
+            ),
+            Self::ResultUnderflow => write!(
+                formatter,
+                "nonzero relative L2 result rounds to zero as f32"
             ),
         }
     }
@@ -94,7 +100,12 @@ pub fn relative_l2_core(expected: &[f32], actual: &[f32]) -> Result<f32, Relativ
         return Err(RelativeL2Error::ResultOutOfRange);
     }
 
-    Ok(result as f32)
+    let result_f32 = result as f32;
+    if result != 0.0 && result_f32 == 0.0 {
+        return Err(RelativeL2Error::ResultUnderflow);
+    }
+
+    Ok(result_f32)
 }
 
 fn relative_l2_error(error: RelativeL2Error) -> JsValue {
@@ -170,5 +181,12 @@ mod tests {
         let error = relative_l2_core(&[f32::MIN_POSITIVE], &[f32::MAX]).unwrap_err();
 
         assert!(error.to_string().contains("result-out-of-range"));
+    }
+
+    #[test]
+    fn nonzero_result_that_underflows_f32_is_rejected() {
+        let error = relative_l2_core(&[f32::MAX, f32::MIN_POSITIVE], &[f32::MAX, 0.0]).unwrap_err();
+
+        assert!(error.to_string().contains("result-underflow"));
     }
 }
