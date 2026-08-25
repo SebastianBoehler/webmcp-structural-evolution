@@ -1,0 +1,13 @@
+[package]
+name = "webmcp-reference"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+js-sys = "=0.3.104"
+wasm-bindgen = "=0.2.127"
