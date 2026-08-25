@@ -10,7 +10,7 @@ Product name: This document uses a descriptive label; the entrant will choose th
 
 Build an open, local-first web application where a person and an agent turn a real component inventory into a printable, structurally optimized assembly body. The first hero workflow generates a drone motor arm around actual mounting interfaces, masses, keep-outs, materials, printer constraints, and load cases.
 
-The application is not a universal CAD system and does not claim certified engineering analysis. Its differentiator is a complete, inspectable loop:
+The challenge release is a focused vertical slice and does not yet claim certified engineering analysis. The product ambition is broader: become an open, agent-native replacement for substantial CAD/CAE workflows by making geometry, simulation, optimization, manufacturing constraints, and verification one inspectable system. Its initial differentiator is a complete loop:
 
 1. Inventory and target outcome define the available assembly.
 2. Components compile into explicit geometry, loads, constraints, and manufacturing limits.
@@ -21,7 +21,9 @@ The application is not a universal CAD system and does not claim certified engin
 
 ## Audience and business wedge
 
-The initial user is a small drone, robotics, or hardware team that knows which components and fabrication equipment it owns but lacks an accessible generative-design workflow. The initial value is faster concept exploration with transparent assumptions, not replacement of professional certification or mature CAD/CAE suites.
+The initial user is a small drone, robotics, or hardware team that knows which components and fabrication equipment it owns but lacks an accessible generative-design workflow. The immediate value is faster concept exploration with transparent assumptions. The long-term goal is to replace increasingly large portions of closed professional CAD/CAE stacks, including validated analysis and qualification workflows, rather than remain a visualization or pre-design companion.
+
+Reaching that goal requires solver verification, experimental validation, standards-aware reports, manufacturing feedback, exact CAD interchange, and documented assurance cases. Those capabilities are roadmap obligations, not claims made by the challenge release.
 
 The component library creates a durable expansion path: personal inventories, team catalogs, supplier data, parametric interfaces, CAD exchange, more manufacturing processes, and additional physics can follow after the challenge without changing the core assembly contract.
 
