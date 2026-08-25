@@ -191,21 +191,46 @@ Primary layout:
 - Right: study assumptions, objectives, constraints, and validation receipt.
 - Bottom: candidate lineage, run progress, comparison, and action receipts.
 
+## Human-agent creative loop
+
+The collaboration model is not a chat panel attached to CAD. The shared artifact is the conversation: selections, constraints, branches, computed evidence, and decisions remain spatially and causally linked in the workbench.
+
+1. **Point:** the person selects, paints, or locks a semantic region in the 3D view. The selection has a stable region ID and an accessible DOM summary, so the agent reads the exact same object without inferring it from pixels.
+2. **Translate:** the agent converts intent into a bounded constraint handshake: proposed preserve/keep-out regions, load case, objective, assumptions, and expected trade-off. Proposed facts and measured facts are visually distinct.
+3. **Fork:** an agent action creates a reversible experiment branch from an exact parent revision. It never mutates the accepted branch invisibly. The card records the hypothesis, changed constraints, parent, predicted effect, and tool receipt.
+4. **Probe:** local compute attaches measured results and validation status to that branch. A failed or counterintuitive result remains as evidence rather than disappearing.
+5. **Compare:** the person and agent inspect a small counterfactual set—such as lighter versus stiffer, or protected cable path versus unrestricted path—with synchronized metric deltas and viewport highlights.
+6. **Interrupt:** the person can lock a mount, change inventory, stop a run, or reject an assumption at any point. The current plan becomes stale visibly; the agent receives the new revision and valid next actions without the person restating the project.
+7. **Promote:** only the person can promote a candidate into the accepted design lineage and authorize final re-analysis/export.
+
+This creates several novel interaction primitives:
+
+- **Constraint handshake:** natural language becomes inspectable engineering state before expensive compute.
+- **Spatial deixis:** “keep this clear” resolves to exact geometry and survives later turns.
+- **Hypothesis versus evidence:** the agent states what it expects before the solver records what happened.
+- **Branching dialogue:** alternatives are durable design branches, not ephemeral chat suggestions.
+- **Evidence-linked explanation:** every recommendation cites exact revisions, runs, metric deltas, warnings, and receipts; selecting a claim highlights the supporting geometry.
+- **Productive disagreement:** the agent can surface an infeasible or dominated request and propose the smallest relaxation, while the person retains authority.
+
+The judge-mode foundation uses the same pattern at smaller scale: inspect an exact study, stage a bounded experiment, run verified compute, compare branches, intervene through a visible lock/selection, and explicitly promote the evidence to the active branch. It must never present a predicted effect as a solver result.
+
 ## WebMCP tool contract
 
 Use the imperative `document.modelContext.registerTool` API. Register only tools valid for the current page state and dispose registrations with abort signals when state changes.
 
-1. `inspect_design_context`: return the selected project, inventory summary, assembly revision, study status, and available next actions. Read-only.
+1. `inspect_design_context`: return the selected project, active semantic selection/locks, inventory summary, accepted and staged branch revisions, study status, stale-plan status, and available next actions. Read-only.
 2. `query_buildable_assemblies`: evaluate inventory against shipped assembly templates and return exact missing or incompatible items. Read-only.
-3. `configure_assembly`: create a new assembly revision from explicit component revisions, quantities, and transforms.
-4. `configure_study`: create a study revision with bounded material, manufacturing, load, objective, and resolution inputs.
-5. `run_optimization_variant`: launch a reversible local run from an exact study or parent-run revision.
-6. `compare_candidates`: return normalized metrics, validation status, constraint violations, and trade-offs for exact run IDs. Read-only.
+3. `configure_assembly`: stage a reversible assembly branch from explicit component revisions, quantities, transforms, and a stated hypothesis.
+4. `configure_study`: stage a study branch with bounded material, manufacturing, load, objective, resolution inputs, assumptions, and predicted trade-offs.
+5. `run_optimization_variant`: launch a reversible local run from an exact staged study or parent-run revision; measured output never overwrites the prediction.
+6. `compare_candidates`: return normalized measured deltas, validation status, constraint violations, and trade-offs for exact run IDs. Read-only.
 7. `stage_export`: prepare an STL/report bundle and show it in the UI; the person performs the final download.
 
 Although seven tools are defined, dynamic registration limits each state to the smallest useful set. Inputs use narrow JSON Schemas with no arbitrary code, HTML, file paths, or remote URLs. Tool results contain structured facts and bounded human-readable summaries. Existing domain validation is shared by the UI and tools.
 
 Every invocation produces a visible receipt with tool name, validated inputs, affected revision, result, duration, and error. Consequential acceptance and download remain explicit human actions.
+
+Agent proposals and measurements use separate fields and visual treatments. The agent may stage branches and run bounded local experiments, but branch promotion, relaxation of a human lock, and export are not agent-callable actions.
 
 ## Security and trust boundaries
 
@@ -265,6 +290,8 @@ Do not use NASA in the product name. Do not use NASA identifiers, logos, trade d
 - The hero flow works without authentication or manual data entry.
 - A custom component changes assembly compatibility and the resulting study.
 - Human intervention changes the agent's next action without restating the whole project.
+- A judge can point to or lock exact geometry, see the agent's typed interpretation before compute, and distinguish its prediction from measured evidence.
+- Two counterfactual branches remain inspectable with parentage, constraint deltas, and linked viewport evidence.
 - An accepted candidate yields a real STL, BOM, assumptions, and validation report.
 
 ### WebMCP gate

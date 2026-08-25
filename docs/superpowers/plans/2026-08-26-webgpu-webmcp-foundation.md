@@ -18,6 +18,7 @@
 - Saved fixtures contain input problems only; every displayed compute result must come from the shipped compute path.
 - UI and WebMCP use the same domain functions and immutable revision IDs.
 - Human acceptance/export remains outside agent-callable tools.
+- Agent actions create staged experiment branches from exact parents; predictions, measurements, and human promotion are separate states.
 - Keep controls, errors, evidence, and numerical alternatives in semantic DOM; the 3D canvas is not the sole carrier of meaning.
 - Keep work over 250 ms off the main thread, size the canvas to device pixels, respect reduced motion, and dispose every GPU/viewer resource.
 - WebMCP stays origin-isolated, top-level/same-origin only, and visibly unsupported when absent; do not expose tools cross-origin.
@@ -196,18 +197,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 **Files:**
 - Create: `src/webmcp/model-context.d.ts`, `src/webmcp/schemas.ts`, `src/webmcp/executors.ts`, `src/webmcp/register-tools.ts`
-- Create: `src/webmcp/FoundationTools.tsx`, `src/app/useProjectState.ts`, `src/app/ReceiptLedger.tsx`
+- Create: `src/webmcp/FoundationTools.tsx`, `src/app/useProjectState.ts`, `src/app/ExperimentRail.tsx`, `src/app/ReceiptLedger.tsx`
 - Create: `src/test/fake-model-context.ts`
 - Test: `src/webmcp/register-tools.test.ts`, `src/webmcp/executors.test.ts`
 
 **Interfaces:**
 - Consumes: exact snapshots, `runComputeProbe`, and immutable project actions.
-- Produces: `foundationToolDefinitions(services)`, lifecycle-bound `FoundationTools`, and executors `inspectDesignContext`, `runFoundationProbe`, `compareFoundationProbes`.
+- Produces: `foundationToolDefinitions(services)`, lifecycle-bound `FoundationTools`, staged experiment branches, and executors `inspectDesignContext`, `runFoundationProbe`, `compareFoundationProbes`.
 
-- [ ] **Step 1: Add pinned `use-webmcp-tool@0.2.0`, then write failing tests that verify narrow schemas, Chrome character budgets, read-only/untrusted annotations, shared executor calls, visible receipts, exact revision IDs, and lifecycle-driven unregistration.**
+- [ ] **Step 1: Add pinned `use-webmcp-tool@0.2.0`, then write failing tests that verify narrow schemas, Chrome character budgets, read-only/untrusted annotations, shared executor calls, visible receipts, exact parent/branch revision IDs, prediction-versus-measurement separation, human-only promotion, and lifecycle-driven unregistration.**
 - [ ] **Step 2: Run `pnpm vitest run src/webmcp`; expect missing registration.**
 - [ ] **Step 3: Implement three non-overlapping imperative tools through Chrome's lifecycle-managed React hook, with Zod validation, structured errors, surfaced support/registration status, and state-dependent registration. Keep pure definitions/executors separately testable.**
-- [ ] **Step 4: Return only revision, capability, timing, verification, and next-action facts; exclude component provenance text from agent instructions.**
+- [ ] **Step 4: Return only active selection/locks, parent and branch revisions, stated hypothesis/prediction, capability, measured timing/verification, comparison deltas, stale-plan status, and next-action facts; exclude component provenance text from agent instructions.**
 - [ ] **Step 5: Run WebMCP tests and `pnpm build`; expect pass.**
 - [ ] **Step 6: Commit with `git commit -m "feat(webmcp): expose verified foundation tools"`.**
 
@@ -220,11 +221,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 **Interfaces:**
 - Consumes: capability detection, fixture, viewer, project state, receipts, and tool registration.
-- Produces: one-click `Run foundation probe` journey and an evidence panel that distinguishes verified compute from the future structural optimizer.
+- Produces: a judge-readable inspect → stage → probe → compare → intervene → promote journey and an evidence panel that distinguishes agent prediction, verified compute, and the future structural optimizer.
 
-- [ ] **Step 1: Write a failing journey test for capability state, exact fixture summary, probe execution, rendered result, receipt, and explicit “compute foundation—not structural optimization” copy.**
+- [ ] **Step 1: Write a failing journey test for capability state, exact fixture/selection summary, staged branch with parent revision and prediction, probe execution, measured result, branch comparison, human intervention/promotion, receipts, and explicit “compute foundation—not structural optimization” copy.**
 - [ ] **Step 2: Run `pnpm vitest run src/app/FoundationJourney.test.tsx`; expect failure.**
-- [ ] **Step 3: Implement the journey and fixed test procedure covering UI invocation, WebMCP discovery, direct and ambiguous prompts, negative tool selection, ordered agent chaining, mid-chain failure, unsupported WebGPU/WebMCP, mismatch, cancellation, keyboard use, responsive layout, and reduced motion.**
+- [ ] **Step 3: Implement the journey and fixed test procedure covering shared semantic selection, constraint handshake, prediction/measurement distinction, reversible branch lineage, UI intervention that makes the prior plan stale, human-only promotion, WebMCP discovery, direct and ambiguous prompts, negative tool selection, ordered agent chaining, mid-chain failure, unsupported WebGPU/WebMCP, mismatch, cancellation, keyboard use, responsive layout, and reduced motion.**
 - [ ] **Step 4: Run `pnpm check`; expect all unit, Rust, Wasm, type, and production-build gates to pass.**
 - [ ] **Step 5: Start `pnpm dev --host 127.0.0.1`, open it in the real in-app browser, then verify the Available Tools list and manual success/error/cancel invocations in Chrome's WebMCP DevTools pane. Run the official WebMCP eval smoke mode against `docs/testing/webmcp-foundation-evals.json`; run probabilistic selection evals when a configured backend is available. Record measured WebGPU/WebMCP/eval outcomes; do not call the gate passed if either API is unavailable.**
 - [ ] **Step 6: Commit with `git commit -m "feat(app): complete foundation validation journey"`.**
