@@ -6,7 +6,7 @@
 
 **Architecture:** A static Vite/React application owns immutable project state. A direct WebGPU module runs and verifies a deterministic 3D compute probe; a Rust/Wasm package supplies the independent numerical comparator. Three.js renders the same computed field, while WebMCP tools call the same typed domain services as the UI and create visible receipts.
 
-**Tech Stack:** Node 24.19.0, pnpm 10.15.0, Vite 8.2.2, React 19.2.8, TypeScript 7.0.2, Three.js 0.185.1, Zod 4.4.3, Vitest 4.1.11, Rust stable, wasm-bindgen 0.2.127, WebGPU/WGSL, imperative WebMCP.
+**Tech Stack:** Node 24.19.0, pnpm 10.15.0, Vite 8.2.2, React 19.2.8, TypeScript 7.0.2, Three.js 0.185.1, Zod 4.4.3, Vitest 4.1.11, Rust stable, wasm-bindgen 0.2.127, WebGPU/WGSL, imperative WebMCP, and Chrome's `use-webmcp-tool` 0.2.0 React hook.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-agentic-structural-evolution-design.md`
 
@@ -18,7 +18,21 @@
 - Saved fixtures contain input problems only; every displayed compute result must come from the shipped compute path.
 - UI and WebMCP use the same domain functions and immutable revision IDs.
 - Human acceptance/export remains outside agent-callable tools.
+- Keep controls, errors, evidence, and numerical alternatives in semantic DOM; the 3D canvas is not the sole carrier of meaning.
+- Keep work over 250 ms off the main thread, size the canvas to device pixels, respect reduced motion, and dispose every GPU/viewer resource.
+- WebMCP stays origin-isolated, top-level/same-origin only, and visibly unsupported when absent; do not expose tools cross-origin.
+- Follow Chrome's tool budgets: names and parameter names at most 30 characters, tool descriptions at most 500, parameter descriptions at most 150, and each tool output at most 1,500.
+- Mark read-only tools with `readOnlyHint`, label external or user-authored text with `untrustedContentHint`, validate every input in-page, and return minimum necessary facts.
 - Use Node 24.19.0 because Vitest 4 excludes Node 23; the bundled runtime is available at `/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin`.
+
+## Authoritative implementation references
+
+- The current `webmachinelearning/webmcp` explainer and implementation status define the browser API, document lifetime, abort semantics, permissions policy, and active open questions.
+- Chrome's WebMCP developer docs and origin-trial guide define Chrome 149 setup, origin isolation, and progressive enhancement.
+- Chrome's security guide defines annotation hints, exposure boundaries, prompt-injection assumptions, and character budgets.
+- Chrome's WebMCP eval guidance and `GoogleChromeLabs/webmcp-tools` demos define deterministic smoke tests, probabilistic selection evals, complete state tool lists, ordered chains, and mid-chain failures.
+- Chrome DevTools' WebMCP pane is the manual source of truth for registered tools, exact inputs/outputs, cancellation, errors, and invocation history.
+- GoogleChrome's `modern-web-guidance` skill governs semantic structure, accessibility, performance, responsive canvas sizing, and main-thread work.
 
 ---
 
@@ -174,6 +188,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 - [ ] **Step 1: Write failing tests proving thresholding, stable voxel coordinates, bounded instance counts, and renderer cleanup on unmount.**
 - [ ] **Step 2: Run `pnpm vitest run src/viewer`; expect missing exports.**
 - [ ] **Step 3: Implement one `InstancedMesh`, orbit controls, resize observer, semantic loading/error overlay, and disposal of renderer, controls, geometry, and material.**
+- [ ] **Step 3a: Size the canvas using device-pixel-aware `ResizeObserver`, preserve keyboard-operable DOM controls and a semantic field summary/table outside the canvas, and honor `prefers-reduced-motion`.**
 - [ ] **Step 4: Run viewer tests and `pnpm build`; expect pass with no per-voxel mesh allocation.**
 - [ ] **Step 5: Commit with `git commit -m "feat(viewer): render computed voxel fields"`.**
 
@@ -181,17 +196,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 **Files:**
 - Create: `src/webmcp/model-context.d.ts`, `src/webmcp/schemas.ts`, `src/webmcp/executors.ts`, `src/webmcp/register-tools.ts`
-- Create: `src/app/useProjectState.ts`, `src/app/ReceiptLedger.tsx`
+- Create: `src/webmcp/FoundationTools.tsx`, `src/app/useProjectState.ts`, `src/app/ReceiptLedger.tsx`
 - Create: `src/test/fake-model-context.ts`
 - Test: `src/webmcp/register-tools.test.ts`, `src/webmcp/executors.test.ts`
 
 **Interfaces:**
 - Consumes: exact snapshots, `runComputeProbe`, and immutable project actions.
-- Produces: `registerFoundationTools(context, services, signal)`, executors `inspectDesignContext`, `runFoundationProbe`, `compareFoundationProbes`.
+- Produces: `foundationToolDefinitions(services)`, lifecycle-bound `FoundationTools`, and executors `inspectDesignContext`, `runFoundationProbe`, `compareFoundationProbes`.
 
-- [ ] **Step 1: Write failing tests that verify narrow schemas, read-only annotations, shared executor calls, visible receipts, exact revision IDs, and abort-driven unregistration.**
+- [ ] **Step 1: Add pinned `use-webmcp-tool@0.2.0`, then write failing tests that verify narrow schemas, Chrome character budgets, read-only/untrusted annotations, shared executor calls, visible receipts, exact revision IDs, and lifecycle-driven unregistration.**
 - [ ] **Step 2: Run `pnpm vitest run src/webmcp`; expect missing registration.**
-- [ ] **Step 3: Implement three non-overlapping tools using `document.modelContext.registerTool`, Zod validation, structured errors, and state-dependent registration.**
+- [ ] **Step 3: Implement three non-overlapping imperative tools through Chrome's lifecycle-managed React hook, with Zod validation, structured errors, surfaced support/registration status, and state-dependent registration. Keep pure definitions/executors separately testable.**
 - [ ] **Step 4: Return only revision, capability, timing, verification, and next-action facts; exclude component provenance text from agent instructions.**
 - [ ] **Step 5: Run WebMCP tests and `pnpm build`; expect pass.**
 - [ ] **Step 6: Commit with `git commit -m "feat(webmcp): expose verified foundation tools"`.**
@@ -200,7 +215,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 **Files:**
 - Modify: `src/app/App.tsx`, `src/app/app.css`
-- Create: `src/app/FoundationJourney.tsx`, `src/app/EvidencePanel.tsx`, `docs/testing/foundation-gate.md`
+- Create: `src/app/FoundationJourney.tsx`, `src/app/EvidencePanel.tsx`, `docs/testing/foundation-gate.md`, `docs/testing/webmcp-foundation-evals.json`
 - Test: `src/app/FoundationJourney.test.tsx`
 
 **Interfaces:**
@@ -209,9 +224,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 - [ ] **Step 1: Write a failing journey test for capability state, exact fixture summary, probe execution, rendered result, receipt, and explicit “compute foundation—not structural optimization” copy.**
 - [ ] **Step 2: Run `pnpm vitest run src/app/FoundationJourney.test.tsx`; expect failure.**
-- [ ] **Step 3: Implement the journey and fixed test procedure covering UI invocation, WebMCP discovery, agent chaining, unsupported WebGPU, mismatch, cancellation, and responsive layout.**
+- [ ] **Step 3: Implement the journey and fixed test procedure covering UI invocation, WebMCP discovery, direct and ambiguous prompts, negative tool selection, ordered agent chaining, mid-chain failure, unsupported WebGPU/WebMCP, mismatch, cancellation, keyboard use, responsive layout, and reduced motion.**
 - [ ] **Step 4: Run `pnpm check`; expect all unit, Rust, Wasm, type, and production-build gates to pass.**
-- [ ] **Step 5: Start `pnpm dev --host 127.0.0.1`, open it in the real in-app browser, and record measured WebGPU/WebMCP outcomes in the task handoff; do not call the gate passed if either API is unavailable.**
+- [ ] **Step 5: Start `pnpm dev --host 127.0.0.1`, open it in the real in-app browser, then verify the Available Tools list and manual success/error/cancel invocations in Chrome's WebMCP DevTools pane. Run the official WebMCP eval smoke mode against `docs/testing/webmcp-foundation-evals.json`; run probabilistic selection evals when a configured backend is available. Record measured WebGPU/WebMCP/eval outcomes; do not call the gate passed if either API is unavailable.**
 - [ ] **Step 6: Commit with `git commit -m "feat(app): complete foundation validation journey"`.**
 
 ## Completion boundary
