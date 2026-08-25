@@ -211,6 +211,15 @@ This creates several novel interaction primitives:
 - **Branching dialogue:** alternatives are durable design branches, not ephemeral chat suggestions.
 - **Evidence-linked explanation:** every recommendation cites exact revisions, runs, metric deltas, warnings, and receipts; selecting a claim highlights the supporting geometry.
 - **Productive disagreement:** the agent can surface an infeasible or dominated request and propose the smallest relaxation, while the person retains authority.
+- **In-situ alternatives:** selecting one arm, leg, joint, rib, or other semantic part lets the agent stage several valid local configurations around that exact anchor. The accepted part remains solid while alternatives render as distinct ghost bodies in the same coordinate frame.
+
+In-situ alternatives have three rendering modes:
+
+- **Overlay:** alternatives occupy their true assembly coordinates, using bounded opacity/dither and clear branch colors to reveal local material and clearance deltas.
+- **Peel:** alternatives fan a small distance away from the selected anchor with connector guides, preserving orientation and making silhouettes readable without losing assembly context.
+- **Audition:** one alternative temporarily replaces the selected part in the full assembly so collisions, keep-outs, interfaces, and load paths can be inspected before any promotion.
+
+Hovering or focusing an alternative highlights only its local geometric delta and its linked experiment card. Selecting it synchronizes the branch revision, hypothesis, measured metrics, warnings, and viewport. A person can ask the agent to combine explicit features from exact branches—for example, “use this cable channel with option C's rib”—which creates another staged branch instead of destructively merging meshes. Alternatives are capped to a small comparison set, share exact anchors/transforms, and always have equivalent semantic DOM controls and metric summaries outside the canvas.
 
 The judge-mode foundation uses the same pattern at smaller scale: inspect an exact study, stage a bounded experiment, run verified compute, compare branches, intervene through a visible lock/selection, and explicitly promote the evidence to the active branch. It must never present a predicted effect as a solver result.
 
@@ -292,6 +301,7 @@ Do not use NASA in the product name. Do not use NASA identifiers, logos, trade d
 - Human intervention changes the agent's next action without restating the whole project.
 - A judge can point to or lock exact geometry, see the agent's typed interpretation before compute, and distinguish its prediction from measured evidence.
 - Two counterfactual branches remain inspectable with parentage, constraint deltas, and linked viewport evidence.
+- A selected part can display multiple anchored alternative configurations in overlay, peel, and audition modes without losing the surrounding assembly context.
 - An accepted candidate yields a real STL, BOM, assumptions, and validation report.
 
 ### WebMCP gate

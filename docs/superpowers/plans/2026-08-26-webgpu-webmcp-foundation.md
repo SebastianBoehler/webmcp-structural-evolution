@@ -179,18 +179,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 ### Task 5: Shared 3D result viewer
 
 **Files:**
-- Create: `src/viewer/field-instances.ts`, `src/viewer/FieldViewer.tsx`, `src/viewer/field-viewer.css`
-- Test: `src/viewer/field-instances.test.ts`, `src/viewer/FieldViewer.test.tsx`
+- Create: `src/viewer/field-instances.ts`, `src/viewer/alternative-instances.ts`, `src/viewer/FieldViewer.tsx`, `src/viewer/field-viewer.css`
+- Test: `src/viewer/field-instances.test.ts`, `src/viewer/alternative-instances.test.ts`, `src/viewer/FieldViewer.test.tsx`
 
 **Interfaces:**
-- Consumes: `ProbeResult.output`, grid dimensions, and density threshold.
-- Produces: `visibleInstances(field, grid, threshold): InstanceRecord[]`, `FieldViewer` with density and keep-out layers.
+- Consumes: current and staged `ProbeResult.output` branches, exact parent/branch IDs, shared grid/anchor, dimensions, density threshold, selected semantic region, and alternative display mode.
+- Produces: `visibleInstances(field, grid, threshold): InstanceRecord[]`, bounded alternative instance layers, and `FieldViewer` with density, keep-out, overlay, peel, and audition modes.
 
-- [ ] **Step 1: Write failing tests proving thresholding, stable voxel coordinates, bounded instance counts, and renderer cleanup on unmount.**
+- [ ] **Step 1: Write failing tests proving thresholding, stable voxel coordinates, exact shared anchors, local-delta extraction, at most three staged alternatives, deterministic peel transforms, bounded instance counts, and renderer cleanup on unmount.**
 - [ ] **Step 2: Run `pnpm vitest run src/viewer`; expect missing exports.**
-- [ ] **Step 3: Implement one `InstancedMesh`, orbit controls, resize observer, semantic loading/error overlay, and disposal of renderer, controls, geometry, and material.**
+- [ ] **Step 3: Implement one solid current `InstancedMesh` plus one bounded ghost `InstancedMesh` per visible alternative, orbit controls, overlay/peel/audition switching, synchronized DOM alternative controls, resize observer, semantic loading/error overlay, and disposal of renderer, controls, geometries, and materials. Avoid per-voxel objects and avoid mutating source result arrays.**
 - [ ] **Step 3a: Size the canvas using device-pixel-aware `ResizeObserver`, preserve keyboard-operable DOM controls and a semantic field summary/table outside the canvas, and honor `prefers-reduced-motion`.**
-- [ ] **Step 4: Run viewer tests and `pnpm build`; expect pass with no per-voxel mesh allocation.**
+- [ ] **Step 4: Run viewer tests and `pnpm build`; expect pass with no per-voxel mesh allocation, no more than three ghost meshes, and no lost assembly-space anchor.**
 - [ ] **Step 5: Commit with `git commit -m "feat(viewer): render computed voxel fields"`.**
 
 ### Task 6: State-aware WebMCP and receipts
