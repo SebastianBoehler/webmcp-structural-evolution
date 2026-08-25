@@ -27,12 +27,28 @@ function serialize(value: unknown, ancestors: WeakSet<object>, path: string): st
 
   try {
     if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) {
+        throw new TypeError(`${UNSUPPORTED} at ${path}: non-plain array`);
+      }
+      if (Object.getOwnPropertySymbols(value).length > 0) {
+        throw new TypeError(`${UNSUPPORTED} at ${path}: symbol key`);
+      }
+      const allowedKeys = new Set(["length"]);
       const items: string[] = [];
       for (let index = 0; index < value.length; index += 1) {
-        if (!Object.hasOwn(value, index)) {
+        const key = String(index);
+        allowedKeys.add(key);
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor) {
           throw new TypeError(`${UNSUPPORTED} at ${path}[${index}]: sparse array`);
         }
-        items.push(serialize(value[index], ancestors, `${path}[${index}]`));
+        if (descriptor.get || descriptor.set) {
+          throw new TypeError(`${UNSUPPORTED} at ${path}[${index}]: accessor`);
+        }
+        items.push(serialize(descriptor.value, ancestors, `${path}[${index}]`));
+      }
+      if (Object.getOwnPropertyNames(value).some((key) => !allowedKeys.has(key))) {
+        throw new TypeError(`${UNSUPPORTED} at ${path}: non-index property`);
       }
       return `[${items.join(",")}]`;
     }

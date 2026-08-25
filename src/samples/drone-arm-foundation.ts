@@ -1,8 +1,10 @@
 import {
   defineAssembly,
   defineComponent,
+  defineInventory,
   defineStudy,
   freezeSnapshot,
+  type ComponentDefinition,
 } from "../domain/design";
 
 const mm = (value: number) => ({ value, unit: "mm" as const });
@@ -18,8 +20,8 @@ const orientation = (roll = 0, pitch = 0, yaw = 0) => ({
   pitch: deg(pitch),
   yaw: deg(yaw),
 });
-const transform = (x: number, y: number, z: number) => ({
-  position: point(x, y, z),
+const identityTransformAt = (position: ReturnType<typeof point>) => ({
+  position,
   orientation: orientation(),
 });
 const box = (
@@ -52,11 +54,47 @@ const mount = (id: string, x: number, y: number, z: number) => ({
   diameter: mm(3.2),
   fastenerType: "M3",
 });
+type LocalPoint = ComponentDefinition["centerOfMass"];
+type LocalMount = ComponentDefinition["mountInterfaces"][number];
+type LocalVolume = ComponentDefinition["keepOutVolumes"][number];
 
-const motor = defineComponent({
+const translateMm = (
+  local: LocalPoint,
+  assemblyOrigin: ReturnType<typeof point>,
+) => {
+  const coordinates = [
+    local.x,
+    local.y,
+    local.z,
+    assemblyOrigin.x,
+    assemblyOrigin.y,
+    assemblyOrigin.z,
+  ];
+  if (coordinates.some((coordinate) => coordinate.unit !== "mm")) {
+    throw new Error("Fixture geometry projection requires explicit mm coordinates");
+  }
+  return point(
+    local.x.value + assemblyOrigin.x.value,
+    local.y.value + assemblyOrigin.y.value,
+    local.z.value + assemblyOrigin.z.value,
+  );
+};
+const placeMountInAssembly = (
+  local: LocalMount,
+  assemblyOrigin: ReturnType<typeof point>,
+) => ({ ...local, position: translateMm(local.position, assemblyOrigin) });
+const placeVolumeInAssembly = (
+  local: LocalVolume,
+  assemblyOrigin: ReturnType<typeof point>,
+) => ({ ...local, center: translateMm(local.center, assemblyOrigin) });
+
+const motorAssemblyOrigin = point(82, 0, 0);
+const bodyAssemblyOrigin = point(0, 0, 0);
+
+const motor = await defineComponent({
   id: "motor-2207",
-  revision: "component:motor-2207:rev-1",
   category: "motor",
+  geometryCoordinates: "component-local",
   manufacturer: "Generic",
   partNumber: "2207-1750KV",
   provenance: { kind: "generic", reference: "2207 motor dimensional profile rev 1" },
@@ -79,10 +117,10 @@ const motor = defineComponent({
   allowedOrientations: [orientation()],
 });
 
-const fastener = defineComponent({
+const fastener = await defineComponent({
   id: "m3-fastener",
-  revision: "component:m3-fastener:rev-1",
   category: "fastener",
+  geometryCoordinates: "component-local",
   manufacturer: "Generic",
   partNumber: "M3x12-SHCS",
   provenance: { kind: "generic", reference: "ISO 4762 dimensional profile" },
@@ -95,10 +133,10 @@ const fastener = defineComponent({
   allowedOrientations: [orientation()],
 });
 
-const bodyInterface = defineComponent({
+const bodyInterface = await defineComponent({
   id: "body-interface",
-  revision: "component:body-interface:rev-1",
   category: "body-interface",
+  geometryCoordinates: "component-local",
   manufacturer: "Sunderlabs",
   partNumber: "FRAME-INTERFACE-01",
   provenance: { kind: "user-defined", reference: "foundation interface drawing rev 1" },
@@ -114,42 +152,52 @@ const bodyInterface = defineComponent({
   allowedOrientations: [orientation()],
 });
 
-const assembly = defineAssembly({
+const assembly = await defineAssembly({
   id: "drone-arm-foundation",
-  revision: "assembly:drone-arm-foundation:rev-1",
+  geometryCoordinates: "assembly",
   components: [
     {
       instanceId: "motor",
       componentRevision: motor.revision,
       quantity: 1,
-      transform: transform(82, 0, 0),
+      transform: identityTransformAt(motorAssemblyOrigin),
     },
     {
       instanceId: "motor-fasteners",
       componentRevision: fastener.revision,
       quantity: 4,
-      transform: transform(82, 0, 0),
+      transform: identityTransformAt(motorAssemblyOrigin),
     },
     {
       instanceId: "body-interface",
       componentRevision: bodyInterface.revision,
       quantity: 1,
-      transform: transform(0, 0, 0),
+      transform: identityTransformAt(bodyAssemblyOrigin),
     },
   ],
   targetEnvelope: box("arm-target-envelope", [41, 0, 3], [110, 42, 18]),
-  preservedMounts: [...motor.mountInterfaces, ...bodyInterface.mountInterfaces],
-  obstacleVolumes: [...motor.keepOutVolumes, ...bodyInterface.keepOutVolumes],
+  preservedMounts: [
+    ...motor.mountInterfaces.map((item) =>
+      placeMountInAssembly(item, motorAssemblyOrigin)),
+    ...bodyInterface.mountInterfaces.map((item) =>
+      placeMountInAssembly(item, bodyAssemblyOrigin)),
+  ],
+  obstacleVolumes: [
+    ...motor.keepOutVolumes.map((item) =>
+      placeVolumeInAssembly(item, motorAssemblyOrigin)),
+    ...bodyInterface.keepOutVolumes.map((item) =>
+      placeVolumeInAssembly(item, bodyAssemblyOrigin)),
+  ],
   accessVolumes: [],
   missingComponents: [],
   incompatibleComponents: [],
   ambiguousComponents: [],
 });
 
-const study = defineStudy({
+const study = await defineStudy({
   id: "drone-arm-foundation-study",
-  revision: "study:drone-arm-foundation:rev-1",
   assemblyRevision: assembly.revision,
+  geometryCoordinates: "assembly",
   designRegion: box("arm-design-region", [41, 0, 3], [110, 42, 18]),
   voxelResolution: {
     x: { value: 48, unit: "voxels" },
@@ -186,28 +234,30 @@ const study = defineStudy({
   solverRevision: "foundation-probe-v1",
 });
 
+const inventory = defineInventory([
+  {
+    componentRevision: motor.revision,
+    ownedQuantity: 1,
+    availability: "available",
+    label: "Bench motor",
+  },
+  {
+    componentRevision: fastener.revision,
+    ownedQuantity: 3,
+    availability: "available",
+    label: "M3 fastener bin",
+  },
+  {
+    componentRevision: bodyInterface.revision,
+    ownedQuantity: 1,
+    availability: "available",
+    label: "Frame interface",
+  },
+]);
+
 export const DRONE_ARM_FOUNDATION_STUDY = freezeSnapshot({
   components: [motor, fastener, bodyInterface],
-  inventory: [
-    {
-      componentRevision: motor.revision,
-      ownedQuantity: 1,
-      availability: "available" as const,
-      label: "Bench motor",
-    },
-    {
-      componentRevision: fastener.revision,
-      ownedQuantity: 3,
-      availability: "available" as const,
-      label: "M3 fastener bin",
-    },
-    {
-      componentRevision: bodyInterface.revision,
-      ownedQuantity: 1,
-      availability: "available" as const,
-      label: "Frame interface",
-    },
-  ],
+  inventory,
   assembly,
   study,
 });

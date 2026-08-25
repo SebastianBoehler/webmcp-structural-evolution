@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { JsonValue } from "./canonical-json";
-import { freezeSnapshot, type DeepReadonly } from "./design";
+import { freezeSnapshot, type DeepReadonly } from "./snapshots";
 
 const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   z.union([

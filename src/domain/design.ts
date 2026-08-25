@@ -1,12 +1,13 @@
 import { z } from "zod";
 
-export type DeepReadonly<T> = T extends (...args: never[]) => unknown
-  ? T
-  : T extends readonly (infer Item)[]
-    ? readonly DeepReadonly<Item>[]
-    : T extends object
-      ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
-      : T;
+import {
+  defineRevisionedSnapshot,
+  freezeSnapshot,
+  RevisionSchema,
+  type DeepReadonly,
+} from "./snapshots";
+
+export { freezeSnapshot, type DeepReadonly } from "./snapshots";
 
 const finite = z.number().finite();
 const positive = finite.positive();
@@ -73,11 +74,11 @@ export const MountInterfaceSchema = z
   })
   .strict();
 
-export const ComponentDefinitionSchema = z
+const ComponentDefinitionContentSchema = z
   .object({
     id: z.string().min(1),
-    revision: z.string().min(1),
     category: z.enum(["motor", "fastener", "body-interface"]),
+    geometryCoordinates: z.literal("component-local"),
     manufacturer: z.string().min(1),
     partNumber: z.string().min(1),
     provenance: z
@@ -97,6 +98,9 @@ export const ComponentDefinitionSchema = z
     allowedOrientations: z.array(OrientationSchema).min(1),
   })
   .strict();
+export const ComponentDefinitionSchema = ComponentDefinitionContentSchema.extend({
+  revision: RevisionSchema,
+}).strict();
 
 export const InventoryItemSchema = z
   .object({
@@ -107,6 +111,7 @@ export const InventoryItemSchema = z
     notes: z.string().min(1).optional(),
   })
   .strict();
+export const InventorySchema = z.array(InventoryItemSchema);
 
 const ComponentRequirementSchema = z
   .object({
@@ -117,10 +122,10 @@ const ComponentRequirementSchema = z
   })
   .strict();
 
-export const AssemblySpecSchema = z
+const AssemblySpecContentSchema = z
   .object({
     id: z.string().min(1),
-    revision: z.string().min(1),
+    geometryCoordinates: z.literal("assembly"),
     components: z.array(ComponentRequirementSchema).min(1),
     targetEnvelope: VolumeSchema,
     preservedMounts: z.array(MountInterfaceSchema),
@@ -131,6 +136,9 @@ export const AssemblySpecSchema = z
     ambiguousComponents: z.array(z.string().min(1)),
   })
   .strict();
+export const AssemblySpecSchema = AssemblySpecContentSchema.extend({
+  revision: RevisionSchema,
+}).strict();
 
 const LoadCaseSchema = z
   .object({
@@ -145,11 +153,11 @@ const LoadCaseSchema = z
   })
   .strict();
 
-export const StudySpecSchema = z
+const StudySpecContentSchema = z
   .object({
     id: z.string().min(1),
-    revision: z.string().min(1),
     assemblyRevision: z.string().min(1),
+    geometryCoordinates: z.literal("assembly"),
     designRegion: VolumeSchema,
     voxelResolution: z
       .object({
@@ -187,26 +195,23 @@ export const StudySpecSchema = z
     solverRevision: z.string().min(1),
   })
   .strict();
+export const StudySpecSchema = StudySpecContentSchema.extend({
+  revision: RevisionSchema,
+}).strict();
 
 export type ComponentDefinition = DeepReadonly<z.infer<typeof ComponentDefinitionSchema>>;
 export type InventoryItem = DeepReadonly<z.infer<typeof InventoryItemSchema>>;
 export type AssemblySpec = DeepReadonly<z.infer<typeof AssemblySpecSchema>>;
 export type StudySpec = DeepReadonly<z.infer<typeof StudySpecSchema>>;
 
-export function freezeSnapshot<T>(value: T): DeepReadonly<T> {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) freezeSnapshot(child);
-    Object.freeze(value);
-  }
-  return value as DeepReadonly<T>;
-}
-
-export const defineComponent = (value: unknown): ComponentDefinition =>
-  freezeSnapshot(ComponentDefinitionSchema.parse(value));
-export const defineAssembly = (value: unknown): AssemblySpec =>
-  freezeSnapshot(AssemblySpecSchema.parse(value));
-export const defineStudy = (value: unknown): StudySpec =>
-  freezeSnapshot(StudySpecSchema.parse(value));
+export const defineComponent = async (value: unknown): Promise<ComponentDefinition> =>
+  defineRevisionedSnapshot(ComponentDefinitionContentSchema, value);
+export const defineAssembly = async (value: unknown): Promise<AssemblySpec> =>
+  defineRevisionedSnapshot(AssemblySpecContentSchema, value);
+export const defineStudy = async (value: unknown): Promise<StudySpec> =>
+  defineRevisionedSnapshot(StudySpecContentSchema, value);
+export const defineInventory = (value: unknown): readonly InventoryItem[] =>
+  freezeSnapshot(InventorySchema.parse(value));
 
 export type InventoryEvaluation = Readonly<{
   status: "buildable" | "insufficient-stock" | "unresolved-assembly";
@@ -227,7 +232,7 @@ export function evaluateInventory(
   inventory: readonly InventoryItem[],
   assembly: AssemblySpec,
 ): InventoryEvaluation {
-  const parsedInventory = z.array(InventoryItemSchema).parse(inventory);
+  const parsedInventory = InventorySchema.parse(inventory);
   const parsedAssembly = AssemblySpecSchema.parse(assembly);
   const owned = new Map<string, number>();
   const required = new Map<string, number>();
