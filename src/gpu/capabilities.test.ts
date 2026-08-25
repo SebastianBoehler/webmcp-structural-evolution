@@ -34,18 +34,25 @@ describe("detectWebGpu", () => {
     });
   });
 
-  it("distinguishes an adapter that returns no device", async () => {
-    const adapter = { requestDevice: vi.fn().mockResolvedValue(null) };
+  it("rejects a device whose loss was already settled during acquisition", async () => {
+    const device = {
+      destroy: vi.fn(),
+      lost: Promise.resolve({ reason: "unknown", message: "lost before readiness" }),
+    };
+    const adapter = { requestDevice: vi.fn().mockResolvedValue(device) };
     vi.stubGlobal("navigator", { gpu: { requestAdapter: vi.fn().mockResolvedValue(adapter) } });
 
     await expect(detectWebGpu()).resolves.toMatchObject({
-      status: "unavailable",
-      code: "device-unavailable",
+      status: "failed",
+      code: "device-lost",
+      reason: "unknown",
+      message: expect.stringContaining("lost before readiness"),
     });
+    expect(device.destroy).toHaveBeenCalledOnce();
   });
 
   it("reports availability and destroys its temporary detection device", async () => {
-    const device = { destroy: vi.fn() };
+    const device = { destroy: vi.fn(), lost: new Promise(() => undefined) };
     const adapter = { requestDevice: vi.fn().mockResolvedValue(device) };
     vi.stubGlobal("navigator", { gpu: { requestAdapter: vi.fn().mockResolvedValue(adapter) } });
 

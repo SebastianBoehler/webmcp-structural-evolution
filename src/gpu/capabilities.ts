@@ -1,12 +1,10 @@
-export type GpuUnavailableCode =
-  | "api-unavailable"
-  | "adapter-unavailable"
-  | "device-unavailable";
+export type GpuUnavailableCode = "api-unavailable" | "adapter-unavailable";
 
 export type GpuAcquisitionFailureCode =
   | GpuUnavailableCode
   | "adapter-request-failed"
-  | "device-request-failed";
+  | "device-request-failed"
+  | "device-lost";
 
 export type GpuCapability =
   | { readonly status: "available"; readonly message: string }
@@ -19,6 +17,12 @@ export type GpuCapability =
       readonly status: "failed";
       readonly code: "adapter-request-failed" | "device-request-failed";
       readonly message: string;
+    }
+  | {
+      readonly status: "failed";
+      readonly code: "device-lost";
+      readonly reason: GPUDeviceLostReason;
+      readonly message: string;
     };
 
 export type GpuAcquisition =
@@ -27,6 +31,28 @@ export type GpuAcquisition =
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function destroyDevice(device: GPUDevice) {
+  try {
+    device.destroy();
+  } catch {
+    // A device that was already lost may reject redundant destruction.
+  }
+}
+
+async function lossSettledBeforeReadiness(
+  device: GPUDevice,
+): Promise<GPUDeviceLostInfo | undefined> {
+  let settledLoss: GPUDeviceLostInfo | undefined;
+  void device.lost.then(
+    (info) => {
+      settledLoss = info;
+    },
+    () => undefined,
+  );
+  await Promise.resolve();
+  return settledLoss;
 }
 
 export async function acquireWebGpu(): Promise<GpuAcquisition> {
@@ -58,7 +84,7 @@ export async function acquireWebGpu(): Promise<GpuAcquisition> {
     };
   }
 
-  let device: GPUDevice | null;
+  let device: GPUDevice;
   try {
     device = await adapter.requestDevice();
   } catch (error) {
@@ -69,11 +95,14 @@ export async function acquireWebGpu(): Promise<GpuAcquisition> {
     };
   }
 
-  if (!device) {
+  const settledLoss = await lossSettledBeforeReadiness(device);
+  if (settledLoss) {
+    destroyDevice(device);
     return {
-      status: "unavailable",
-      code: "device-unavailable",
-      message: "WebGPU is unavailable: the adapter did not provide a GPU device.",
+      status: "failed",
+      code: "device-lost",
+      reason: settledLoss.reason,
+      message: `WebGPU device was already lost (${settledLoss.reason}): ${settledLoss.message || "no detail provided"}`,
     };
   }
 
@@ -84,6 +113,6 @@ export async function detectWebGpu(): Promise<GpuCapability> {
   const acquisition = await acquireWebGpu();
   if (acquisition.status !== "available") return acquisition;
 
-  acquisition.device.destroy();
+  destroyDevice(acquisition.device);
   return { status: "available", message: "WebGPU adapter and device acquisition succeeded." };
 }
