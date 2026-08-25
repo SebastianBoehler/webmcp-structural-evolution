@@ -1,0 +1,59 @@
+:root {
+  color: #e6edf7;
+  background: #09101b;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+
+button { font: inherit; }
+
+.workbench {
+  display: grid;
+  gap: 3rem;
+  min-height: 100vh;
+  padding: clamp(2rem, 8vw, 7rem);
+  background: radial-gradient(circle at 80% 5%, #15283f, transparent 32rem), #09101b;
+}
+
+.workbench__header { max-width: 46rem; }
+
+h1, h2, p { margin: 0; }
+
+h1 { font-size: clamp(2.75rem, 8vw, 6rem); letter-spacing: -0.07em; line-height: 0.94; }
+
+h2 { font-size: 1.1rem; }
+
+.eyebrow { color: #79c9ff; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+
+.workbench__header .eyebrow { margin-bottom: 1.25rem; }
+
+.lede { color: #afbed0; line-height: 1.6; margin-top: 1.5rem; max-width: 37rem; }
+
+.capability-panel {
+  display: grid;
+  gap: 2rem;
+  max-width: 48rem;
+  padding: 1.5rem;
+  border: 1px solid #29425e;
+  background: rgb(10 21 36 / 78%);
+  box-shadow: inset 4px 0 #79c9ff;
+}
+
+.capability-panel .eyebrow { margin-bottom: 0.5rem; }
+
+.capability-list { display: grid; gap: 0.8rem; margin: 0; }
+.capability-list div { display: flex; justify-content: space-between; gap: 2rem; border-bottom: 1px solid #213650; padding-bottom: 0.8rem; }
+.capability-list dt { font-weight: 700; }
+.capability-list dd { color: #afbed0; margin: 0; text-align: right; }
+
+button { justify-self: start; padding: 0.75rem 1rem; border: 1px solid #4b617b; color: #8ea1b7; background: transparent; }
+button:disabled { cursor: not-allowed; opacity: 0.72; }
+
+@media (max-width: 520px) {
+  .capability-list div { align-items: start; flex-direction: column; gap: 0.25rem; }
+  .capability-list dd { text-align: left; }
+}
