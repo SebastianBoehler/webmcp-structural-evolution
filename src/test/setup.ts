@@ -19,7 +19,7 @@ expect.extend({
   },
   toBeVisible(received: unknown) {
     const element = received instanceof HTMLElement ? received : null;
-    const visible = element !== null && !element.hidden && element.getAttribute("aria-hidden") !== "true";
+    const visible = element !== null && isVisible(element);
 
     return {
       pass: visible,
@@ -27,3 +27,22 @@ expect.extend({
     };
   },
 });
+
+function isVisible(element: HTMLElement): boolean {
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    const style = window.getComputedStyle(current);
+
+    if (
+      current.hidden ||
+      current.getAttribute("aria-hidden") === "true" ||
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.visibility === "collapse" ||
+      style.opacity === "0"
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
