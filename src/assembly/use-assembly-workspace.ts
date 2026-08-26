@@ -16,6 +16,9 @@ export function useAssemblyWorkspace() {
   const [layoutState, setLayoutState] = useState<"verified" | "dragging" | "changed">("verified");
   const [layoutVersion, setLayoutVersion] = useState(1);
   const blobUrls = useRef(new Set<string>());
+  const parts = useMemo(() => droneAssemblyVisuals(
+    motors, imports, importPositions, equipmentPositions,
+  ), [motors, imports, importPositions, equipmentPositions]);
 
   useEffect(() => () => {
     for (const url of blobUrls.current) URL.revokeObjectURL(url);
@@ -30,16 +33,30 @@ export function useAssemblyWorkspace() {
     const isImport = imports.some((component) => component.id === id);
     const isEquipment = Object.hasOwn(equipmentPositions, id);
     if (!isMotor && !isImport && !isEquipment) throw new Error(`Unknown movable component: ${id}`);
+    const selectedPart = parts.find((part) => part.selectionId === id);
+    if (!selectedPart) throw new Error(`Movable component visual missing: ${id}`);
+    const delta: Vector3Tuple = [
+      center[0] - selectedPart.center[0],
+      center[1] - selectedPart.center[1],
+      center[2] - selectedPart.center[2],
+    ];
     if (isMotor) setMotors((current) => current.map((motor) => motor.id === motorId
-      ? { ...motor, center: [center[0], center[1], center[2]] }
+      ? { ...motor, anchor: [
+        motor.anchor[0] + delta[0], motor.anchor[1] + delta[1], motor.anchor[2] + delta[2],
+      ] }
       : motor));
     if (isImport) {
-      setImportPositions((current) => ({ ...current, [id]: [center[0], center[1], center[2]] }));
+      setImportPositions((current) => ({ ...current, [id]: center }));
     }
-    if (isEquipment) setEquipmentPositions((current) => ({ ...current, [id]: center }));
+    if (isEquipment) setEquipmentPositions((current) => ({
+      ...current,
+      [id]: [
+        current[id]![0] + delta[0], current[id]![1] + delta[1], current[id]![2] + delta[2],
+      ],
+    }));
     setLayoutState("changed");
     setLayoutVersion((current) => current + 1);
-  }, [equipmentPositions, imports, layoutVersion, motors]);
+  }, [equipmentPositions, imports, layoutVersion, motors, parts]);
 
   const importFile = useCallback(async (file: File) => {
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -90,7 +107,6 @@ export function useAssemblyWorkspace() {
   }, [pending]);
 
   const rejectImport = useCallback(() => setPending(undefined), []);
-  const parts = useMemo(() => droneAssemblyVisuals(motors, imports, importPositions, equipmentPositions), [motors, imports, importPositions, equipmentPositions]);
   return {
     motors,
     imports,

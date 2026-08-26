@@ -19,10 +19,15 @@ viewer's established millimetre boundary.
 | `battery-6s-1550` | Tattu R-Line Version 5.0, TA-RL5-150C-1550-6S1P | 78 × 37 × 52 mm; XT60; 45 mm, 12AWG discharge leads | 254 g | Manufacturer tolerances are length ±5 mm, width ±2 mm, height ±2 mm, and mass ±20 g. The protected envelope adds 3 mm per side and does not claim the flexible lead shape. | [Manufacturer product/specification page](https://www.genstattu.com/tattu-r-line-version-5-0-1550mah-6s-150c-22-2v-lipo-battery-pack-with-xt60-plug/). No explicit CAD redistribution grant was identified and no Tattu asset is included. |
 | `fastener-m3x8` | Accu SSCF-M3-8-12.9-Z | M3 × 8 mm full thread; Ø5.68 mm head; 3 mm head height; 2.5 mm socket; 1.3 mm drive depth; 0.5 mm pitch; DIN 912 | 0.80 g, derived from published 80 g per 100 units | Published head tolerances are +0/−0.36 mm diameter and +0/−0.14 mm height. Threads use their nominal cylindrical collision envelope and the square recess is an intentionally bounded display approximation of the hex socket. | [Supplier/manufacturer product specification](https://www.accu.co.uk/metric-cap-head-screws/386767-SSCF-M3-8-12-9-Z). The page does not provide an available CAD download or an explicit redistribution grant. No Accu CAD or imagery is included. |
 | `propeller-5x4.3x3` | HQProp HQ5X4.3X3V2S-PC | 5-inch diameter, 4.3-inch pitch, 3 blades, Ø12.8 × 6.5 mm hub, Ø5 mm shaft | 3.8 g | No product tolerances or blade airfoil coordinates are published. The visible blade planform is illustrative. Collision uses the full swept disc; the protected disc radius is 66 mm, adding 2.5 mm radial clearance to the exact 63.5 mm nominal radius. | [Manufacturer product/specification page](https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html). The page is copyright HQProp and gives no explicit CAD redistribution grant. No HQProp CAD or imagery is included. |
-| `motor-wiring-corridor` | Reference three-phase routing corridor | Two orthogonal 184 × 6 × 6 mm protected routes connect the motor and central-stack regions; motor source specifies three 20AWG, 150 mm leads | 0 kg because this record is a clearance constraint, not a separate physical BOM item | The 6 mm corridor section and assembly route are conservative design assumptions, not manufacturer dimensions. They deliberately do not claim a resolved harness path or wire mass. | Supported by the [Hobbywing motor lead specification](https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf) and [SpeedyBee stack connection specification](https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/). No external asset is included. |
+| `motor-wiring-corridor` | Reference 3×20AWG motor-lead routing corridor rev 1 | Two orthogonal 184 × 6 × 6 mm protected routes connect the motor and central-stack regions; motor source specifies three 20AWG, 150 mm leads | Positive 38 g source-backed parent motor mass including leads, marked `included-in-parent-motor` and never added again | The 6 mm corridor section and assembly route are conservative design assumptions, not manufacturer dimensions. No independent harness mass is claimed; the positive provenance mass is explicitly non-additive. | Supported by the [Hobbywing motor lead specification](https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf) and [SpeedyBee stack connection specification](https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/). No external asset is included. |
 
 ## Geometry and optimization boundary
 
+- Every assembly `instance.position` is the world location of the component's
+  declared local anchor. Motors use the mount plane at local z=0, screws use the
+  under-head bearing plane, and propellers use the hub mid-plane. Motor graph,
+  display pieces, collisions, mount interfaces, and screw placements use this
+  same convention.
 - The motor graph explicitly includes the outer bell, stator/body, shaft, base,
   named motor-mount interface, four pitch-circle holes, unions, and
   subtractions. The viewer uses the same catalog dimensions to render four
@@ -35,12 +40,14 @@ viewer's established millimetre boundary.
 - Battery, motor, avionics, and fastener collision records are immutable
   component geometry. Their keep-outs are obstacles to generated frame
   material.
-- Each propeller is a visible three-blade component and a full swept-disc
-  collision/protected envelope. Both catalog and assembly mark every propeller
-  instance `protected`; neither blades nor rotor envelopes are optimized frame
-  structure.
-- Wiring corridors are protected constraints with zero attributed component
-  mass. They are not rendered or counted as generated structure.
+- Each propeller is a visible three-blade component alongside a distinct filled
+  66 mm radius × 8.5 mm protected swept volume. Both catalog and assembly mark
+  every propeller instance `protected`; neither blades nor rotor envelopes are
+  optimized frame structure.
+- Wiring corridors are visibly rendered as translucent constraint boxes. They
+  are protected geometry and are never counted or rendered as generated
+  structure; their positive provenance mass is non-additive because it is
+  already included in the published motor mass.
 
 ## Known limits
 

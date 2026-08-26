@@ -26,11 +26,13 @@ const motor: AssemblyVisualPart = {
   label: "East motor",
   appearance: "component",
   kind: "motor",
-  center: [105, 0, 12],
-  radius: 14,
-  height: 19.9,
-  shaftRadius: 2.5,
-  shaftHeight: 12,
+  center: [105, 0, 3],
+  base: { radius: 12, height: 3, centerZ: 1.5 },
+  stator: { radius: 11.25, height: 7.6, centerZ: 6.7 },
+  bell: { radius: 14, height: 17, centerZ: 11.4 },
+  shaft: { radius: 2.5, height: 12.1, centerZ: 25.85 },
+  mountHoles: [],
+  localBounds: { minimum: [-14, -14, 0], maximum: [14, 14, 31.9] },
   movable: true,
 };
 
@@ -52,6 +54,6 @@ it("supports exact world-coordinate placement in millimetres", () => {
   fireEvent.change(screen.getByRole("spinbutton", { name: "Y position" }), { target: { value: "-8" } });
   fireEvent.click(screen.getByRole("button", { name: "Apply exact position" }));
 
-  expect(move).toHaveBeenCalledWith("motor-east", [112, -8, 12]);
+  expect(move).toHaveBeenCalledWith("motor-east", [112, -8, 3]);
   expect(screen.getByText(/world coordinates.*millimetres/i)).toBeVisible();
 });

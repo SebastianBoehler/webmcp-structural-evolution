@@ -36,10 +36,27 @@ export type AssemblyVisualPart = Readonly<{
   | Readonly<{ kind: "box"; size: Vector3Tuple }>
   | Readonly<{ kind: "cylinder"; radius: number; height: number }>
   | Readonly<{ kind: "motor-mount"; radius: number; height: number; boltCircle: number; boltRadius: number }>
-  | Readonly<{ kind: "motor"; radius: number; height: number; shaftRadius: number; shaftHeight: number }>
+  | Readonly<{
+      kind: "motor";
+      base: AxialVisualFeature;
+      stator: AxialVisualFeature;
+      bell: AxialVisualFeature;
+      shaft: AxialVisualFeature;
+      mountHoles: readonly MountHoleVisualFeature[];
+      localBounds: LocalVisualBounds;
+    }>
+  | Readonly<{
+      kind: "fastener";
+      shank: AxialVisualFeature;
+      head: AxialVisualFeature;
+      socketWidth: number;
+      socketDepth: number;
+      localBounds: LocalVisualBounds;
+    }>
   | Readonly<{ kind: "flight-controller"; size: Vector3Tuple }>
   | Readonly<{ kind: "propeller"; radius: number; hubRadius: number; hubHeight: number; bladeCount: number }>
   | Readonly<{ kind: "guard"; radius: number; tubeRadius: number }>
+  | Readonly<{ kind: "protected-disc"; radius: number; height: number }>
   | Readonly<{
       kind: "model";
       assetUrl: string;
@@ -48,6 +65,10 @@ export type AssemblyVisualPart = Readonly<{
     }>
   | Readonly<{ kind: "mesh"; mesh: CadMesh }>
 );
+
+export interface AxialVisualFeature { readonly radius: number; readonly height: number; readonly centerZ: number }
+export interface MountHoleVisualFeature extends AxialVisualFeature { readonly centerX: number; readonly centerY: number }
+export interface LocalVisualBounds { readonly minimum: Vector3Tuple; readonly maximum: Vector3Tuple }
 
 export interface CameraEnvelope {
   readonly target: Vector3Tuple;
@@ -221,6 +242,14 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
   if (!part.id.trim() || !part.selectionId.trim() || !part.label.trim()) {
     throw new RangeError(`${label} requires an id, selection id, and label`);
   }
+  if (part.kind === "motor" || part.kind === "fastener") {
+    part.center.forEach((value, axis) => {
+      const center = bounded(value, `${label} center[${axis}]`);
+      bounds.min[axis] = Math.min(bounds.min[axis], bounded(center + part.localBounds.minimum[axis]!, `${label} minimum[${axis}]`));
+      bounds.max[axis] = Math.max(bounds.max[axis], bounded(center + part.localBounds.maximum[axis]!, `${label} maximum[${axis}]`));
+    });
+    return;
+  }
   const extents = part.kind === "mesh" ? part.mesh.sizeMm
     : part.kind === "box" || part.kind === "model" || part.kind === "flight-controller"
     ? part.size
@@ -228,7 +257,7 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
       ? [part.radius + part.tubeRadius, part.radius + part.tubeRadius, part.tubeRadius]
       : part.kind === "propeller"
         ? [part.radius, part.radius, part.hubHeight / 2]
-        : [part.radius, part.radius, (part.height + (part.kind === "motor" ? part.shaftHeight : 0)) / 2];
+        : [part.radius, part.radius, part.height / 2];
   const half = (part.kind === "box" || part.kind === "model" || part.kind === "mesh" || part.kind === "flight-controller")
     ? extents.map((value, axis) => bounded(value / 2, `${label} half size[${axis}]`))
     : extents.map((value, axis) => bounded(value, `${label} half size[${axis}]`));

@@ -57,11 +57,11 @@ const knownDetails = (part: AssemblyVisualPart | undefined) => {
   };
   if (part.kind === "propeller") return {
     category: "Rotor",
-    manufacturer: "Gemfan",
-    partNumber: "Hurricane 51477",
-    mass: "4.12 g",
-    source: "https://www.gemfanhobby.com/51477-hurricane-pc-3-blade.html",
-    fit: "129.3 mm · M5 hub",
+    manufacturer: "HQProp",
+    partNumber: "HQ5X4.3X3V2S-PC",
+    mass: "3.8 g",
+    source: "https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html",
+    fit: "127 mm · 5 mm hub",
   };
   if (part.id === "frame-core") return {
     category: "Frame interface",

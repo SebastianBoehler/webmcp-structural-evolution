@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { AssemblyVisualPart } from "./render-envelope";
 
 export interface VisualPiece {
+  readonly id?: string;
   readonly geometry: THREE.BufferGeometry;
   readonly color?: number;
   readonly metalness?: number;
@@ -18,26 +19,30 @@ const cylinder = (radius: number, height: number, segments = 48) => {
 };
 
 function motorPieces(part: Extract<AssemblyVisualPart, { kind: "motor" }>): readonly VisualPiece[] {
-  const baseHeight = Math.max(2.4, part.height * 0.22);
-  const bellHeight = part.height - baseHeight;
   const pieces: VisualPiece[] = [
-    { geometry: cylinder(part.radius * 0.92, baseHeight), color: 0x303947, metalness: 0.7, position: [0, 0, -part.height / 2 + baseHeight / 2] },
-    { geometry: cylinder(part.radius, bellHeight), color: 0x657184, metalness: 0.76, position: [0, 0, baseHeight / 2] },
-    { geometry: cylinder(part.radius * 0.78, 1.1), color: 0x252d38, metalness: 0.82, position: [0, 0, part.height / 2 + 0.4] },
-    { geometry: cylinder(part.shaftRadius, part.shaftHeight), color: 0xb8c0ca, metalness: 0.95, position: [0, 0, part.height / 2 + part.shaftHeight / 2] },
-    { geometry: new THREE.TorusGeometry(part.radius * 0.72, 0.65, 8, 48), color: 0x161d26, metalness: 0.5, position: [0, 0, part.height / 2 + 0.95] },
+    { id: "motor-base", geometry: cylinder(part.base.radius, part.base.height), color: 0x303947, metalness: 0.7, position: [0, 0, part.base.centerZ] },
+    { id: "motor-stator", geometry: cylinder(part.stator.radius, part.stator.height), color: 0xb66b32, metalness: 0.42, position: [0, 0, part.stator.centerZ] },
+    { id: "motor-bell", geometry: cylinder(part.bell.radius, part.bell.height), color: 0x657184, metalness: 0.76, opacity: 0.72, position: [0, 0, part.bell.centerZ] },
+    { id: "motor-shaft", geometry: cylinder(part.shaft.radius, part.shaft.height), color: 0xb8c0ca, metalness: 0.95, position: [0, 0, part.shaft.centerZ] },
   ];
-  for (let index = 0; index < 12; index += 1) {
-    const angle = index * Math.PI / 6;
+  part.mountHoles.forEach((hole, index) => {
     pieces.push({
-      geometry: new THREE.BoxGeometry(1.25, 4.6, 1.15),
-      color: 0x1b232d,
-      metalness: 0.25,
-      position: [Math.cos(angle) * part.radius * 0.66, Math.sin(angle) * part.radius * 0.66, part.height / 2 + 1],
-      rotation: [0, 0, angle],
+      id: `motor-mount-hole-${index + 1}`,
+      geometry: new THREE.TorusGeometry(hole.radius, Math.max(0.22, hole.radius * 0.18), 8, 24),
+      color: 0x111820,
+      metalness: 0.3,
+      position: [hole.centerX, hole.centerY, 0.1],
     });
-  }
+  });
   return pieces;
+}
+
+function fastenerPieces(part: Extract<AssemblyVisualPart, { kind: "fastener" }>): readonly VisualPiece[] {
+  return [
+    { id: "fastener-shank", geometry: cylinder(part.shank.radius, part.shank.height), color: 0x7b828b, metalness: 0.92, position: [0, 0, part.shank.centerZ] },
+    { id: "fastener-head", geometry: cylinder(part.head.radius, part.head.height), color: 0x59616b, metalness: 0.92, position: [0, 0, part.head.centerZ] },
+    { id: "fastener-socket", geometry: new THREE.BoxGeometry(part.socketWidth, part.socketWidth, part.socketDepth), color: 0x161a1f, position: [0, 0, -part.head.height + part.socketDepth / 2] },
+  ];
 }
 
 function motorMountPieces(part: Extract<AssemblyVisualPart, { kind: "motor-mount" }>): readonly VisualPiece[] {
@@ -131,7 +136,15 @@ export function geometryPieces(part: Exclude<AssemblyVisualPart, { kind: "model"
     metalness: 0,
     opacity: 0.3,
   }];
+  if (part.kind === "protected-disc") return [{
+    id: "filled-protected-swept-volume",
+    geometry: cylinder(part.radius, part.height, 96),
+    color: 0xc56b3f,
+    metalness: 0,
+    opacity: 0.1,
+  }];
   if (part.kind === "motor") return motorPieces(part);
+  if (part.kind === "fastener") return fastenerPieces(part);
   if (part.kind === "flight-controller") return flightControllerPieces(part);
   return propellerPieces(part);
 }

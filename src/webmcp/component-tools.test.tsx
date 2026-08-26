@@ -65,7 +65,7 @@ test("registers structured component inspection, staging, and visible movement t
     xMm: 118,
     yMm: 14,
   }))).toMatchObject({ status: "moved-visible-layout-stale" });
-  expect(onMove).toHaveBeenCalledWith("motor-east", [118, 14, 12], 7);
+  expect(onMove).toHaveBeenCalledWith("motor-east", [118, 14, 3], 7);
 
   expect(readText(await context.execute("stage_component_import", stagedInput))).toMatchObject({
     stagedImportId: "pending-1",

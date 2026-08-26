@@ -6,6 +6,12 @@ import {
   type ReferenceGeometry,
   type SiVector,
 } from "../samples/reference-drone-catalog";
+import {
+  fastenerRenderContract,
+  motorRenderContract,
+  type AxialFeature,
+  type RenderBounds,
+} from "../samples/reference-drone-render-contract";
 import type { ImportedComponent } from "./component-import";
 
 export type Point3 = readonly [number, number, number];
@@ -13,12 +19,21 @@ export type Point3 = readonly [number, number, number];
 export interface MotorPlacement {
   readonly id: string;
   readonly label: string;
-  readonly center: Point3;
+  readonly anchor: Point3;
   readonly movable: boolean;
 }
 
-const millimetres = (value: number) => value * 1_000;
+const millimetres = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000;
 const viewerPoint = (value: SiVector): Point3 => value.map(millimetres) as unknown as Point3;
+const viewerFeature = (feature: AxialFeature) => ({
+  radius: millimetres(feature.radius),
+  height: millimetres(feature.height),
+  centerZ: millimetres(feature.centerZ),
+});
+const viewerBounds = (bounds: RenderBounds) => ({
+  minimum: viewerPoint(bounds.minimum),
+  maximum: viewerPoint(bounds.maximum),
+});
 const catalogComponent = (id: string): ReferenceDroneComponent => {
   const component = REFERENCE_DRONE_CATALOG.find((candidate) => candidate.id === id);
   if (!component) throw new Error(`Reference drone component missing: ${id}`);
@@ -42,23 +57,19 @@ const fastenerComponent = catalogComponent("fastener-m3x8");
 const stackComponent = catalogComponent("fc-esc-stack-30x30");
 const batteryComponent = catalogComponent("battery-6s-1550");
 const wiringComponent = catalogComponent("motor-wiring-corridor");
-const motorGeometry = componentGeometry(motorComponent, "parametric");
-const fastenerGeometry = componentGeometry(fastenerComponent, "parametric");
 const propellerGeometry = componentGeometry(propellerComponent, "swept-rotor");
 const stackGeometry = componentGeometry(stackComponent, "stack");
 const batteryGeometry = componentGeometry(batteryComponent, "box");
 const wiringGeometry = componentGeometry(wiringComponent, "corridor");
-if (motorGeometry.display.kind !== "motor") throw new Error("Reference motor display geometry is invalid");
-if (fastenerGeometry.display.kind !== "fastener") throw new Error("Reference fastener display geometry is invalid");
-const motorDisplay = motorGeometry.display;
-const fastenerDisplay = fastenerGeometry.display;
+const motorDisplay = motorRenderContract(motorComponent);
+const fastenerDisplay = fastenerRenderContract(fastenerComponent);
 
 const motorLabels: Readonly<Record<string, string>> = Object.freeze({
   "motor-east": "East motor", "motor-north": "North motor", "motor-west": "West motor", "motor-south": "South motor",
 });
 export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze(referenceDroneAssembly.instances
   .filter(({ componentId }) => componentId === motorComponent.id)
-  .map(({ id, position }) => ({ id, label: motorLabels[id]!, center: viewerPoint(position), movable: true })));
+  .map(({ id, position }) => ({ id, label: motorLabels[id]!, anchor: viewerPoint(position), movable: true })));
 
 export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze({
   "flight-controller": viewerPoint(assemblyInstance("fc-esc-stack").position),
@@ -66,15 +77,19 @@ export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze
 });
 
 function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
-  const [x, y, z] = motor.center;
+  const [x, y, z] = motor.anchor;
   const dragGroup = motor.id;
-  const display = motorDisplay;
   const propeller = propellerGeometry;
-  const fastener = fastenerDisplay;
-  const propellerOffset = millimetres(
-    assemblyInstance(`${motor.id}-propeller`).position[2] - assemblyInstance(motor.id).position[2],
-  );
-  const fastenerCenterZ = z - millimetres(display.bodyHeight / 2 + (fastener.shankLength - fastener.headHeight) / 2);
+  const originalMotor = assemblyInstance(motor.id);
+  const propellerInstance = assemblyInstance(`${motor.id}-propeller`);
+  const propellerOffset = viewerPoint(propellerInstance.position.map(
+    (value, axis) => value - originalMotor.position[axis]!,
+  ) as unknown as SiVector);
+  const protectedRotor = propellerComponent.protectedEnvelopes[0]!;
+  if (protectedRotor.kind !== "swept-disc" || protectedRotor.radius === undefined || protectedRotor.height === undefined) {
+    throw new Error("Reference propeller protected swept volume is invalid");
+  }
+  const motorFasteners = referenceDroneAssembly.instances.filter(({ id }) => id.startsWith(`${motor.id}-fastener-`));
   return [
     {
       id: `${motor.id}-mount`,
@@ -82,11 +97,11 @@ function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
       label: `${motor.label} load-bearing plate`,
       appearance: "generated",
       kind: "motor-mount",
-      center: [x, y, 0],
+      center: [x, y, z - 3],
       radius: 17.5,
       height: 6,
-      boltCircle: millimetres(display.mountPitchCircle / 2),
-      boltRadius: millimetres(fastener.shankRadius),
+      boltCircle: Math.hypot(millimetres(motorDisplay.mountHoles[0]!.centerX), millimetres(motorDisplay.mountHoles[0]!.centerY)),
+      boltRadius: millimetres(fastenerDisplay.shank.radius),
       dragGroup,
     },
     {
@@ -95,11 +110,15 @@ function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
       label: motor.label,
       appearance: "component",
       kind: "motor",
-      center: motor.center,
-      radius: millimetres(display.radius),
-      height: millimetres(display.bodyHeight),
-      shaftRadius: millimetres(display.shaftRadius),
-      shaftHeight: millimetres(display.shaftHeight),
+      center: motor.anchor,
+      base: viewerFeature(motorDisplay.base),
+      stator: viewerFeature(motorDisplay.stator),
+      bell: viewerFeature(motorDisplay.bell),
+      shaft: viewerFeature(motorDisplay.shaft),
+      mountHoles: motorDisplay.mountHoles.map((hole) => ({
+        ...viewerFeature(hole), centerX: millimetres(hole.centerX), centerY: millimetres(hole.centerY),
+      })),
+      localBounds: viewerBounds(motorDisplay.localBounds),
       movable: motor.movable,
       dragGroup,
     },
@@ -109,7 +128,7 @@ function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
       label: `${motor.label} propeller`,
       appearance: "component",
       kind: "propeller",
-      center: [x, y, z + propellerOffset],
+      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
       radius: millimetres(propeller.radius),
       hubRadius: millimetres(propeller.hubRadius),
       hubHeight: millimetres(propeller.hubHeight),
@@ -118,27 +137,46 @@ function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
       dragGroup,
     },
     {
+      id: `${motor.id}-propeller-swept-volume`,
+      selectionId: `${motor.id}-propeller-swept-volume`,
+      label: `${motor.label} filled protected rotor swept volume`,
+      appearance: "constraint",
+      kind: "protected-disc",
+      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
+      radius: millimetres(protectedRotor.radius),
+      height: millimetres(protectedRotor.height),
+      dragGroup,
+    },
+    {
       id: `${motor.id}-guard`,
       selectionId: `${motor.id}-guard`,
       label: `${motor.label} rotor safety zone`,
       appearance: "constraint",
       kind: "guard",
-      center: [x, y, z + propellerOffset],
-      radius: millimetres(propellerComponent.protectedEnvelopes[0]!.radius!),
+      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
+      radius: millimetres(protectedRotor.radius),
       tubeRadius: 1.15,
       dragGroup,
     },
-    ...motorComponent.interfaces.filter(({ kind }) => kind === "mount").map((mount, index): AssemblyVisualPart => ({
-      id: `${motor.id}-fastener-${index + 1}`,
-      selectionId: `${motor.id}-fastener-${index + 1}`,
-      label: `${motor.label} M3x8 fastener ${index + 1}`,
-      appearance: "component",
-      kind: "cylinder",
-      center: [x + millimetres(mount.position[0]), y + millimetres(mount.position[1]), fastenerCenterZ],
-      radius: millimetres(fastener.headRadius),
-      height: millimetres(fastener.shankLength + fastener.headHeight),
-      dragGroup,
-    })),
+    ...motorFasteners.map((instance, index): AssemblyVisualPart => {
+      const offset = viewerPoint(instance.position.map(
+        (value, axis) => value - originalMotor.position[axis]!,
+      ) as unknown as SiVector);
+      return {
+        id: instance.id,
+        selectionId: instance.id,
+        label: `${motor.label} M3x8 fastener ${index + 1}`,
+        appearance: "component",
+        kind: "fastener",
+        center: [x + offset[0], y + offset[1], z + offset[2]],
+        shank: viewerFeature(fastenerDisplay.shank),
+        head: viewerFeature(fastenerDisplay.head),
+        socketWidth: millimetres(fastenerDisplay.socketWidth),
+        socketDepth: millimetres(fastenerDisplay.socketDepth),
+        localBounds: viewerBounds(fastenerDisplay.localBounds),
+        dragGroup,
+      };
+    }),
   ];
 }
 
