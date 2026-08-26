@@ -44,11 +44,18 @@ function collisionConflicts(components: readonly PositionedComponent[]) {
   const conflicts: AssemblyConflict[] = [];
   for (let left = 0; left < components.length; left += 1) for (let right = left + 1; right < components.length; right += 1) {
     const first = components[left]!, second = components[right]!;
-    if (!first.component || !second.component || !collides(first, second)) continue;
+    if (!first.component || !second.component || intentionalMotorMate(first, second) || !collides(first, second)) continue;
     const [a, b] = [first.instance.instanceId, second.instance.instanceId].sort();
     conflicts.push({ id: `collision:${a}:${b}`, kind: "collision", message: `Collision between ${a} and ${b}`, instanceIds: [a, b] });
   }
   return conflicts;
+}
+
+function intentionalMotorMate(left: PositionedComponent, right: PositionedComponent) {
+  const motor = left.component?.category === "motor" ? left : right.component?.category === "motor" ? right : undefined;
+  const attached = motor === left ? right : left;
+  if (!motor || !attached.component || !["propeller", "fastener"].includes(attached.component.category)) return false;
+  return attached.instance.instanceId.startsWith(`${motor.instance.instanceId}-`);
 }
 
 function stockConflicts(draft: AssemblyDraft, inventory: readonly InventoryItem[]) {

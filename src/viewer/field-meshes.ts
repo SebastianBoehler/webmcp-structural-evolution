@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { MarchingCubes } from "three/examples/jsm/objects/MarchingCubes.js";
 
 import type { AlternativeLayer } from "./alternative-instances";
 import type { CleanupLedger } from "./cleanup-ledger";
 import type { PackedInstances, VoxelGrid } from "./field-instances";
+import { createTopologySurface } from "./topology-surface";
 
 export interface FieldMeshSet {
   readonly meshes: readonly THREE.InstancedMesh[];
@@ -14,10 +14,7 @@ interface MeshOwnership extends Pick<CleanupLedger, "own"> {
   attach(mesh: THREE.Object3D): void;
 }
 
-function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership): MarchingCubes {
-  const { width, height, depth } = grid.dimensions;
-  if (density.length !== width * height * depth) throw new Error("Density surface does not match the topology grid.");
-  const resolution = Math.max(width, height, depth) + 4;
+function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership) {
   const material = new THREE.MeshStandardMaterial({
     color: 0x5da9d6,
     metalness: 0.08,
@@ -25,34 +22,8 @@ function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshO
     side: THREE.DoubleSide,
   });
   ownership.own(() => material.dispose());
-  const surface = new MarchingCubes(resolution, material, false, false, 180_000);
-  surface.name = "verified-topology-surface";
-  surface.isolation = 0.32;
-  const xOffset = Math.floor((resolution - width) / 2);
-  const yOffset = Math.floor((resolution - height) / 2);
-  const zOffset = Math.floor((resolution - depth) / 2);
-  for (let z = 0; z < depth; z += 1) {
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        const source = x + width * (y + height * z);
-        const target = x + xOffset + resolution * (y + yOffset + resolution * (z + zOffset));
-        surface.field[target] = density[source]!;
-      }
-    }
-  }
-  surface.update();
+  const surface = createTopologySurface(grid, density, material);
   ownership.own(() => surface.geometry.dispose());
-  surface.scale.set(
-    width * grid.cellSize[0] * resolution / (2 * width),
-    height * grid.cellSize[1] * resolution / (2 * height),
-    depth * grid.cellSize[2] * resolution / (2 * depth),
-  );
-  surface.position.set(
-    grid.anchor.position[0] + width * grid.cellSize[0] / 2,
-    grid.anchor.position[1] + height * grid.cellSize[1] / 2,
-    grid.anchor.position[2] + depth * grid.cellSize[2] / 2,
-  );
-  surface.quaternion.fromArray(grid.anchor.orientation);
   surface.renderOrder = 1;
   ownership.attach(surface);
   return surface;

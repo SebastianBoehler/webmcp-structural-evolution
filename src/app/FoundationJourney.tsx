@@ -19,6 +19,7 @@ import { ExperimentRail } from "./ExperimentRail";
 import { InspectorPanel } from "./InspectorPanel";
 import { ImportReview } from "./ImportReview";
 import { ReceiptLedger } from "./ReceiptLedger";
+import { TopologyResultPanel } from "./TopologyResultPanel";
 import { useProjectState } from "./useProjectState";
 import { useTheme } from "./useTheme";
 import { WorkbenchDrawer, type DrawerView } from "./WorkbenchDrawer";
@@ -29,7 +30,6 @@ import { foundationView } from "./foundation-view";
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
 const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
 const initialAcceptedRevision = fixture.assembly.revision;
-
 const probeCopy: Record<ProbeVariant, { hypothesis: string; prediction: string }> = {
   balanced: {
     hypothesis: "Balance frame stiffness and material use across hover and agility loads",
@@ -50,7 +50,6 @@ export interface FoundationJourneyProps {
   readonly compute?: (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
   readonly viewerEnvironment?: FieldViewerEnvironment;
 }
-
 export function FoundationJourney({ capability, compute, viewerEnvironment }: FoundationJourneyProps) {
   const { state, services, experimentRail } = useProjectState({
     contextRevision: fixture.study.revision,
@@ -74,7 +73,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
 
-  const { accepted, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
+  const { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
   const latestVariant = (variant: ProbeVariant) => [...currentBranches].reverse().find(
     (branch) => branch.variant === variant,
   );
@@ -281,6 +280,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               selected={selectedAlternative}
               onSelect={setSelectedAlternative}
             />}
+            {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} />}
           </div>
           <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
         </section>
