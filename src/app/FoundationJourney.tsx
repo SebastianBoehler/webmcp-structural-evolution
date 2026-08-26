@@ -63,6 +63,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   });
   const { theme, setTheme } = useTheme();
   const workspace = useAssemblyWorkspace();
+  const activityReceipts = [...state.receipts, ...workspace.receipts].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const [mode, setMode] = useState<AlternativeMode>("overlay");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
   const [selectedPart, setSelectedPart] = useState("arm-design-region");
@@ -171,8 +172,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     {
       id: "history" as const,
       label: "History",
-      count: state.receipts.length,
-      content: <ReceiptLedger receipts={state.receipts} />,
+      count: activityReceipts.length,
+      content: <ReceiptLedger receipts={activityReceipts} />,
     },
     {
       id: "agents" as const,
@@ -212,9 +213,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
       {error && <p className="global-error" role="alert">{error}</p>}
       <div className="workbench-stage">
         <ComponentBrowser
-          selectedId={selectedPart}
-          open={componentsOpen}
-          parts={workspace.parts}
+          selectedId={selectedPart} open={componentsOpen} parts={workspace.parts}
+          revision={workspace.revision} conflictCount={workspace.conflicts.length}
           onSelect={(id) => { setSelectedPart(id); setComponentsOpen(false); }}
           onImportFile={async (file) => {
             try { setSelectedPart(await workspace.importFile(file)); }
@@ -269,9 +269,9 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             {workspace.pending && (
               <ImportReview
                 pending={workspace.pending}
-                onApprove={() => {
+                onApprove={async () => {
                   setSelectedPart(workspace.pending!.id);
-                  workspace.approveImport();
+                  await workspace.approveImport();
                 }}
                 onReject={workspace.rejectImport}
               />
@@ -285,10 +285,9 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
         </section>
         <InspectorPanel
-          selectedId={selectedPart}
-          context={state.context}
-          parts={workspace.parts}
-          imports={workspace.imports}
+          selectedId={selectedPart} context={state.context}
+          parts={workspace.parts} imports={workspace.imports}
+          assembly={workspace.draft} catalog={workspace.catalog} conflicts={workspace.conflicts}
           layoutState={workspace.layoutState}
           open={inspectorOpen}
           onClose={() => setInspectorOpen(false)}

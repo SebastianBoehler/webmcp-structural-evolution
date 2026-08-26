@@ -1,4 +1,6 @@
 import type { ImportedComponent } from "../assembly/component-import";
+import type { AssemblyDraft } from "../domain/assembly-model";
+import type { ComponentDefinition } from "../domain/component-model";
 import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 
@@ -7,6 +9,9 @@ export interface InspectorPanelProps {
   readonly context: FoundationContextSnapshot;
   readonly parts: readonly AssemblyVisualPart[];
   readonly imports: readonly ImportedComponent[];
+  readonly assembly?: Pick<AssemblyDraft, "components">;
+  readonly catalog?: readonly ComponentDefinition[];
+  readonly conflicts?: readonly { readonly id: string; readonly message?: string; readonly instanceIds?: readonly string[] }[];
   readonly layoutState: "verified" | "dragging" | "changed";
   readonly open: boolean;
   readonly onClose: () => void;
@@ -78,6 +83,9 @@ export function InspectorPanel({
   context,
   parts,
   imports,
+  assembly,
+  catalog = [],
+  conflicts = [],
   layoutState,
   open,
   onClose,
@@ -86,7 +94,16 @@ export function InspectorPanel({
 }: InspectorPanelProps) {
   const part = parts.find((candidate) => candidate.selectionId === selectedId);
   const imported = imports.find((candidate) => candidate.id === selectedId);
-  const details = knownDetails(part);
+  const instance = assembly?.components.find(({ instanceId }) => instanceId === selectedId);
+  const definition = catalog.find(({ revision }) => revision === instance?.componentRevision);
+  const canonicalDetails = definition ? {
+    category: definition.category.replaceAll("-", " "), manufacturer: definition.manufacturer,
+    partNumber: definition.partNumber, mass: `${definition.mass.value * 1_000} g`,
+    source: definition.provenance.sources[0]?.reference,
+    fit: `${definition.mountInterfaces.length + definition.interfaces.length} declared interfaces`,
+  } : undefined;
+  const details = canonicalDetails ?? knownDetails(part);
+  const selectedConflicts = conflicts.filter(({ instanceIds }) => instanceIds?.includes(selectedId));
   const isRegion = selectedId === "arm-design-region";
   const isConstraint = part?.appearance === "constraint";
 
@@ -120,6 +137,10 @@ export function InspectorPanel({
       {isConstraint && <p className="inspector-note">This safety zone follows its motor and remains excluded from generated structures.</p>}
       {part?.movable && <p className="inspector-note">Drag this component in the viewport. Its rotor and protected volume move with it.</p>}
       {part?.movable && <PositionEditor part={part} onMove={onMovePart} />}
+      {selectedConflicts.length > 0 && <section className="inspector-note" aria-label="Selection conflicts">
+        <strong>{selectedConflicts.length} unresolved {selectedConflicts.length === 1 ? "conflict" : "conflicts"}</strong>
+        {selectedConflicts.map(({ id, message }) => <p key={id}>{message ?? id}</p>)}
+      </section>}
 
       {(details?.source || imported?.sourceUrl) && (
         <a className="source-link" href={details?.source ?? imported?.sourceUrl} target="_blank" rel="noreferrer">Open component source</a>

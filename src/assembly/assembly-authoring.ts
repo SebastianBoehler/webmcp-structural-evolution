@@ -34,7 +34,9 @@ export interface AssemblyAuthoringState {
   readonly branch: AssemblyBranch;
 }
 export type AssemblyAction =
+  | { readonly kind: "stage"; readonly parentRevision: string; readonly component: ComponentDefinition }
   | { readonly kind: "place"; readonly parentRevision: string; readonly instance: ComponentInstance }
+  | { readonly kind: "move"; readonly parentRevision: string; readonly instanceId: string; readonly transform: ComponentInstance["transform"] }
   | { readonly kind: "constrain"; readonly parentRevision: string; readonly constraint: AssemblyConstraint }
   | { readonly kind: "protect"; readonly parentRevision: string; readonly region: ProtectedRegion };
 
@@ -66,9 +68,23 @@ export async function applyAssemblyAction(
   action: AssemblyAction,
 ): Promise<AssemblyAuthoringState> {
   if (action.parentRevision !== state.revision) throw new Error("Assembly action parent revision is stale");
+  if (action.kind === "stage") return stage(state, action.component);
   if (action.kind === "place") return place(state, action.instance);
+  if (action.kind === "move") return move(state, action.instanceId, action.transform);
   if (action.kind === "constrain") return constrain(state, action.constraint);
   return protect(state, action.region);
+}
+
+async function stage(state: AssemblyAuthoringState, component: ComponentDefinition) {
+  if (state.catalog.some(({ revision }) => revision === component.revision)) throw new Error("Component revision is already staged in the catalog");
+  return freezeState(state.draft, [...state.catalog, component], state.constraints, state.protectedRegions, state.revision);
+}
+
+async function move(state: AssemblyAuthoringState, instanceId: string, transform: ComponentInstance["transform"]) {
+  if (!state.draft.components.some((instance) => instance.instanceId === instanceId)) throw new Error(`Assembly instance is absent: ${instanceId}`);
+  const components = state.draft.components.map((instance) => instance.instanceId === instanceId ? { ...instance, transform } : instance);
+  const draft = await reifyDraft(state.draft, { components });
+  return freezeState(draft, state.catalog, state.constraints, state.protectedRegions, state.revision);
 }
 
 export function solveAssemblyConstraints(state: AssemblyAuthoringState): SolvedAssembly {
@@ -224,7 +240,7 @@ async function freezeState(
     catalogRevisions: catalog.map(({ revision: value }) => value).sort(),
     constraints: canonicalConstraints, protectedRegions: canonicalRegions,
   });
-  return freezeSnapshot({ draft, catalog: [...catalog], constraints: canonicalConstraints, protectedRegions: canonicalRegions, revision,
+  return freezeSnapshot({ draft, catalog: [...catalog].sort((left, right) => left.revision.localeCompare(right.revision)), constraints: canonicalConstraints, protectedRegions: canonicalRegions, revision,
     branch: { status: "staged", parentRevision, revision } });
 }
 

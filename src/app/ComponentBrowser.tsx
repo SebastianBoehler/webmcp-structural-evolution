@@ -6,12 +6,14 @@ export interface ComponentBrowserProps {
   readonly selectedId: string;
   readonly open: boolean;
   readonly parts: readonly AssemblyVisualPart[];
+  readonly revision?: string;
+  readonly conflictCount?: number;
   readonly onSelect: (componentId: string) => void;
   readonly onImportFile: (file: File) => void | Promise<void>;
   readonly onClose: () => void;
 }
 
-export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFile, onClose }: ComponentBrowserProps) {
+export function ComponentBrowser({ selectedId, open, parts, revision, conflictCount = 0, onSelect, onImportFile, onClose }: ComponentBrowserProps) {
   const [query, setQuery] = useState("");
   const [importError, setImportError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,7 +33,7 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
   return (
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
       <div className="panel-heading">
-        <div><h2>Assembly</h2><p>Quadrotor frame</p></div>
+        <div><h2>Assembly</h2><p>{revision ? `Staged revision ${revision.slice(0, 8)}` : "Quadrotor frame"}</p></div>
         <button className="icon-button mobile-only" type="button" onClick={onClose} aria-label="Close components">×</button>
       </div>
       <label className="search-field">
@@ -82,6 +84,7 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
       >
         <span>Component library</span>
         <strong>{components.length} placed</strong>
+        {revision ? <p>{conflictCount === 0 ? "No unresolved assembly conflicts." : `${conflictCount} unresolved assembly conflicts.`}</p> : null}
         <p>Drop a trusted local ZIP package, STEP, STP, GLB, or glTF. Files stay local; package integrity is verified before use.</p>
         {importError ? <p role="alert">{importError}</p> : null}
         <button type="button" onClick={() => inputRef.current?.click()}>Import component file</button>

@@ -1,12 +1,22 @@
+import { useState } from "react";
+
 import type { PendingComponentImport } from "../assembly/component-import";
 
 export interface ImportReviewProps {
   readonly pending: PendingComponentImport;
-  readonly onApprove: () => void;
+  readonly onApprove: () => void | Promise<void | string | undefined>;
   readonly onReject: () => void;
 }
 
 export function ImportReview({ pending, onApprove, onReject }: ImportReviewProps) {
+  const [approving, setApproving] = useState(false);
+  const [error, setError] = useState<string>();
+  const approve = async () => {
+    setApproving(true); setError(undefined);
+    try { await onApprove(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setApproving(false); }
+  };
   return (
     <section className="import-review" aria-labelledby="import-review-title">
       <div>
@@ -19,9 +29,10 @@ export function ImportReview({ pending, onApprove, onReject }: ImportReviewProps
         <div><dt>Mass</dt><dd>{pending.massG} g</dd></div>
       </dl>
       <p className="import-review__boundary">The agent staged this file. Approval adds it as unverified reference geometry; it does not certify fit or loads.</p>
+      {error ? <p role="alert">{error}</p> : null}
       <div className="import-review__actions">
-        <button type="button" onClick={onReject}>Reject</button>
-        <button className="primary-action" type="button" onClick={onApprove}>Add to assembly</button>
+        <button type="button" disabled={approving} onClick={onReject}>Reject</button>
+        <button className="primary-action" type="button" disabled={approving} onClick={() => void approve()}>{approving ? "Adding…" : "Add to assembly"}</button>
       </div>
     </section>
   );

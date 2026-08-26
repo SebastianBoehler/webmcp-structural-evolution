@@ -18,6 +18,13 @@ import {
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { ImportedComponent } from "./component-import";
 
+export {
+  INITIAL_DRONE_INVENTORY,
+  initialDroneWorkspace,
+  renderPartsForAssembly,
+  type ComponentRenderResource,
+} from "./assembly-workspace-model";
+
 export type Point3 = readonly [number, number, number];
 export interface MotorPlacement {
   readonly id: string;

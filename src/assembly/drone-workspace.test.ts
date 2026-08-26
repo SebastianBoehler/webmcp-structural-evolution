@@ -1,11 +1,16 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { defineComponent } from "../domain/component-model";
 import { referenceDroneAssembly } from "../samples/reference-drone-assembly";
+import { referenceComponent } from "../samples/reference-drone-catalog";
 
 const step = vi.hoisted(() => ({ decode: vi.fn() }));
 const packages = vi.hoisted(() => ({ parse: vi.fn() }));
 vi.mock("./step-import", () => ({ decodeStepFile: step.decode }));
-vi.mock("./component-package", () => ({ parseComponentPackage: packages.parse }));
+vi.mock("./component-package", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./component-package")>(),
+  parseComponentPackage: packages.parse,
+}));
 
 import { droneAssemblyVisuals, INITIAL_MOTORS } from "./drone-workspace";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
@@ -61,11 +66,11 @@ describe("drone assembly workspace", () => {
     expect(parts.find(({ id }) => id === "arm-design-region")?.appearance).toBe("design-region");
   });
 
-  it("moves a motor and every attached visual while invalidating prior layout evidence", () => {
+  it("moves a motor and every attached visual while invalidating prior layout evidence", async () => {
     const view = renderHook(() => useAssemblyWorkspace());
     const before = view.result.current.parts.filter(({ dragGroup }) => dragGroup === "motor-east");
 
-    act(() => view.result.current.movePart("motor-east", [118, 14, 3]));
+    await act(() => view.result.current.movePart("motor-east", [118, 14, 3]));
 
     const after = view.result.current.parts.filter(({ dragGroup }) => dragGroup === "motor-east");
     expect(after).toHaveLength(9);
@@ -104,14 +109,14 @@ describe("drone assembly workspace", () => {
     expect(viewerVolumes).toEqual(solverVolumes);
   });
 
-  it("treats a propeller as a visible handle for its whole motor group", () => {
+  it("treats a propeller as a visible handle for its whole motor group", async () => {
     const propeller = droneAssemblyVisuals(INITIAL_MOTORS, []).find(
       ({ id }) => id === "motor-east-propeller",
     );
     expect(propeller).toMatchObject({ movable: true, dragGroup: "motor-east" });
 
     const view = renderHook(() => useAssemblyWorkspace());
-    act(() => view.result.current.movePart("motor-east-propeller", [118, 14, 26.15]));
+    await act(() => view.result.current.movePart("motor-east-propeller", [118, 14, 26.15]));
     expect(view.result.current.motors.find(({ id }) => id === "motor-east")?.anchor).toEqual([118, 14, 3]);
   });
 
@@ -137,30 +142,32 @@ describe("drone assembly workspace", () => {
     expect(view.result.current.parts.find(({ id }) => id === importedId)?.kind).toBe("mesh");
   });
 
-  it("rejects agent moves made against stale layout state", () => {
+  it("rejects agent moves made against stale layout state", async () => {
     const view = renderHook(() => useAssemblyWorkspace());
-    act(() => view.result.current.movePart("motor-east", [112, 0, 12], 1));
+    await act(() => view.result.current.movePart("motor-east", [112, 0, 12], 1));
 
     expect(() => view.result.current.movePart("motor-east", [120, 0, 12], 1)).toThrow(/layout is stale/i);
   });
 
   it("routes a trusted local ZIP through package verification before staging its display asset", async () => {
+    const source = referenceComponent("body-interface");
+    const { revision: _revision, ...definition } = source;
+    const packagedComponent = await defineComponent({
+      ...definition,
+      id: "verified-motor",
+      manufacturer: "Verified",
+      partNumber: "MOTOR-1",
+      mass: { value: 0.04, unit: "kg" },
+      envelope: {
+        kind: "box", id: "verified-envelope", center: definition.envelope.center,
+        size: { x: { value: 0.03, unit: "m" }, y: { value: 0.03, unit: "m" }, z: { value: 0.02, unit: "m" } },
+        orientation: definition.envelope.orientation,
+      },
+      geometry: { kind: "asset", assetId: "a".repeat(64), mediaType: "model/gltf-binary", units: "m" },
+    });
     packages.parse.mockResolvedValueOnce({
       manifest: {
-        component: {
-          id: "verified-motor",
-          category: "motor",
-          manufacturer: "Verified",
-          partNumber: "MOTOR-1",
-          mass: { value: 0.04, unit: "kg" },
-          envelope: {
-            kind: "box",
-            center: { x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" } },
-            size: { x: { value: 0.03, unit: "m" }, y: { value: 0.03, unit: "m" }, z: { value: 0.02, unit: "m" } },
-          },
-          geometry: { kind: "asset", assetId: "a".repeat(64), mediaType: "model/gltf-binary", units: "m" },
-          provenance: { sources: [{ reference: "https://example.com/motor" }] },
-        },
+        component: packagedComponent,
         assets: [{ path: "assets/motor.glb", digest: "a".repeat(64), mediaType: "model/gltf-binary", units: "m", role: "display" }],
       },
       assets: { "assets/motor.glb": new Uint8Array([1, 2, 3]) },
