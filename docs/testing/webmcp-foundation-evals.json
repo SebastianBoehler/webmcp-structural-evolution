@@ -1,0 +1,75 @@
+[
+  {
+    "name": "Direct exact-context inspection",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Inspect the exact current foundation design context and tell me what actions are valid next."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "inspect_design_context",
+        "arguments": { "scope": "current" }
+      }
+    ]
+  },
+  {
+    "name": "Ambiguous context question selects inspection",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "What exact part and locks are we looking at, and is any prior plan stale?"
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "inspect_design_context",
+        "arguments": { "scope": "current" }
+      }
+    ]
+  },
+  {
+    "name": "Ordered verified sibling comparison",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Run two bounded deterministic foundation probes from the exact current revision, then compare only their measured verification evidence."
+      }
+    ],
+    "expectedCall": [
+      {
+        "ordered": [
+          {
+            "functionName": "run_foundation_probe",
+            "arguments": {
+              "parentRevision": "ed4e7346fcf28869285e565177935a2539886cd1c2f07fa6a0b2a64499da21c1",
+              "variant": "baseline",
+              "hypothesis": "Establish the deterministic reference field",
+              "prediction": "Verification should pass with zero L2 mismatch"
+            }
+          },
+          {
+            "functionName": "run_foundation_probe",
+            "arguments": {
+              "parentRevision": "ed4e7346fcf28869285e565177935a2539886cd1c2f07fa6a0b2a64499da21c1",
+              "variant": "edge-biased",
+              "hypothesis": "Exercise the edge-biased input distribution",
+              "prediction": "Verification should pass within the timing budget"
+            }
+          },
+          {
+            "functionName": "compare_foundation_probes",
+            "arguments": {
+              "leftRevision": "8080ca5d9644cb9b2ebf84981eb34dc89d73563f0e2a33ac1ecae9bec560ae5b",
+              "rightRevision": "a655af355ec4c207db22f725e8ee649fdafc19cdda7d18b4a6748de18ef7637e"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

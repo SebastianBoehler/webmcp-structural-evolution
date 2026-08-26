@@ -1,4 +1,7 @@
-import { Component, type ErrorInfo, type JSX, type ReactNode } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type JSX, type ReactNode } from "react";
+
+import { detectWebGpu, type GpuCapability } from "../gpu/capabilities";
+import { FoundationJourney } from "./FoundationJourney";
 
 type ErrorBoundaryProps = { children: ReactNode };
 type ErrorBoundaryState = { hasError: boolean };
@@ -22,28 +25,23 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export function App(): JSX.Element {
+  const [capability, setCapability] = useState<GpuCapability>({
+    status: "unavailable",
+    code: "api-unavailable",
+    message: "Checking the target browser for WebGPU…",
+  });
+
+  useEffect(() => {
+    let active = true;
+    void detectWebGpu().then((result) => {
+      if (active) setCapability(result);
+    });
+    return () => { active = false; };
+  }, []);
+
   return (
     <ErrorBoundary>
-      <main className="workbench">
-        <header className="workbench__header">
-          <p className="eyebrow">WebGPU · Rust/Wasm · WebMCP</p>
-          <h1>Structural Evolution</h1>
-          <p className="lede">A browser workbench for inspecting and evolving physical-system structure.</p>
-        </header>
-
-        <section aria-labelledby="foundation-status" className="capability-panel">
-          <div>
-            <p className="eyebrow">Foundation status</p>
-            <h2 id="foundation-status">Runtime capability probe</h2>
-          </div>
-          <dl className="capability-list">
-            <div><dt>WebGPU</dt><dd>Pending browser probe</dd></div>
-            <div><dt>Wasm reference</dt><dd>Awaiting build</dd></div>
-            <div><dt>WebMCP</dt><dd>Not connected</dd></div>
-          </dl>
-          <button type="button" disabled>Run foundation probe</button>
-        </section>
-      </main>
+      <FoundationJourney capability={capability} />
     </ErrorBoundary>
   );
 }
