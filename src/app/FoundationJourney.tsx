@@ -14,6 +14,8 @@ import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer"
 import type { AlternativeMode } from "../viewer/alternative-instances";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
+import { FlightSimulationPanel } from "../simulation/FlightSimulationPanel";
+import { createFlightFrameChannel } from "../simulation/flight-frame-channel";
 import { ComponentBrowser } from "./ComponentBrowser";
 import { AlternativeSelector } from "./AlternativeSelector";
 import { EvidencePanel } from "./EvidencePanel";
@@ -77,8 +79,13 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const [selectedPart, setSelectedPart] = useState("arm-design-region");
   const [showConstraints, setShowConstraints] = useState(false);
   const [showComponents, setShowComponents] = useState(true);
+  const [simulationActive, setSimulationActive] = useState(false);
+  const flightFrameChannel = useMemo(createFlightFrameChannel, []);
+  const [droneOnly, setDroneOnly] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState<DrawerView>();
   const [componentsOpen, setComponentsOpen] = useState(false);
+  const [componentsCollapsed, setComponentsCollapsed] = useState(false);
+  const [analysisDockOpen, setAnalysisDockOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
@@ -165,14 +172,19 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
       (showConstraints || part.appearance !== "constraint")
       && (showComponents || part.appearance !== "component")
       && (viewerCurrent === null || part.appearance !== "design-region"));
-    if (!viewerCurrent || analysisLayer !== "loads") return parts;
+    if (!viewerCurrent || (analysisLayer !== "loads" && !simulationActive)) return parts;
     const loadVectors: readonly AssemblyVisualPart[] = workspace.motors.map((motor) => ({
       id: `${motor.id}-load-vector`, selectionId: motor.id, label: `${motor.label} 18 N thrust load`,
       appearance: "generated", kind: "load-vector", center: motor.anchor,
       forceN: [0, 0, -18], length: 28,
     }));
     return [...parts, ...loadVectors];
-  }, [analysisLayer, showComponents, showConstraints, viewerCurrent, workspace.motors, workspace.parts]);
+  }, [analysisLayer, showComponents, showConstraints, simulationActive, viewerCurrent, workspace.motors, workspace.parts]);
+  const flightMotors = useMemo(() => workspace.motors.map((motor, index) => ({
+    id: motor.id,
+    centerM: liveTopology.input.motorMounts[index]!.centerM,
+  })), [liveTopology, workspace.motors]);
+  const handleFlightFrame = useCallback((frame: Parameters<typeof flightFrameChannel.emit>[0]) => flightFrameChannel.emit(frame), [flightFrameChannel]);
   const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
     workspace.movePart(id, center);
   }, [workspace.movePart]);
@@ -229,11 +241,14 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         onPrimary={runPrimary}
         onCancel={() => void cancel()}
         onThemeChange={setTheme}
-        onOpenComponents={() => setComponentsOpen(true)}
+        onOpenComponents={() => {
+          setComponentsCollapsed(false);
+          setComponentsOpen(true);
+        }}
         onOpenInspector={() => setInspectorOpen(true)}
       />
       {error && <p className="global-error" role="alert">{error}</p>}
-      <div className="workbench-stage">
+      <div className="workbench-stage" data-components-collapsed={componentsCollapsed}>
         <ComponentBrowser
           selectedId={selectedPart} open={componentsOpen} parts={workspace.parts}
           revision={workspace.revision} conflictCount={workspace.conflicts.length}
@@ -246,12 +261,27 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             try { setSelectedPart(await workspace.replaceDisplayFile(id, file)); }
             catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
           }}
-          onClose={() => setComponentsOpen(false)}
+          onClose={() => {
+            setComponentsOpen(false);
+            setComponentsCollapsed(true);
+          }}
         />
         <section className="viewport-workspace" aria-labelledby="viewport-title">
           <header className="viewport-toolbar">
             <div><h2 id="viewport-title">Assembly viewport</h2><p>{state.context.selection.label}</p></div>
             <div className="toolbar-controls">
+              <button
+                className="toggle-button"
+                type="button"
+                aria-expanded={!componentsCollapsed}
+                onClick={() => setComponentsCollapsed((collapsed) => !collapsed)}
+              >{componentsCollapsed ? "Show assembly" : "Hide assembly"}</button>
+              <button
+                className="toggle-button"
+                type="button"
+                aria-expanded={analysisDockOpen}
+                onClick={() => setAnalysisDockOpen((open) => !open)}
+              >Analysis</button>
               <div className="segmented-control" aria-label="Structural result layer">
                 {(["density", "loads", "displacement", "stress", "safety"] as const).map((layer) => (
                   <button type="button" key={layer} aria-pressed={analysisLayer === layer} onClick={() => setAnalysisLayer(layer)}>
@@ -280,8 +310,9 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               >Constraints</button>
             </div>
           </header>
-          <div className="viewport-canvas">
-            <FieldViewer
+          <div className="viewport-canvas" data-analysis-open={analysisDockOpen}>
+            <div className="viewport-scene">
+              <FieldViewer
               current={workspace.layoutState === "verified" ? viewerCurrent : null}
               alternatives={viewerAlternatives}
               selectedRegion={state.context.selection}
@@ -301,27 +332,45 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                 : pendingPromotion
                   ? "Verified branch ready for human review"
                   : undefined}
+              flightFrameSource={flightFrameChannel}
+              droneOnly={droneOnly}
               environment={viewerEnvironment}
               onPartSelect={setSelectedPart}
               onPartMove={handlePartMove}
               onPartDragState={handlePartDragState}
-            />
-            {workspace.pending && (
-              <ImportReview
-                pending={workspace.pending}
-                onApprove={async () => {
-                  setSelectedPart(workspace.pending!.id);
-                  await workspace.approveImport();
-                }}
-                onReject={workspace.rejectImport}
               />
-            )}
-            {viewerCurrent && <AlternativeSelector
-              alternatives={alternatives}
-              selected={selectedAlternative}
-              onSelect={setSelectedAlternative}
-            />}
-            {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts} />}
+              {workspace.pending && (
+                <ImportReview
+                  pending={workspace.pending}
+                  onApprove={async () => {
+                    setSelectedPart(workspace.pending!.id);
+                    await workspace.approveImport();
+                  }}
+                  onReject={workspace.rejectImport}
+                />
+              )}
+              {viewerCurrent && <AlternativeSelector
+                alternatives={alternatives}
+                selected={selectedAlternative}
+                onSelect={setSelectedAlternative}
+              />}
+            </div>
+            <aside className="analysis-dock" aria-label="Analysis dock">
+              <FlightSimulationPanel
+                motors={viewerCurrent ? flightMotors : []}
+                massKg={liveTopology.input.assemblyMassKg}
+                onFrame={handleFlightFrame}
+                onActiveChange={(active) => {
+                  setSimulationActive(active);
+                  if (active) {
+                    setAnalysisLayer("stress");
+                    setShowConstraints(false);
+                  }
+                }}
+                onDroneOnlyChange={setDroneOnly}
+              />
+              {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts} />}
+            </aside>
           </div>
           <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
         </section>

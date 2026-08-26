@@ -2,10 +2,12 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { installAssemblyInteractions, type PartInteractionHandlers } from "./assembly-interactions";
 import { installTransformGizmo, type TransformGizmoSession } from "./transform-gizmo";
+import type { FlightFrame } from "../simulation/flight-scenarios";
 
 import {
   createFieldMeshes,
   highlightFieldMesh,
+  updateAnalysisSurfaceLoadFactor,
   type FieldMeshSet,
 } from "./field-meshes";
 import {
@@ -42,6 +44,8 @@ interface RendererLike {
 
 interface ControlsLike {
   enableDamping: boolean;
+  enablePan?: boolean;
+  screenSpacePanning?: boolean;
   enabled?: boolean;
   readonly target: { set(x: number, y: number, z: number): unknown };
   addEventListener(type: "change", listener: () => void): void;
@@ -71,6 +75,8 @@ export interface FieldRendererSession {
   dispose(): void;
   setHighlightedBranch(branchRevision: string | undefined): void;
   setSelectedPart(partId: string | undefined): void;
+  focusSelectedPart(): void;
+  setFlightFrame(frame: FlightFrame | undefined): void;
   setReferenceGridVisible(visible: boolean): void;
   setView(view: "isometric" | "top" | "front" | "right"): void;
   setTransformSpace(space: "world" | "local"): void;
@@ -135,7 +141,9 @@ export function mountFieldRenderer(
   let controls: ControlsLike | undefined;
   let referenceGrid: THREE.GridHelper | undefined;
   let transformGizmo: TransformGizmoSession | undefined;
+  let flightGroup: THREE.Group | undefined;
   let inactive = false;
+  let selectedPart: string | undefined;
   let width = 1;
   let height = 1;
   const render = () => {
@@ -172,8 +180,47 @@ export function mountFieldRenderer(
     },
     setSelectedPart(partId) {
       if (inactive || !assemblyMeshSet) return;
+      selectedPart = partId;
       highlightAssemblyPart(assemblyMeshSet.materials, partId);
       transformGizmo?.setSelectedPart(partId);
+      scheduleRender();
+    },
+    focusSelectedPart() {
+      if (!camera || !controls || !assemblyMeshSet || !selectedPart) return;
+      const part = [...assemblyMeshSet.parts.values()].find((candidate) => candidate.selectionId === selectedPart);
+      if (!part) return;
+      const previousTarget = new THREE.Vector3(...prepared.camera.target);
+      const nextTarget = new THREE.Vector3(...part.center);
+      camera.position.add(nextTarget.clone().sub(previousTarget));
+      camera.lookAt(nextTarget);
+      controls.target.set(...part.center);
+      controls.update();
+      scheduleRender();
+    },
+    setFlightFrame(flightFrame) {
+      if (!flightGroup || !assemblyMeshSet) return;
+      const attitude = flightFrame?.attitudeRad ?? [0, 0, 0];
+      flightGroup.rotation.set(...attitude);
+      const meanThrust = flightFrame
+        ? Math.max(0.001, flightFrame.motorThrustN.reduce((sum, value) => sum + value, 0) / 4)
+        : 1;
+      const structuralScale = flightFrame ? Math.max(...flightFrame.motorThrustN) / meanThrust : 1;
+      for (const [index, thrust] of (flightFrame?.motorThrustN ?? []).entries()) {
+        const motor = prepared.assemblyParts?.filter(({ kind }) => kind === "load-vector")[index];
+        const root = motor ? assemblyMeshSet.roots.get(motor.id) : undefined;
+        if (root) root.scale.z = Math.max(0.18, thrust / meanThrust);
+      }
+      if (!flightFrame) {
+        for (const [id, root] of assemblyMeshSet.roots) if (id.endsWith("-load-vector")) root.scale.set(1, 1, 1);
+      }
+      for (const mesh of meshSet?.meshes ?? []) {
+        const match = /verified-(?:stress|displacement|safety)-band-(\d+)/.exec(mesh.name);
+        if (!match || !(mesh.material instanceof THREE.MeshBasicMaterial)) continue;
+        const band = Number(match[1]) / 6;
+        const utilization = Math.min(1, band * structuralScale);
+        mesh.material.color.copy(new THREE.Color(0x16b9ff).lerp(new THREE.Color(0xff2d55), utilization));
+      }
+      updateAnalysisSurfaceLoadFactor(meshSet?.analysisSurfaces ?? [], structuralScale);
       scheduleRender();
     },
     setReferenceGridVisible(visible) {
@@ -202,6 +249,10 @@ export function mountFieldRenderer(
 
   try {
     scene = new THREE.Scene();
+    flightGroup = new THREE.Group();
+    flightGroup.name = "flight-replay-root";
+    scene.add(flightGroup);
+    ownership.own(() => scene!.remove(flightGroup!));
     camera = cameraFor(prepared.camera);
     const createdRenderer = environment.createRenderer(canvas);
     renderer = createdRenderer;
@@ -211,11 +262,17 @@ export function mountFieldRenderer(
     ownership.own(() => createdControls.dispose());
     environment.prefersReducedMotion();
     createdControls.enableDamping = false;
+    createdControls.enablePan = true;
+    createdControls.screenSpacePanning = true;
     createdControls.target.set(...prepared.camera.target);
     createdControls.update();
     const attach = (object: THREE.Object3D) => {
       ownership.own(() => scene!.remove(object));
       scene!.add(object);
+    };
+    const attachFlight = (object: THREE.Object3D) => {
+      ownership.own(() => flightGroup!.remove(object));
+      flightGroup!.add(object);
     };
     attach(new THREE.HemisphereLight(0xdcefff, 0x101724, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
@@ -235,7 +292,7 @@ export function mountFieldRenderer(
     attach(referenceGrid);
     assemblyMeshSet = createAssemblyMeshes(prepared.assemblyParts ?? [], {
       own: (release) => ownership.own(release),
-      attach,
+      attach: attachFlight,
     }, scheduleRender);
     meshSet = createFieldMeshes(
       prepared.grid,
@@ -243,7 +300,7 @@ export function mountFieldRenderer(
       prepared.alternativeLayers,
       {
         own: (release) => ownership.own(release),
-        attach,
+        attach: attachFlight,
       },
       prepared.densityField,
       prepared.analysisField,

@@ -27,6 +27,8 @@ export const REFERENCE_DISPLAY_RESOURCES: Readonly<Record<string, ComponentRende
   resource("flight-controller-30x30", "opendrone-openfc-lite-rev3.3.glb", [37.942302, 37.942302, 5.38], "mm"),
   resource("esc-30x30", "opendrone-openesc-30x30-rev3.3.glb", [41.62706, 42.504999, 6.33], "mm"),
   resource("battery-6s-1550", "tattu-rline-v5-1550-6s.glb", [78, 37, 52]),
+  resource("battery-retention-strap", "sunderlabs-battery-strap-20mm.glb", [22, 43, 60.95]),
+  resource("battery-power-harness", "xt60-openesc-battery-harness.glb", [60, 20, 36]),
   resource("fpv-camera", "runcam-phoenix-2.glb", [31, 20, 19]),
   resource("motor-wiring-corridor", "motor-to-esc-3x20awg.glb", [72, 6, 4]),
 ]));

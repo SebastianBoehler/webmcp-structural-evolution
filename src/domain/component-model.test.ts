@@ -112,7 +112,7 @@ describe("component definitions", () => {
     });
   });
 
-  it.each(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface"] as const)(
+  it.each(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface", "retention"] as const)(
     "accepts the required reference category: %s",
     async (category) => {
       await expect(defineComponent({ ...validComponent, id: category, category })).resolves.toMatchObject({ category });

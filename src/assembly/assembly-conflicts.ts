@@ -60,7 +60,9 @@ function intentionalAssemblyMate(left: PositionedComponent, right: PositionedCom
   if (motor && attached.component && ["propeller", "fastener", "wiring"].includes(attached.component.category)
     && attachedToMotor) return true;
   const categories = [left.component?.category, right.component?.category];
+  const wiring = left.component?.category === "wiring" ? left : right.component?.category === "wiring" ? right : undefined;
   return categories.includes("wiring") && categories.includes("avionics")
+    || categories.includes("wiring") && categories.includes("battery") && wiring?.instance.instanceId === "battery-power-harness"
     || categories.includes("body-interface") && categories.includes("avionics");
 }
 

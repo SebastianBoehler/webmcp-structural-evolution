@@ -141,7 +141,9 @@ export function harness(options: HarnessOptions = {}): TestHarness {
 export function renderedMeshes(test: TestHarness): THREE.InstancedMesh[] {
   test.flushFrame();
   const scene = test.renderer.render.mock.calls.at(-1)?.[0] as THREE.Scene;
-  return scene.children.filter(
-    (child): child is THREE.InstancedMesh => child instanceof THREE.InstancedMesh,
-  );
+  const meshes: THREE.InstancedMesh[] = [];
+  scene.traverse((child) => {
+    if (child instanceof THREE.InstancedMesh) meshes.push(child);
+  });
+  return meshes;
 }

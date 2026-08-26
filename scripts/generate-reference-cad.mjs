@@ -168,15 +168,51 @@ function battery() {
   return group;
 }
 
+function batteryStrap() {
+  const group = new THREE.Group();
+  group.name = "Sunderlabs_20mm_battery_retention_strap";
+  const webbing = material(0x20242a, 0.02, 0.88);
+  const stitch = material(0xd7dde3, 0.02, 0.68);
+  mesh(group, new RoundedBoxGeometry(0.020, 0.043, 0.0015, 3, 0.00035), webbing, [0, 0, 0.0305]);
+  mesh(group, new RoundedBoxGeometry(0.020, 0.043, 0.0015, 3, 0.00035), webbing, [0, 0, -0.02675]);
+  mesh(group, new RoundedBoxGeometry(0.020, 0.0015, 0.05725, 3, 0.00035), webbing, [0, -0.0215, 0.001875]);
+  mesh(group, new RoundedBoxGeometry(0.020, 0.0015, 0.05725, 3, 0.00035), webbing, [0, 0.0215, 0.001875]);
+  mesh(group, new RoundedBoxGeometry(0.022, 0.010, 0.0034, 4, 0.0006), darkMetal, [0, -0.012, 0.03175]);
+  for (const x of [-0.006, 0, 0.006]) mesh(group, box(0.00045, 0.038, 0.00025), stitch, [x, 0, 0.03135]);
+  return group;
+}
+
+function batteryHarness() {
+  const group = new THREE.Group();
+  group.name = "XT60_12AWG_to_OpenESC_installed_harness";
+  const start = new THREE.Vector3(0.027838, 0.005238, -0.014);
+  const end = new THREE.Vector3(-0.027838, -0.005238, 0.014);
+  [0xd82929, 0x15181c].forEach((color, index) => {
+    const offset = (index - 0.5) * 0.0046;
+    const curve = new THREE.CatmullRomCurve3([
+      start.clone().add(new THREE.Vector3(0, offset, 0)),
+      new THREE.Vector3(0.020, -0.005 + offset, -0.014),
+      new THREE.Vector3(-0.006, -0.005 + offset, -0.014),
+      new THREE.Vector3(-0.012, -0.005 + offset, 0.002),
+      new THREE.Vector3(-0.020, -0.005 + offset, 0.008),
+      end.clone().add(new THREE.Vector3(0, offset, -0.003165)),
+    ]);
+    mesh(group, new THREE.TubeGeometry(curve, 72, 0.0017, 14, false), material(color, 0, 0.52));
+  });
+  mesh(group, new RoundedBoxGeometry(0.014, 0.010, 0.009, 4, 0.0013), material(0xe4b323, 0.05, 0.45), [0.0215, 0.005238, -0.014]);
+  mesh(group, new RoundedBoxGeometry(0.010, 0.008, 0.007, 4, 0.001), material(0x22262c, 0.04, 0.72), [-0.025, -0.005238, 0.014]);
+  return group;
+}
+
 function motorHarness() {
   const group = new THREE.Group();
   group.name = "three_phase_20AWG_motor_to_ESC_harness";
   [0xe9c629, 0xd64935, 0x20252b].forEach((color, index) => {
     const y = (index - 1) * 0.0018;
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.036, y, 0),
-      new THREE.Vector3(-0.018, y + (index - 1) * 0.0004, -0.0005),
-      new THREE.Vector3(0.018, y - (index - 1) * 0.0004, -0.0025),
+      new THREE.Vector3(-0.036, y, -0.001165),
+      new THREE.Vector3(-0.018, y + (index - 1) * 0.0004, -0.0012),
+      new THREE.Vector3(0.018, y - (index - 1) * 0.0004, -0.0032),
       new THREE.Vector3(0.036, y, -0.004),
     ]);
     mesh(group, new THREE.TubeGeometry(curve, 72, 0.00062, 14, false), material(color, 0, 0.58));
@@ -233,6 +269,8 @@ await Promise.all([
   save("hqprop-5x4.3x3.glb", propeller()),
   save("speedybee-f405-v4-stack.glb", electronicsStack()),
   save("tattu-rline-v5-1550-6s.glb", battery()),
+  save("sunderlabs-battery-strap-20mm.glb", batteryStrap()),
+  save("xt60-openesc-battery-harness.glb", batteryHarness()),
   save("motor-to-esc-3x20awg.glb", motorHarness()),
   save("runcam-phoenix-2.glb", fpvCamera()),
   save("accu-m3x8-din912.glb", fastener()),

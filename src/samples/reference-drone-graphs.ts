@@ -58,6 +58,24 @@ export const BATTERY_GRAPH: ParametricGraph = { nodes: [
   box("battery-package", [0, 0, 0], [0.078, 0.037, 0.052]),
 ] };
 
+export const BATTERY_STRAP_GRAPH: ParametricGraph = { nodes: [
+  box("strap-top", [0, 0, 0.0305], [0.020, 0.043, 0.0015]),
+  box("strap-bottom", [0, 0, -0.02675], [0.020, 0.043, 0.0015]),
+  box("strap-left", [0, -0.0215, 0.001875], [0.020, 0.0015, 0.05725]),
+  box("strap-right", [0, 0.0215, 0.001875], [0.020, 0.0015, 0.05725]),
+  { kind: "union", id: "strap-halves", left: "strap-top", right: "strap-bottom" },
+  { kind: "union", id: "strap-three-sides", left: "strap-halves", right: "strap-left" },
+  { kind: "union", id: "battery-strap-loop", left: "strap-three-sides", right: "strap-right" },
+] };
+
+export const BATTERY_HARNESS_GRAPH: ParametricGraph = { nodes: [
+  box("battery-harness-horizontal", [0.0079, -0.005, -0.014], [0.040, 0.009, 0.007]),
+  box("battery-harness-riser", [-0.012, -0.005, -0.0036], [0.008, 0.009, 0.0208]),
+  box("battery-harness-esc-tail", [-0.020, -0.005, 0.0088], [0.018, 0.009, 0.004]),
+  { kind: "union", id: "battery-harness-lower-route", left: "battery-harness-horizontal", right: "battery-harness-riser" },
+  { kind: "union", id: "battery-harness-route", left: "battery-harness-lower-route", right: "battery-harness-esc-tail" },
+] };
+
 export const CAMERA_GRAPH: ParametricGraph = { nodes: [
   box("camera-housing", [0, 0, 0], [0.019, 0.020, 0.019]),
   cylinder("m12-lens-envelope", [0.015, 0, 0], 0.006, 0.012),
@@ -65,7 +83,7 @@ export const CAMERA_GRAPH: ParametricGraph = { nodes: [
 ] };
 
 export const WIRING_GRAPH: ParametricGraph = { nodes: [
-  box("wiring-corridor", [0, 0, 0], [0.072, 0.006, 0.004]),
+  box("wiring-corridor", [0, 0, -0.00258], [0.072, 0.006, 0.0028]),
 ] };
 
 export const PROPELLER_GRAPH: ParametricGraph = { nodes: [

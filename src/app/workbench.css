@@ -1,7 +1,7 @@
 .workbench-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
   background: var(--surface-app);
   font-size: var(--text-body);
@@ -101,6 +101,11 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   min-height: 0;
   overflow: hidden;
 }
+.workbench-stage > * { min-width: 0; }
+.workbench-stage[data-components-collapsed="true"] {
+  grid-template-columns: minmax(0, 1fr) 19rem;
+}
+.workbench-stage[data-components-collapsed="true"] > .component-browser { display: none; }
 .side-panel {
   min-width: 0;
   min-height: 0;
@@ -175,10 +180,31 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   border-bottom: 1px solid var(--separator);
   background: var(--surface-panel);
 }
-.toolbar-controls { display: flex; gap: 0.5rem; align-items: center; }
+.toolbar-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; min-width: 0; }
 .toggle-button { min-height: 2.5rem; font-size: var(--text-caption); }
 .toggle-button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
-.viewport-canvas { position: relative; min-height: 0; overflow: hidden; }
+.viewport-canvas {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(19rem, 30vw, 22rem);
+  min-height: 0;
+  overflow: hidden;
+}
+.viewport-canvas[data-analysis-open="false"] { grid-template-columns: minmax(0, 1fr); }
+.viewport-canvas[data-analysis-open="false"] > .analysis-dock { display: none; }
+.viewport-scene { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.analysis-dock {
+  z-index: 6;
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.65rem;
+  overflow: auto;
+  border-inline-start: 1px solid var(--separator);
+  background: var(--surface-panel);
+}
 .alternative-selector {
   position: absolute;
   z-index: 4;
@@ -275,6 +301,9 @@ td { overflow-wrap: anywhere; }
 
 @media (max-width: 68rem) {
   .workbench-stage { grid-template-columns: 15rem minmax(0, 1fr); }
+  .workbench-stage[data-components-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+  .viewport-toolbar { align-items: flex-start; flex-direction: column; }
+  .toolbar-controls { width: 100%; overflow-x: auto; }
   .inspector-panel {
     position: fixed;
     z-index: 50;
@@ -297,6 +326,7 @@ td { overflow-wrap: anywhere; }
   .theme-switcher { order: 3; }
   .primary-action, .secondary-action { grid-column: 1 / -1; width: 100%; }
   .workbench-stage { grid-template-columns: minmax(0, 1fr); }
+  .workbench-stage[data-components-collapsed="true"] > .component-browser[data-open="true"] { display: block; }
   .component-browser {
     position: fixed;
     z-index: 50;
@@ -316,6 +346,8 @@ td { overflow-wrap: anywhere; }
   .segmented-control button { padding-inline: 0.45rem; }
   .drawer-tabs { overflow-x: auto; }
   .drawer-tabs button { white-space: nowrap; }
+  .viewport-canvas { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(18rem, 1fr) auto; }
+  .analysis-dock { max-height: 45vh; border-inline-start: 0; border-top: 1px solid var(--separator); }
   .evidence-grid { grid-template-columns: 1fr; }
 }
 

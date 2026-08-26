@@ -11,6 +11,11 @@
   box-shadow: var(--shadow-float);
   backdrop-filter: blur(12px);
 }
+.analysis-dock .topology-result {
+  position: static;
+  width: 100%;
+  box-shadow: none;
+}
 
 .topology-result__header,
 .topology-result dl > div {

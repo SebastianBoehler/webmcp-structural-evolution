@@ -13,6 +13,8 @@ import {
   renderedMeshes,
 } from "./field-viewer-test-support";
 import type { AssemblyVisualPart } from "./render-envelope";
+import { createFlightFrameChannel } from "../simulation/flight-frame-channel";
+import { flightFrameAt } from "../simulation/flight-scenarios";
 
 const part: AssemblyVisualPart = {
   id: "motor-envelope",
@@ -54,7 +56,7 @@ describe("FieldViewer", () => {
     );
 
     expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-    expect(screen.getByText(/select a part.*use x\/y\/z to move.*orbit.*scroll to zoom/i)).toBeVisible();
+    expect(screen.getByText(/select a part.*x\/y\/z move.*orbit.*scroll zoom/i)).toBeVisible();
     expect(screen.getByRole("status").textContent).toMatch(/assembly ready/i);
     const motor = renderedScene(test).getObjectByName("assembly-part:motor-envelope") as THREE.Mesh;
     expect(motor).toBeDefined();
@@ -108,6 +110,52 @@ describe("FieldViewer", () => {
     expect(camera.position.x).toBeCloseTo(targetX);
     expect(camera.position.y).toBeCloseTo(targetY);
     expect(camera.position.z).toBeGreaterThan(targetZ);
+  });
+
+  it("can re-anchor navigation on the selected component and documents free pan", () => {
+    const test = harness();
+    render(
+      <FieldViewer
+        current={null}
+        alternatives={[]}
+        selectedRegion={region}
+        threshold={0.5}
+        mode="overlay"
+        grid={grid}
+        assemblyParts={[part]}
+        selectedPart="motor"
+        environment={test.environment}
+      />,
+    );
+
+    expect(screen.getByText(/right-drag.*pan/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Focus selected part" }));
+    expect(test.controls.target.set).toHaveBeenLastCalledWith(8, 0, 2);
+  });
+
+  it("streams flight frames into one persistent WebGL scene without remount flashes", () => {
+    const test = harness();
+    const channel = createFlightFrameChannel();
+    render(<FieldViewer
+      current={null}
+      alternatives={[]}
+      selectedRegion={region}
+      threshold={0.5}
+      mode="overlay"
+      grid={grid}
+      assemblyParts={[part]}
+      flightFrameSource={channel}
+      environment={test.environment}
+    />);
+    channel.emit(flightFrameAt("roll", 0.25, [
+      { id: "east", centerM: [0.105, 0, 0] },
+      { id: "north", centerM: [0, 0.105, 0] },
+      { id: "west", centerM: [-0.105, 0, 0] },
+      { id: "south", centerM: [0, -0.105, 0] },
+    ], 0.495));
+    const replayRoot = renderedScene(test).getObjectByName("flight-replay-root")!;
+    expect(replayRoot.rotation.x).toBeCloseTo(0.34);
+    expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
   });
 
   it("renders one solid field plus one ghost per compatible alternative", () => {

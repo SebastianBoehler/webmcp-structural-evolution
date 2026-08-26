@@ -45,7 +45,7 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
       <div className="panel-heading">
         <div><h2>Assembly</h2><p>{revision ? `Staged revision ${revision.slice(0, 8)}` : "Quadrotor frame"}</p></div>
-        <button className="icon-button mobile-only" type="button" onClick={onClose} aria-label="Close components">×</button>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Collapse components">×</button>
       </div>
       <label className="search-field">
         <span className="visually-hidden">Find a component</span>

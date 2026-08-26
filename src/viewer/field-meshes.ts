@@ -9,27 +9,71 @@ import type { ScalarAnalysisField } from "./render-envelope";
 export interface FieldMeshSet {
   readonly meshes: readonly THREE.InstancedMesh[];
   readonly ghostMaterials: ReadonlyMap<string, THREE.MeshBasicMaterial>;
+  readonly analysisSurfaces: readonly AnalysisSurface[];
+}
+
+interface AnalysisSurface {
+  readonly geometry: THREE.BufferGeometry;
+  readonly utilization: Float32Array;
 }
 
 interface MeshOwnership extends Pick<CleanupLedger, "own"> {
   attach(mesh: THREE.Object3D): void;
 }
 
-function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership, ghosted = false) {
+const cold = new THREE.Color(0x16b9ff);
+const hot = new THREE.Color(0xff2d55);
+
+function colorAnalysisSurface(surface: AnalysisSurface, loadFactor = 1): void {
+  const colors = new Float32Array(surface.utilization.length * 3);
+  surface.utilization.forEach((value, index) => {
+    const color = cold.clone().lerp(hot, Math.min(1, value * loadFactor));
+    colors.set([color.r, color.g, color.b], index * 3);
+  });
+  surface.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  surface.geometry.getAttribute("color").needsUpdate = true;
+}
+
+export function updateAnalysisSurfaceLoadFactor(surfaces: readonly AnalysisSurface[], loadFactor: number): void {
+  surfaces.forEach((surface) => colorAnalysisSurface(surface, loadFactor));
+}
+
+function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership, analysis?: ScalarAnalysisField, ghosted = false) {
   const material = new THREE.MeshStandardMaterial({
-    color: 0x5da9d6,
+    color: analysis ? 0xffffff : 0x5da9d6,
     metalness: 0.08,
     roughness: 0.38,
+    vertexColors: Boolean(analysis),
     side: THREE.DoubleSide,
     transparent: ghosted,
     opacity: ghosted ? 0.18 : 1,
   });
   ownership.own(() => material.dispose());
   const surface = createTopologySurface(grid, density, material);
+  let analysisSurface: AnalysisSurface | undefined;
+  if (analysis) {
+    const position = surface.geometry.getAttribute("position");
+    const utilization = new Float32Array(position.count);
+    const world = new THREE.Vector3();
+    const gridLocal = new THREE.Vector3();
+    const inverseAnchor = new THREE.Quaternion(...grid.anchor.orientation).invert();
+    for (let index = 0; index < position.count; index += 1) {
+      world.fromBufferAttribute(position, index);
+      surface.localToWorld(world);
+      gridLocal.copy(world).sub(new THREE.Vector3(...grid.anchor.position)).applyQuaternion(inverseAnchor);
+      const x = Math.max(0, Math.min(grid.dimensions.width - 1, Math.floor(gridLocal.x / grid.cellSize[0])));
+      const y = Math.max(0, Math.min(grid.dimensions.height - 1, Math.floor(gridLocal.y / grid.cellSize[1])));
+      const z = Math.max(0, Math.min(grid.dimensions.depth - 1, Math.floor(gridLocal.z / grid.cellSize[2])));
+      const fieldIndex = x + grid.dimensions.width * (y + grid.dimensions.height * z);
+      utilization[index] = Math.max(0, Math.min(1, analysis.values[fieldIndex]! / Math.max(analysis.maximum, 1e-12)));
+    }
+    analysisSurface = { geometry: surface.geometry, utilization };
+    colorAnalysisSurface(analysisSurface);
+  }
   ownership.own(() => surface.geometry.dispose());
   surface.renderOrder = 1;
   ownership.attach(surface);
-  return surface;
+  return { surface, analysisSurface };
 }
 
 function addInstances(
@@ -176,21 +220,25 @@ export function createFieldMeshes(
 ): FieldMeshSet {
   const meshes: THREE.InstancedMesh[] = [];
   const ghostMaterials = new Map<string, THREE.MeshBasicMaterial>();
+  const analysisSurfaces: AnalysisSurface[] = [];
   if (currentInstances.length > 0) {
-    if (analysis) meshes.push(...analysisMeshes(grid, currentInstances, analysis, ownership));
+    if (analysis && !density) meshes.push(...analysisMeshes(grid, currentInstances, analysis, ownership));
     else {
       const voxels = currentMesh(grid, currentInstances, ownership);
       voxels.visible = !density;
       meshes.push(voxels);
     }
   }
-  if (density && !analysis) densitySurface(grid, density, ownership);
+  if (density) {
+    const rendered = densitySurface(grid, density, ownership, analysis);
+    if (rendered.analysisSurface) analysisSurfaces.push(rendered.analysisSurface);
+  }
   for (const layer of layers) {
     const mesh = ghostMesh(layer, ownership);
     meshes.push(mesh);
     ghostMaterials.set(layer.branchRevision, mesh.material as THREE.MeshBasicMaterial);
   }
-  return { meshes: Object.freeze(meshes), ghostMaterials };
+  return { meshes: Object.freeze(meshes), ghostMaterials, analysisSurfaces };
 }
 
 export function highlightFieldMesh(

@@ -9,6 +9,8 @@ const EXPECTED_SOURCES = {
   "flight-controller-30x30": ["engineering-drawing", "manufacturer-product-page"],
   "esc-30x30": ["engineering-drawing", "manufacturer-product-page"],
   "battery-6s-1550": ["manufacturer-product-page"],
+  "battery-retention-strap": ["engineering-drawing"],
+  "battery-power-harness": ["manufacturer-product-page", "engineering-drawing"],
   "fastener-m3x8": ["supplier-specification"],
   "motor-wiring-corridor": ["manufacturer-datasheet", "manufacturer-product-page", "engineering-drawing"],
   "propeller-5x4.3x3": ["manufacturer-product-page"],
@@ -82,6 +84,8 @@ describe("reference drone catalog", () => {
     expect(referenceAssemblyInstancesFor("flight-controller-30x30")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("esc-30x30")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("battery-6s-1550")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("battery-retention-strap")).toHaveLength(2);
+    expect(referenceAssemblyInstancesFor("battery-power-harness")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("fpv-camera")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("body-interface")).toHaveLength(1);
   });

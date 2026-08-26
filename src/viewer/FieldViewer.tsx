@@ -18,6 +18,8 @@ import {
 } from "./field-renderer";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
 import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
+import type { FlightFrame } from "../simulation/flight-scenarios";
+import type { FlightFrameSource } from "../simulation/flight-frame-channel";
 import "./field-viewer.css";
 
 export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer";
@@ -36,6 +38,9 @@ export interface FieldViewerProps {
   readonly selectedPart?: string;
   readonly analysisLayer?: "density" | "loads" | "displacement" | "stress" | "safety";
   readonly statusText?: string;
+  readonly flightFrame?: FlightFrame;
+  readonly flightFrameSource?: FlightFrameSource;
+  readonly droneOnly?: boolean;
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
   readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => void;
@@ -152,6 +157,9 @@ export function FieldViewer({
   selectedPart,
   analysisLayer = "density",
   statusText,
+  flightFrame,
+  flightFrameSource,
+  droneOnly = false,
   environment,
   onPartSelect,
   onPartMove,
@@ -204,14 +212,16 @@ export function FieldViewer({
 
   useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [prepared.model, selectedAlternative]);
   useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [prepared.model, selectedPart]);
-  useEffect(() => sessionRef.current?.setReferenceGridVisible(gridVisible), [gridVisible, prepared.model]);
+  useEffect(() => sessionRef.current?.setReferenceGridVisible(gridVisible && !droneOnly), [droneOnly, gridVisible, prepared.model]);
+  useEffect(() => sessionRef.current?.setFlightFrame(flightFrame), [flightFrame]);
+  useEffect(() => flightFrameSource?.subscribe((frame) => sessionRef.current?.setFlightFrame(frame)), [flightFrameSource]);
   useEffect(() => sessionRef.current?.setView(view), [prepared.model, view]);
   useEffect(() => sessionRef.current?.setTransformSpace(worldCoordinates ? "world" : "local"), [prepared.model, worldCoordinates]);
   useEffect(() => sessionRef.current?.setTranslationSnap(snapEnabled ? 10 : null), [prepared.model, snapEnabled]);
 
   const issue = prepared.error ?? renderError;
   return (
-    <section className="field-viewer" aria-label="Drone-arm CAD viewport">
+    <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}`} aria-label="Drone-arm CAD viewport">
       <canvas
         ref={canvasRef}
         role="img"
@@ -220,7 +230,7 @@ export function FieldViewer({
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
-        Select a part · use X/Y/Z to move · drag empty space to orbit · scroll to zoom
+        Select a part · X/Y/Z move · left-drag orbit · right-drag pan · scroll zoom
       </p>
       <div className="cad-view-controls" role="group" aria-label="Viewport orientation">
         {(["isometric", "top", "front", "right"] as const).map((preset) => (
@@ -234,6 +244,12 @@ export function FieldViewer({
         ))}
       </div>
       <div className="cad-transform-controls" role="group" aria-label="CAD display and transforms">
+        <button
+          type="button"
+          aria-label="Focus selected part"
+          disabled={!selectedPart}
+          onClick={() => sessionRef.current?.focusSelectedPart()}
+        >Focus</button>
         <button
           type="button"
           aria-label="Toggle reference grid"

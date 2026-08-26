@@ -7,13 +7,8 @@ import { createTopologySurface } from "../viewer/topology-surface";
 export function serializeTopologyStl(grid: VoxelGrid, density: Float32Array): DataView {
   const material = new THREE.MeshBasicMaterial();
   const surface = createTopologySurface(grid, density, material);
-  const compact = new THREE.BufferGeometry();
+  const compact = surface.geometry.clone();
   try {
-    const source = surface.geometry.getAttribute("position");
-    const count = source.count;
-    const positions = new Float32Array(count * 3);
-    positions.set((source.array as Float32Array).subarray(0, count * 3));
-    compact.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     compact.applyMatrix4(surface.matrixWorld);
     const output = new STLExporter().parse(new THREE.Mesh(compact, material), { binary: true });
     if (!(output instanceof DataView)) throw new Error("Binary STL export did not produce a DataView.");

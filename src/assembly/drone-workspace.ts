@@ -46,6 +46,7 @@ const viewerBounds = (bounds: RenderBounds) => ({
 });
 const offset = (left: Point3, right: Point3): Point3 => left.map((value, axis) => value - right[axis]!) as unknown as Point3;
 const add = (left: Point3, right: Point3): Point3 => left.map((value, axis) => value + right[axis]!) as unknown as Point3;
+const roundedPoint = (value: Point3): Point3 => value.map((coordinate) => Math.round(coordinate * 1e9) / 1e9) as unknown as Point3;
 
 const motorComponent = referenceComponent("motor-2207");
 const propellerComponent = referenceComponent("propeller-5x4.3x3");
@@ -53,7 +54,9 @@ const fastenerComponent = referenceComponent("fastener-m3x8");
 const flightControllerComponent = referenceComponent("flight-controller-30x30");
 const escComponent = referenceComponent("esc-30x30");
 const batteryComponent = referenceComponent("battery-6s-1550");
+const batteryStrapComponent = referenceComponent("battery-retention-strap");
 const wiringComponent = referenceComponent("motor-wiring-corridor");
+const batteryHarnessComponent = referenceComponent("battery-power-harness");
 const bodyComponent = referenceComponent("body-interface");
 const propellerDisplay = propellerRenderContract(propellerComponent);
 const motorDisplay = motorRenderContract(motorComponent);
@@ -61,7 +64,6 @@ const fastenerDisplay = fastenerRenderContract(fastenerComponent);
 const flightControllerDisplay = boxRenderContract(flightControllerComponent, "openfc-lite-rev3.3-envelope");
 const escDisplay = boxRenderContract(escComponent, "openesc-30x30-rev3.3-envelope");
 const batteryDisplay = boxRenderContract(batteryComponent, "battery-package");
-const wiringDisplay = boxRenderContract(wiringComponent, "wiring-corridor");
 const bodyDisplay = boxRenderContract(bodyComponent, "body-interface-plate");
 
 const motorLabels: Readonly<Record<string, string>> = Object.freeze({
@@ -143,13 +145,26 @@ function equipmentParts(equipment: Readonly<Record<string, Point3>>): readonly A
 }
 
 function staticConstraintParts(): readonly AssemblyVisualPart[] {
-  const wiring = referenceAssemblyInstancesFor("motor-wiring-corridor").map((instance): AssemblyVisualPart => ({
-    id: `${instance.instanceId}-keepout`, selectionId: `${instance.instanceId}-keepout`, label: "Protected 20AWG motor wiring corridor", appearance: "constraint", kind: "box", center: lengthPoint(instance.transform.position), rotation: [0, 0, instance.transform.orientation.yaw.value], size: viewerPoint(wiringDisplay.size),
-  }));
+  const wiring = referenceAssemblyInstancesFor("motor-wiring-corridor").flatMap((instance) =>
+    wiringComponent.protectedVolumes.map((volume): AssemblyVisualPart => {
+      if (volume.kind !== "box") throw new Error("Motor harness route requires box keep-outs");
+      return { id: `${instance.instanceId}-${volume.id}`, selectionId: `${instance.instanceId}-${volume.id}`, label: "Protected 20AWG motor wiring corridor", appearance: "constraint", kind: "box", center: roundedPoint(add(lengthPoint(instance.transform.position), lengthPoint(volume.center))), rotation: [0, 0, instance.transform.orientation.yaw.value], size: lengthPoint(volume.size) };
+    }));
+  const straps = referenceAssemblyInstancesFor("battery-retention-strap").flatMap((instance) =>
+    batteryStrapComponent.protectedVolumes.map((volume): AssemblyVisualPart => {
+      if (volume.kind !== "box") throw new Error("Battery strap clearance requires box keep-outs");
+      return { id: `${instance.instanceId}-${volume.id}`, selectionId: `${instance.instanceId}-${volume.id}`, label: "Battery strap pass-through clearance", appearance: "constraint", kind: "box", center: roundedPoint(add(lengthPoint(instance.transform.position), lengthPoint(volume.center))), size: lengthPoint(volume.size) };
+    }));
   const bodyCenter = instancePoint("body-interface");
+  const batteryHarnessCenter = instancePoint("battery-power-harness");
   return [
     { id: "body-interface", selectionId: "body-interface", label: "Frame body interface", appearance: "component", kind: "box", center: add(bodyCenter, viewerPoint(bodyDisplay.center)), size: viewerPoint(bodyDisplay.size) },
     boxConstraint("body-interface", "Body cable clearance", bodyCenter, bodyComponent),
+    ...batteryHarnessComponent.protectedVolumes.map((volume): AssemblyVisualPart => {
+      if (volume.kind !== "box") throw new Error("Battery harness route requires box keep-outs");
+      return { id: `battery-power-harness-${volume.id}`, selectionId: `battery-power-harness-${volume.id}`, label: "Protected battery power harness", appearance: "constraint", kind: "box", center: roundedPoint(add(batteryHarnessCenter, lengthPoint(volume.center))), size: lengthPoint(volume.size) };
+    }),
+    ...straps,
     ...wiring,
   ];
 }

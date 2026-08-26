@@ -33,6 +33,9 @@
 }
 
 .field-viewer canvas:active { cursor: grabbing; }
+.field-viewer--drone-only .field-viewer__help,
+.field-viewer--drone-only .cad-view-controls,
+.field-viewer--drone-only .cad-transform-controls { display: none; }
 
 .field-viewer__help,
 .field-viewer__field-status,

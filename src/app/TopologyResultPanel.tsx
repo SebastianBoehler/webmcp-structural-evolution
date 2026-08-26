@@ -45,7 +45,8 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
         {metrics.assemblyMassKg !== undefined && <div><dt>Accounted assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
         {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated PLA frame mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
         {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
-        <div><dt>Physical solve</dt><dd>4 loads · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
+        <div><dt>Structural cases</dt><dd>hover · roll · pitch · yaw</dd></div>
+        <div><dt>Physical solve</dt><dd>4 cases · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
       </dl>
       <button
         type="button"

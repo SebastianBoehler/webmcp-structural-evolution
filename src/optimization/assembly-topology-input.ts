@@ -69,6 +69,37 @@ function worldVolume(
   };
 }
 
+function expanded(volume: SolverVolume, clearanceM: number): SolverVolume {
+  if (clearanceM <= 0) return volume;
+  if (volume.kind === "box") return {
+    ...volume,
+    sizeM: volume.sizeM!.map((value) => value + clearanceM * 2) as unknown as Point,
+  };
+  return {
+    ...volume,
+    radiusM: volume.radiusM! + clearanceM,
+    heightM: volume.heightM! + clearanceM * 2,
+  };
+}
+
+function componentClearanceM(category: ComponentDefinition["category"]) {
+  switch (category) {
+    case "wiring": return 0.0015;
+    case "avionics": return 0.0015;
+    case "motor": return 0.001;
+    case "retention": return 0.001;
+    case "fastener": return 0.0005;
+    case "battery": return 0.003;
+    case "propeller": return 0.002;
+    case "body-interface": return 0;
+  }
+}
+
+function collisionClearances(definition: ComponentDefinition, centerM: Point, yawRad: number) {
+  const clearanceM = componentClearanceM(definition.category);
+  return definition.collisionVolumes.map((volume) => expanded(worldVolume(volume, centerM, yawRad), clearanceM));
+}
+
 function dynamicGrid(state: AssemblyAuthoringState): AssemblyTopologyInput["grid"] {
   const envelope = state.draft.targetEnvelope;
   if (envelope.kind !== "box") throw new Error("The FPV topology solver requires the live box design envelope.");
@@ -162,7 +193,10 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
         });
       }
       // Motor bodies are kept clear above the mount; their fasteners are imported as real collision geometry below.
-      protectedVoids.push(...definition.collisionVolumes.map((volume) => worldVolume(volume, centerM, yawRad)));
+      protectedVoids.push(
+        ...collisionClearances(definition, centerM, yawRad),
+        ...definition.protectedVolumes.map((volume) => worldVolume(volume, centerM, yawRad)),
+      );
     } else if (definition.category === "body-interface") {
       // The body interface is the real fixture boundary for this frame slice, rather than an invented centre support.
       supports.push(...definition.collisionVolumes.map((volume) => worldVolume(volume, centerM, yawRad)));
@@ -170,7 +204,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
       if (definition.category === "battery") {
         requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], -0.0045], sizeM: [0.084, 0.050, 0.003], yawRad });
         for (const x of [-0.024, 0.024]) for (const y of [-0.0225, 0.0225]) {
-          accessVoids.push({ kind: "box", centerM: [centerM[0] + x, centerM[1] + y, 0], sizeM: [0.014, 0.004, 0.024], yawRad });
+          accessVoids.push({ kind: "box", centerM: [centerM[0] + x, centerM[1] + y, 0], sizeM: [0.024, 0.006, 0.024], yawRad });
         }
       }
       if (definition.id === "fpv-camera") {
@@ -182,7 +216,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
         }
       }
       protectedVoids.push(
-        ...definition.collisionVolumes.map((volume) => worldVolume(volume, centerM, yawRad)),
+        ...collisionClearances(definition, centerM, yawRad),
         ...definition.protectedVolumes.map((volume) => worldVolume(volume, centerM, yawRad)),
       );
     }

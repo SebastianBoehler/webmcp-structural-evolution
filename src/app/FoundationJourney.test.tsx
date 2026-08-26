@@ -44,6 +44,16 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByText(/webgpu available/i)).toBeVisible();
   expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
+  const stage = screen.getByRole("main").querySelector(".workbench-stage")!;
+  fireEvent.click(screen.getByRole("button", { name: /hide assembly/i }));
+  expect(stage.getAttribute("data-components-collapsed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: /show assembly/i }));
+  expect(stage.getAttribute("data-components-collapsed")).toBe("false");
+  const canvasLayout = screen.getByRole("main").querySelector(".viewport-canvas")!;
+  fireEvent.click(screen.getByRole("button", { name: /^analysis$/i }));
+  expect(canvasLayout.getAttribute("data-analysis-open")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: /^analysis$/i }));
+  expect(canvasLayout.getAttribute("data-analysis-open")).toBe("true");
   expect(screen.getByText(/drop a trusted local zip package, step, stp, glb, or gltf/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();

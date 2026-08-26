@@ -12,6 +12,13 @@ describe("compileLiveTopologyContext", () => {
     expect(context.input.supports).not.toHaveLength(0);
     expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({ kind: "box", sizeM: [0.084, 0.05, 0.003] }));
     expect(context.input.protectedVoids).not.toHaveLength(0);
+    const expectedProtectedVolumes = initialDroneWorkspace.draft.components.reduce((count, instance) => {
+      const definition = initialDroneWorkspace.catalog.find(({ revision }) => revision === instance.componentRevision)!;
+      if (definition.category === "body-interface") return count;
+      expect(definition.collisionVolumes.length + definition.protectedVolumes.length).toBeGreaterThan(0);
+      return count + definition.collisionVolumes.length + definition.protectedVolumes.length;
+    }, 0);
+    expect(context.input.protectedVoids).toHaveLength(expectedProtectedVolumes);
     expect(context.input.accessVoids).toHaveLength(22);
     expect(context.input.accessVoids.slice(0, 16).every((volume) =>
       volume.kind === "cylinder" && volume.radiusM === 0.00334 && volume.heightM === 0.024,
@@ -23,7 +30,16 @@ describe("compileLiveTopologyContext", () => {
     expect(context.input.loadPathGuides).toHaveLength(16);
     expect(context.input.loadPathGuides.every(({ pointsM }) => pointsM.length === 4)).toBe(true);
     expect(context.input.loadPathGuides.some(({ pointsM }) => pointsM.some(([, , z]) => z >= 0.01))).toBe(true);
-    expect(context.input.assemblyMassKg).toBeCloseTo(0.495, 3);
-    expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(1e-6);
+    expect(context.input.accessVoids.filter((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.024 && volume.sizeM[1] === 0.006,
+    )).toHaveLength(4);
+    const strapTopClearance = context.input.protectedVoids.find((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.022 && volume.centerM[0] > 0,
+    );
+    expect(strapTopClearance?.centerM[0]).toBeCloseTo(0.022476, 9);
+    expect(strapTopClearance?.centerM[1]).toBeCloseTo(-0.001524, 9);
+    expect(strapTopClearance?.centerM[2]).toBeCloseTo(-0.0015, 9);
+    expect(context.input.assemblyMassKg).toBeCloseTo(0.515, 3);
+    expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(0.001);
   });
 });

@@ -64,7 +64,7 @@ const AnchorSchema = z.object({
 
 const ComponentDefinitionContentSchema = z.object({
   id: z.string().min(1),
-  category: z.enum(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface"]),
+  category: z.enum(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface", "retention"]),
   geometryCoordinates: z.literal("component-local"),
   manufacturer: z.string().min(1),
   partNumber: z.string().min(1),

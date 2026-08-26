@@ -1,11 +1,36 @@
 import * as THREE from "three";
 import { MarchingCubes } from "three/examples/jsm/objects/MarchingCubes.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import type { VoxelGrid } from "./field-instances";
 
 export const TOPOLOGY_ISOLATION = 0.32;
 const SURFACE_SAMPLING = 2;
 const surfaceCache = new WeakMap<Float32Array, Float32Array>();
+
+export function smoothTopologyDensity(
+  density: Float32Array,
+  dimensions: VoxelGrid["dimensions"],
+): Float32Array {
+  const { width, height, depth } = dimensions;
+  if (density.length !== width * height * depth) throw new Error("Density surface does not match the topology grid.");
+  const output = new Float32Array(density.length);
+  const weight = [1, 2, 1] as const;
+  for (let z = 0; z < depth; z += 1) for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    let sum = 0;
+    let total = 0;
+    for (let dz = -1; dz <= 1; dz += 1) for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+      const sx = Math.max(0, Math.min(width - 1, x + dx));
+      const sy = Math.max(0, Math.min(height - 1, y + dy));
+      const sz = Math.max(0, Math.min(depth - 1, z + dz));
+      const sampleWeight = weight[dx + 1]! * weight[dy + 1]! * weight[dz + 1]!;
+      sum += density[sx + width * (sy + height * sz)]! * sampleWeight;
+      total += sampleWeight;
+    }
+    output[x + width * (y + height * z)] = sum / total;
+  }
+  return output;
+}
 function densityAt(
   density: Float32Array,
   dimensions: VoxelGrid["dimensions"],
@@ -37,6 +62,7 @@ function extractSurfacePositions(grid: VoxelGrid, density: Float32Array): Float3
   if (density.length !== width * height * depth) {
     throw new Error("Density surface does not match the topology grid.");
   }
+  const displayDensity = smoothTopologyDensity(density, grid.dimensions);
   const sampledWidth = width * SURFACE_SAMPLING;
   const sampledHeight = height * SURFACE_SAMPLING;
   const sampledDepth = depth * SURFACE_SAMPLING;
@@ -56,7 +82,7 @@ function extractSurfacePositions(grid: VoxelGrid, density: Float32Array): Float3
         const sourceY = (y + 0.5) / SURFACE_SAMPLING - 0.5;
         const sourceZ = (z + 0.5) / SURFACE_SAMPLING - 0.5;
         const target = x + xOffset + resolution * (y + yOffset + resolution * (z + zOffset));
-        surface.field[target] = densityAt(density, grid.dimensions, sourceX, sourceY, sourceZ);
+        surface.field[target] = densityAt(displayDensity, grid.dimensions, sourceX, sourceY, sourceZ);
       }
     }
   }
@@ -80,11 +106,14 @@ export function createTopologySurface(
   if (density.length !== width * height * depth) {
     throw new Error("Density surface does not match the topology grid.");
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(extractSurfacePositions(grid, density), 3));
+  const rawGeometry = new THREE.BufferGeometry();
+  rawGeometry.setAttribute("position", new THREE.BufferAttribute(extractSurfacePositions(grid, density), 3));
+  const geometry = mergeVertices(rawGeometry, 1e-4);
+  rawGeometry.dispose();
   geometry.computeVertexNormals();
   const surface = new THREE.Mesh(geometry, material);
   surface.name = "verified-topology-surface";
+  surface.userData.surfaceTreatment = "Gaussian display reconstruction; solver density remains immutable";
   const resolution = Math.max(width, height, depth) * SURFACE_SAMPLING + 4;
   surface.scale.set(
     grid.cellSize[0] * resolution / (2 * SURFACE_SAMPLING),

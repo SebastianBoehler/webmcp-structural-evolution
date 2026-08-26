@@ -11,11 +11,33 @@ import { REFERENCE_DRONE_CATALOG } from "./reference-drone-catalog";
 describe("canonical reference drone assembly", () => {
   it("content-addresses every component and exact assembly instance", () => {
     expect(REFERENCE_DRONE_CATALOG.map(({ category }) => category).sort()).toEqual([
-      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "motor", "propeller", "wiring",
+      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "motor", "propeller", "retention", "wiring", "wiring",
     ]);
     expect(referenceDroneAssembly.revision).toMatch(/^[0-9a-f]{64}$/);
     expect(referenceDroneAssembly.components.every((instance) =>
       referenceComponentForInstance(instance).revision === instance.componentRevision)).toBe(true);
+  });
+
+  it("retains the battery with two physical straps and a mated XT60-to-ESC harness", () => {
+    expect(referenceDroneAssembly.components.filter(({ instanceId }) => instanceId.startsWith("battery-strap-"))).toHaveLength(2);
+    const battery = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "battery-6s-1550")!;
+    const harness = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "battery-power-harness")!;
+    const batteryInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "battery")!;
+    const harnessInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "battery-power-harness")!;
+    const endpoint = (instance: typeof batteryInstance, component: typeof battery, id: string) => {
+      const connection = component.interfaces.find((item) => item.id === id)!;
+      return ["x", "y", "z"].map((axis) =>
+        instance.transform.position[axis as "x"].value + connection.position[axis as "x"].value,
+      );
+    };
+    endpoint(batteryInstance, battery, "battery-power").forEach((value, axis) => {
+      expect(value).toBeCloseTo(endpoint(harnessInstance, harness, "battery-side")[axis]!, 12);
+    });
+    const esc = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "esc-30x30")!;
+    const escInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "esc")!;
+    endpoint(escInstance, esc, "battery-power").forEach((value, axis) => {
+      expect(value).toBeCloseTo(endpoint(harnessInstance, harness, "esc-side")[axis]!, 12);
+    });
   });
 
   it("mates the trimmed motor pigtail to the routed harness without overlap or a loose end", () => {
@@ -23,8 +45,12 @@ describe("canonical reference drone assembly", () => {
     const harness = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "motor-wiring-corridor")!;
     const motorEnd = motor.interfaces.find(({ id }) => id === "motor-phase-leads")!;
     const harnessEnd = harness.interfaces.find(({ id }) => id === "motor-side")!;
+    const harnessEscEnd = harness.interfaces.find(({ id }) => id === "esc-side")!;
+    const esc = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "esc-30x30")!;
+    const escEnd = esc.interfaces.find(({ id }) => id === "motor-east-phases")!;
     const motorInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "motor-east")!;
     const harnessInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "wiring-east")!;
+    const escInstance = referenceDroneAssembly.components.find(({ instanceId }) => instanceId === "esc")!;
 
     const world = (instance: typeof motorInstance, endpoint: typeof motorEnd) => [
       instance.transform.position.x.value + endpoint.position.x.value,
@@ -32,6 +58,9 @@ describe("canonical reference drone assembly", () => {
       instance.transform.position.z.value + endpoint.position.z.value,
     ];
     expect(world(motorInstance, motorEnd)).toEqual(world(harnessInstance, harnessEnd));
+    world(escInstance, escEnd).forEach((value, axis) => {
+      expect(value).toBeCloseTo(world(harnessInstance, harnessEscEnd)[axis]!, 12);
+    });
   });
 
   it("derives the exact solver protected volumes from component-local SI geometry", () => {
