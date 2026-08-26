@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { defineActionReceipt } from "../domain/receipts";
@@ -14,15 +14,15 @@ const identity = {
 afterEach(cleanup);
 
 test.each([
-  ["verified", { status: "succeeded", result: { ...identity, status: "verified" } }],
-  ["mismatch", { status: "failed", error: "verification mismatch" }],
-  ["failed", { status: "failed", error: "device lost" }],
-  ["canceled", { status: "canceled", reason: "invocation canceled" }],
-] as const)("renders exact identity before the bounded %s receipt summary", (_status, outcome) => {
+  ["verified", "Verified", { status: "succeeded", result: { ...identity, status: "verified" } }],
+  ["mismatch", "Failed", { status: "failed", error: "verification mismatch" }],
+  ["failed", "Failed", { status: "failed", error: "device lost" }],
+  ["canceled", "Canceled", { status: "canceled", reason: "invocation canceled" }],
+] as const)("leads with a human summary and progressively discloses the exact %s receipt", (_status, badge, outcome) => {
   const receipt = defineActionReceipt({
     id: `receipt-${_status}`,
     action: "run_foundation_probe",
-    validatedInputs: { ...identity, prediction: "x".repeat(400) },
+    validatedInputs: { ...identity, variant: "baseline", prediction: "x".repeat(400) },
     affectedRevision: identity.branchRevision,
     outcome,
     duration: { value: 1, unit: "ms" },
@@ -31,9 +31,19 @@ test.each([
   render(<ReceiptLedger receipts={[receipt]} />);
   const item = screen.getByRole("listitem");
 
+  expect(within(item).getByText("Baseline verification")).toBeVisible();
+  expect(within(item).getByText(badge)).toBeVisible();
+  const technical = within(item).getByText("Technical receipt").closest("details");
+  expect(technical?.hasAttribute("open")).toBe(false);
+  expect(technical?.contains(within(item).getByText("run_foundation_probe"))).toBe(true);
+  expect(technical?.contains(within(item).getByText(identity.parentRevision))).toBe(true);
+
+  fireEvent.click(within(item).getByText("Technical receipt"));
+  expect(technical?.hasAttribute("open")).toBe(true);
+  expect(within(item).getByText("run_foundation_probe")).toBeVisible();
   expect(within(item).getByText(identity.parentRevision)).toBeVisible();
   expect(within(item).getByText(identity.proposalRevision)).toBeVisible();
   expect(within(item).getAllByText(identity.branchRevision).length).toBeGreaterThan(0);
   expect(within(item).getByText("2")).toBeVisible();
-  expect(item.textContent).toMatch(/Validated input:.*…/);
+  expect(item.textContent).toContain("x".repeat(400));
 });

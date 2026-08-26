@@ -153,7 +153,7 @@ test("shows cancellation as immutable evidence and ignores a late result", async
   await screen.findByText(/foundation probe canceled by the user/i);
   expect(await screen.findByRole("button", { name: /retry baseline verification/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^history/i }));
-  expect(screen.getByRole("log", { name: /action receipts/i }).textContent).toContain("Canceled:");
+  expect(screen.getByRole("log", { name: /action receipts/i }).textContent).toContain("Canceled");
 
   resolveProbe({
     status: "verified", output: new Float32Array(32 ** 3).fill(0.7),

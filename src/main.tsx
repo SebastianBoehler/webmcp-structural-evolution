@@ -5,6 +5,7 @@ import { App } from "./app/App";
 import "./app/tokens.css";
 import "./app/app.css";
 import "./app/workbench.css";
+import "./app/receipt-ledger.css";
 
 const root = document.getElementById("root");
 
