@@ -13,8 +13,12 @@ export class WasmTopologyResult {
     readonly iterations: number;
     readonly material_fraction: number;
     readonly max_displacement: number;
+    readonly max_stress: number;
+    readonly minimum_safety_factor: number;
     readonly width: number;
 }
+
+export function optimize_assembly_frame(preset: string, input: any): WasmTopologyResult;
 
 export function optimize_demo_frame(preset: string): WasmTopologyResult;
 
@@ -25,8 +29,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmtopologyresult_free: (a: number, b: number) => void;
+    readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
-    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmtopologyresult_density: (a: number) => [number, number];
     readonly wasmtopologyresult_depth: (a: number) => number;
     readonly wasmtopologyresult_final_compliance: (a: number) => number;
@@ -35,7 +39,10 @@ export interface InitOutput {
     readonly wasmtopologyresult_iterations: (a: number) => number;
     readonly wasmtopologyresult_material_fraction: (a: number) => number;
     readonly wasmtopologyresult_max_displacement: (a: number) => number;
+    readonly wasmtopologyresult_max_stress: (a: number) => number;
+    readonly wasmtopologyresult_minimum_safety_factor: (a: number) => number;
     readonly wasmtopologyresult_width: (a: number) => number;
+    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

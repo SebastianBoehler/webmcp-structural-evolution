@@ -3,10 +3,12 @@ import type { AssemblyDraft } from "../domain/assembly-model";
 import type { ComponentDefinition } from "../domain/component-model";
 import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import type { VoxelGrid } from "../viewer/field-instances";
 
 export interface InspectorPanelProps {
   readonly selectedId: string;
   readonly context: FoundationContextSnapshot;
+  readonly topologyGrid?: VoxelGrid;
   readonly parts: readonly AssemblyVisualPart[];
   readonly imports: readonly ImportedComponent[];
   readonly assembly?: Pick<AssemblyDraft, "components">;
@@ -81,6 +83,7 @@ const knownDetails = (part: AssemblyVisualPart | undefined) => {
 export function InspectorPanel({
   selectedId,
   context,
+  topologyGrid,
   parts,
   imports,
   assembly,
@@ -129,7 +132,7 @@ export function InspectorPanel({
       )}
       {isRegion && (
         <dl className="property-list">
-          <div><dt>Resolution</dt><dd>{Object.values(context.grid.dimensions).join(" × ")} voxels</dd></div>
+          <div><dt>Resolution</dt><dd>{Object.values(topologyGrid?.dimensions ?? context.grid.dimensions).join(" × ")} voxels</dd></div>
           <div><dt>Objective</dt><dd>Minimum compliance · 35% volume</dd></div>
           <div><dt>Status</dt><dd>{layoutState === "verified" ? "Evidence current" : "Layout changed"}</dd></div>
         </dl>

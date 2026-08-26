@@ -1,6 +1,7 @@
 import type { ProbeResult, TopologyMetrics } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
 import { optimizeDroneFrame } from "../reference";
+import type { AssemblyTopologyInput } from "./assembly-topology-input";
 
 const elapsed = (startedAt: number) => performance.now() - startedAt;
 
@@ -14,7 +15,7 @@ export async function runTopologyProbe(
   }
   try {
     const preset = input.topologyPreset ?? "balanced";
-    const result = await optimizeDroneFrame(preset);
+    const result = await optimizeDroneFrame(preset, input.assembly);
     if (signal?.aborted) {
       return { status: "canceled", code: "canceled", message: "Topology optimization canceled by the user.", elapsedMs: elapsed(startedAt) };
     }
@@ -36,6 +37,7 @@ export async function runTopologyProbe(
       relativeL2: 0,
       tolerance: 0,
       topology,
+      ...(input.topologyGrid ? { grid: input.topologyGrid } : {}),
     };
   } catch (error) {
     return {

@@ -1,4 +1,5 @@
 type ReferenceModule = typeof import("./pkg/webmcp_reference.js");
+import type { AssemblyTopologyInput } from "../optimization/assembly-topology-input";
 
 let referencePromise: Promise<ReferenceModule> | undefined;
 
@@ -36,6 +37,8 @@ export interface TopologyOptimizationResult {
     readonly initialCompliance: number;
     readonly finalCompliance: number;
     readonly maxDisplacement: number;
+    readonly maxStress: number;
+    readonly minimumSafetyFactor: number;
     readonly materialFraction: number;
     readonly iterations: number;
   };
@@ -47,15 +50,18 @@ function finite(value: number): boolean {
 
 export async function optimizeDroneFrame(
   preset: TopologyPreset,
+  assembly?: AssemblyTopologyInput,
 ): Promise<TopologyOptimizationResult> {
   const reference = await loadReference();
-  const result = reference.optimize_demo_frame(preset);
+  const result = assembly ? reference.optimize_assembly_frame(preset, assembly) : reference.optimize_demo_frame(preset);
   const dimensions = { width: result.width, height: result.height, depth: result.depth };
   const density = result.density;
   const metrics = {
     initialCompliance: result.initial_compliance,
     finalCompliance: result.final_compliance,
     maxDisplacement: result.max_displacement,
+    maxStress: result.max_stress,
+    minimumSafetyFactor: result.minimum_safety_factor,
     materialFraction: result.material_fraction,
     iterations: result.iterations,
   };

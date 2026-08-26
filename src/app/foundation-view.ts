@@ -15,14 +15,14 @@ export function foundationView(state: FoundationProjectState) {
     branchRevision: preview.branchRevision,
     contextRevision: state.contextRevision,
     parentRevision: preview.parentRevision,
-    grid: state.context.grid,
+    grid: preview.result.grid ?? state.context.grid,
     result: preview.result,
   } : null;
   const viewerAlternatives: readonly ViewerBranch[] = alternatives.map((branch) => ({
     branchRevision: branch.branchRevision,
     contextRevision: branch.parentRevision,
     parentRevision: branch.parentRevision,
-    grid: state.context.grid,
+    grid: branch.result?.status === "verified" ? branch.result.grid ?? state.context.grid : state.context.grid,
     result: branch.result!,
   }));
   const currentVerified = alternatives.filter(

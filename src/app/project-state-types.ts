@@ -14,6 +14,7 @@ export interface ProjectStateOptions {
   readonly locks: readonly string[];
   readonly capability: FoundationProjectState["capability"];
   readonly compute?: ProbeRunner;
+  readonly buildProbeInput?: (variant: import("../webmcp/schemas").ProbeVariant) => ProbeInput;
 }
 
 export interface ExperimentRailApi {

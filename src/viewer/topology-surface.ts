@@ -5,15 +5,6 @@ import type { VoxelGrid } from "./field-instances";
 
 export const TOPOLOGY_ISOLATION = 0.32;
 const SURFACE_SAMPLING = 3;
-const MOTOR_CENTERS = [[105, 0], [-105, 0], [0, 105], [0, -105]] as const;
-const MOTOR_BOLT_OFFSETS = [[5.657, 5.657], [-5.657, 5.657], [-5.657, -5.657], [5.657, -5.657]] as const;
-const M3_CLEARANCE_RADIUS = 1.7;
-
-function insideMotorFastenerClearance(x: number, y: number): boolean {
-  return MOTOR_CENTERS.some(([motorX, motorY]) => MOTOR_BOLT_OFFSETS.some(([offsetX, offsetY]) =>
-    Math.hypot(x - motorX - offsetX, y - motorY - offsetY) <= M3_CLEARANCE_RADIUS));
-}
-
 function densityAt(
   density: Float32Array,
   dimensions: VoxelGrid["dimensions"],
@@ -65,11 +56,7 @@ export function createTopologySurface(
         const sourceY = (y + 0.5) / SURFACE_SAMPLING - 0.5;
         const sourceZ = (z + 0.5) / SURFACE_SAMPLING - 0.5;
         const target = x + xOffset + resolution * (y + yOffset + resolution * (z + zOffset));
-        const worldX = grid.anchor.position[0] + (sourceX + 0.5) * grid.cellSize[0];
-        const worldY = grid.anchor.position[1] + (sourceY + 0.5) * grid.cellSize[1];
-        surface.field[target] = insideMotorFastenerClearance(worldX, worldY)
-          ? 0
-          : densityAt(density, grid.dimensions, sourceX, sourceY, sourceZ);
+        surface.field[target] = densityAt(density, grid.dimensions, sourceX, sourceY, sourceZ);
       }
     }
   }

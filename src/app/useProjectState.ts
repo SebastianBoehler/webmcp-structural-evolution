@@ -30,6 +30,8 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const [state, setState] = useState(stateRef.current);
   const computeRef = useRef(options.compute ?? runTopologyProbe);
   computeRef.current = options.compute ?? runTopologyProbe;
+  const inputBuilderRef = useRef(options.buildProbeInput ?? buildProbeInput);
+  inputBuilderRef.current = options.buildProbeInput ?? buildProbeInput;
   const sequenceRef = useRef(0);
   const operationRef = useRef<ActiveProbeOperation | null>(null);
   const interventionGenerationRef = useRef(0);
@@ -48,6 +50,15 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     if (JSON.stringify(current.capability) === capabilityKey) return;
     commit({ ...current, capability: options.capability });
   }, [capabilityKey]);
+  useEffect(() => {
+    const current = stateRef.current!;
+    if (current.contextRevision === options.contextRevision) return;
+    commit({
+      ...current,
+      contextRevision: options.contextRevision,
+      stagedBranches: current.stagedBranches.map((branch) => ({ ...branch, stale: true })),
+    });
+  }, [options.contextRevision]);
 
   const addReceipt = async (
     action: string,
@@ -189,7 +200,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
       }
       let result: ProbeResult;
       try {
-        result = await computeRef.current(buildProbeInput(parsed.variant), operation.controller.signal);
+        result = await computeRef.current(inputBuilderRef.current(parsed.variant), operation.controller.signal);
       } catch (error) {
         result = {
           status: "failed",

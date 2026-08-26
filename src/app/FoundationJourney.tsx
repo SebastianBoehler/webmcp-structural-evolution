@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
+import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
@@ -26,6 +27,7 @@ import { WorkbenchDrawer, type DrawerView } from "./WorkbenchDrawer";
 import { WorkbenchHeader } from "./WorkbenchHeader";
 import { WorkbenchAgentTools } from "./WorkbenchAgentTools";
 import { foundationView } from "./foundation-view";
+import { buildProbeInput } from "./project-probe";
 
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
 const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
@@ -51,17 +53,18 @@ export interface FoundationJourneyProps {
   readonly viewerEnvironment?: FieldViewerEnvironment;
 }
 export function FoundationJourney({ capability, compute, viewerEnvironment }: FoundationJourneyProps) {
+  const workspace = useAssemblyWorkspace();
   const { state, services, experimentRail } = useProjectState({
-    contextRevision: fixture.study.revision,
+    contextRevision: workspace.revision,
     context: initialContext,
     acceptedBranchRevision: initialAcceptedRevision,
     selection: initialContext.selection,
     locks: initialContext.locks,
     capability,
     compute,
+    buildProbeInput: (variant) => buildProbeInput(variant, compileLiveTopologyContext(workspace)),
   });
   const { theme, setTheme } = useTheme();
-  const workspace = useAssemblyWorkspace();
   const activityReceipts = [...state.receipts, ...workspace.receipts].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const [mode, setMode] = useState<AlternativeMode>("overlay");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
@@ -247,7 +250,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               selectedRegion={state.context.selection}
               threshold={0.5}
               mode={mode}
-              grid={state.context.grid}
+              grid={viewerCurrent?.grid ?? state.context.grid}
               assemblyParts={visibleParts}
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
@@ -286,6 +289,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         </section>
         <InspectorPanel
           selectedId={selectedPart} context={state.context}
+          topologyGrid={viewerCurrent?.grid}
           parts={workspace.parts} imports={workspace.imports}
           assembly={workspace.draft} catalog={workspace.catalog} conflicts={workspace.conflicts}
           layoutState={workspace.layoutState}

@@ -1,4 +1,5 @@
 import { relativeL2 } from "../reference";
+import type { VoxelGrid } from "../viewer/field-instances";
 import { acquireWebGpu } from "./capabilities";
 import {
   expectedProbe,
@@ -34,12 +35,14 @@ export interface TopologyMetrics {
   readonly initialCompliance: number;
   readonly finalCompliance: number;
   readonly maxDisplacement: number;
+  readonly maxStress: number;
+  readonly minimumSafetyFactor: number;
   readonly materialFraction: number;
   readonly iterations: number;
 }
 
 export type ProbeResult =
-  | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics } & ProbeMetrics)
+  | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics; readonly grid?: VoxelGrid } & ProbeMetrics)
   | ({
       readonly status: "mismatch";
       readonly code: "verification-mismatch";

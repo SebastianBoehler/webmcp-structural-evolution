@@ -5,15 +5,16 @@ pub(crate) struct Spring {
     pub left: usize,
     pub right: usize,
     pub direction: [f32; 3],
+    pub length_m: f32,
+    pub area_m2: f32,
+    pub youngs_modulus_pa: f32,
 }
 
 pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
     let [width, height, depth] = grid.dimensions;
     let offsets = [
         [1, 0, 0], [0, 1, 0], [0, 0, 1],
-        [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1],
-        [0, 1, 1], [0, 1, -1], [1, 1, 1], [1, 1, -1],
-        [1, -1, 1], [1, -1, -1],
+        [1, 1, 0], [1, 0, 1], [0, 1, 1],
     ];
     let mut result = Vec::new();
     for z in 0..depth {
@@ -25,11 +26,16 @@ pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
                         || neighbor[0] >= width as isize
                         || neighbor[1] >= height as isize
                         || neighbor[2] >= depth as isize { continue; }
-                    let length = ((dx * dx + dy * dy + dz * dz) as f32).sqrt();
+                    let delta = [dx as f32 * grid.cell_size_m[0], dy as f32 * grid.cell_size_m[1], dz as f32 * grid.cell_size_m[2]];
+                    let length = delta.iter().map(|value| value * value).sum::<f32>().sqrt();
+                    let representative_area = (grid.cell_size_m[0] * grid.cell_size_m[1] * grid.cell_size_m[2]).powf(2.0 / 3.0);
                     result.push(Spring {
                         left: grid.index(x, y, z),
                         right: grid.index(neighbor[0] as usize, neighbor[1] as usize, neighbor[2] as usize),
-                        direction: [dx as f32 / length, dy as f32 / length, dz as f32 / length],
+                        direction: [delta[0] / length, delta[1] / length, delta[2] / length],
+                        length_m: length,
+                        area_m2: representative_area,
+                        youngs_modulus_pa: grid.youngs_modulus_pa,
                     });
                 }
             }
@@ -40,7 +46,9 @@ pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
 
 fn spring_stiffness(spring: Spring, density: &[f32]) -> f32 {
     let average = (density[spring.left] + density[spring.right]) * 0.5;
-    1.0e-4 + average.powi(3)
+    // SIMP penalization on a physically dimensioned axial spring lattice: EA/L in N/m.
+    let solid = spring.youngs_modulus_pa * spring.area_m2 / spring.length_m.max(1.0e-6);
+    solid * (1.0e-5 + average.powi(3))
 }
 
 fn apply_operator(grid: &Grid, springs: &[Spring], density: &[f32], x: &[f32], y: &mut [f32]) {
@@ -94,7 +102,7 @@ pub(crate) fn solve(grid: &Grid, springs: &[Spring], density: &[f32], load: &[f3
     let mut rz = dot(&residual, &z);
     let rhs_norm = dot(&rhs, &rhs).sqrt().max(1.0e-9);
     let mut product = vec![0.0; rhs.len()];
-    for _ in 0..96 {
+    for _ in 0..32 {
         apply_operator(grid, springs, density, &direction, &mut product);
         let denominator = dot(&direction, &product);
         if denominator.abs() < 1.0e-12 { break; }
@@ -117,10 +125,11 @@ pub(crate) fn compliance_and_sensitivity(
     grid: &Grid,
     springs: &[Spring],
     density: &[f32],
-) -> (f32, f32, Vec<f32>) {
+) -> (f32, f32, Vec<f32>, f32) {
     let mut compliance = 0.0;
     let mut max_displacement = 0.0_f32;
     let mut sensitivity = vec![0.0; density.len()];
+    let mut max_stress = 0.0_f32;
     for load in &grid.load_cases {
         let displacement = solve(grid, springs, density, load);
         compliance += dot(load, &displacement);
@@ -133,10 +142,13 @@ pub(crate) fn compliance_and_sensitivity(
             let extension = spring.direction.iter().enumerate().map(|(axis, direction)|
                 direction * (displacement[left + axis] - displacement[right + axis])).sum::<f32>();
             let average = ((density[spring.left] + density[spring.right]) * 0.5).max(0.001);
+            let axial_force = spring_stiffness(spring, density) * extension;
+            let effective_area = (spring.area_m2 * average.powi(3)).max(1.0e-12);
+            max_stress = max_stress.max(axial_force.abs() / effective_area);
             let derivative = -1.5 * average.powi(2) * extension * extension;
             sensitivity[spring.left] += derivative;
             sensitivity[spring.right] += derivative;
         }
     }
-    (compliance, max_displacement, sensitivity)
+    (compliance, max_displacement, sensitivity, max_stress)
 }

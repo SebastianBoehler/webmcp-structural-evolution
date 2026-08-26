@@ -1,6 +1,6 @@
-use super::grid::{drone_grid, Grid};
+use super::grid::{assembly_grid, drone_grid, Grid};
 use super::solver::{compliance_and_sensitivity, springs};
-use super::{OptimizationPreset, TopologyResult};
+use super::{AssemblySolverInput, OptimizationPreset, TopologyResult};
 use std::sync::OnceLock;
 
 fn filtered(grid: &Grid, values: &[f32]) -> Vec<f32> {
@@ -48,6 +48,7 @@ fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], targ
     let move_limit = 0.16;
     let mut lower = 1.0e-9_f32;
     let mut upper = 1.0e9_f32;
+    let maximum_sensitivity = sensitivity.iter().map(|value| value.abs()).fold(0.0_f32, f32::max).max(1.0e-12);
     let mut proposal = density.to_vec();
     for _ in 0..64 {
         let multiplier = (lower * upper).sqrt();
@@ -57,7 +58,8 @@ fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], targ
             } else if grid.passive_void[index] {
                 0.0
             } else {
-                let scaled = density[index] * (-sensitivity[index] / multiplier).max(0.0).sqrt();
+                let normalized = sensitivity[index] / maximum_sensitivity;
+                let scaled = density[index] * (-normalized / multiplier).max(0.0).sqrt();
                 scaled.clamp((density[index] - move_limit).max(0.02), (density[index] + move_limit).min(1.0))
             };
         }
@@ -68,16 +70,12 @@ fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], targ
 
 fn connectivity_path(grid: &Grid, density: &[f32], start: usize) -> Vec<usize> {
     let [width, height, depth] = grid.dimensions;
-    let mut distance = vec![f32::INFINITY; density.len()];
     let mut previous = vec![usize::MAX; density.len()];
     let mut visited = vec![false; density.len()];
-    distance[start] = 0.0;
     let mut goal = start;
-    for _ in 0..density.len() {
-        let Some(current) = distance.iter().enumerate()
-            .filter(|(index, _)| !visited[*index])
-            .min_by(|left, right| left.1.total_cmp(right.1)).map(|(index, _)| index) else { break };
-        if !distance[current].is_finite() { break; }
+    let mut queue = std::collections::VecDeque::from([start]);
+    visited[start] = true;
+    while let Some(current) = queue.pop_front() {
         visited[current] = true;
         if grid.fixed_dofs[current * 3] {
             goal = current;
@@ -93,13 +91,10 @@ fn connectivity_path(grid: &Grid, density: &[f32], start: usize) -> Vec<usize> {
         ] {
             if nx >= width || ny >= height || nz >= depth { continue; }
             let neighbor = grid.index(nx, ny, nz);
-            if visited[neighbor] || grid.passive_void[neighbor] { continue; }
-            let cost = 0.02 + (1.0 - density[neighbor]).powi(2);
-            let candidate = distance[current] + cost;
-            if candidate < distance[neighbor] {
-                distance[neighbor] = candidate;
-                previous[neighbor] = current;
-            }
+            if visited[neighbor] || grid.passive_void[neighbor] || density[neighbor] < 0.02 { continue; }
+            visited[neighbor] = true;
+            previous[neighbor] = current;
+            queue.push_back(neighbor);
         }
     }
     let mut path = vec![goal];
@@ -110,15 +105,31 @@ fn connectivity_path(grid: &Grid, density: &[f32], start: usize) -> Vec<usize> {
     path
 }
 
+fn mount_starts(grid: &Grid) -> Vec<usize> {
+    let [width, height, depth] = grid.dimensions;
+    let mut starts = Vec::new();
+    let mut seen = vec![false; grid.node_count()];
+    for index in 0..seen.len() {
+        if seen[index] || !grid.passive_solid[index] { continue; }
+        starts.push(index);
+        let mut queue = std::collections::VecDeque::from([index]);
+        seen[index] = true;
+        while let Some(current) = queue.pop_front() {
+            let x = current % width; let y = (current / width) % height; let z = current / (width * height);
+            for [nx, ny, nz] in [[x.wrapping_sub(1), y, z], [x + 1, y, z], [x, y.wrapping_sub(1), z], [x, y + 1, z], [x, y, z.wrapping_sub(1)], [x, y, z + 1]] {
+                if nx >= width || ny >= height || nz >= depth { continue; }
+                let neighbor = grid.index(nx, ny, nz);
+                if !seen[neighbor] && grid.passive_solid[neighbor] { seen[neighbor] = true; queue.push_back(neighbor); }
+            }
+        }
+    }
+    starts
+}
+
 fn enforce_connectivity(grid: &Grid, density: &mut [f32], target: f32) -> Vec<bool> {
     let [width, height, depth] = grid.dimensions;
-    let center = [width / 2, height / 2, depth / 2];
-    let starts = [
-        grid.index(width - 3, center[1], center[2]), grid.index(2, center[1], center[2]),
-        grid.index(center[0], height - 3, center[2]), grid.index(center[0], 2, center[2]),
-    ];
     let mut path_mask = vec![false; density.len()];
-    for start in starts {
+    for start in mount_starts(grid) {
         for index in connectivity_path(grid, density, start) { path_mask[index] = true; }
     }
     let dilation_passes = if target >= 0.44 { 2 } else if target >= 0.34 { 1 } else { 0 };
@@ -183,7 +194,7 @@ fn supported_material(grid: &Grid, density: &[f32], start: usize) -> Vec<bool> {
 
 fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], target: f32) {
     let [width, height, depth] = grid.dimensions;
-    let start = grid.index(width / 2 + 2, height / 2, depth / 2);
+    let start = grid.fixed_dofs.chunks_exact(3).position(|dofs| dofs[0]).unwrap_or(grid.index(width / 2, height / 2, depth / 2));
     for _ in 0..4 {
         let supported = supported_material(grid, density, start);
         for index in 0..density.len() {
@@ -230,8 +241,7 @@ fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], tar
     }
 }
 
-fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult {
-    let grid = drone_grid();
+fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) -> TopologyResult {
     let springs = springs(&grid);
     let target = preset.volume_fraction();
     let solid_fraction = grid.passive_solid.iter().filter(|solid| **solid).count() as f32
@@ -239,16 +249,16 @@ fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult {
     let initial = ((target - solid_fraction) / (1.0 - solid_fraction)).clamp(0.04, 0.95);
     let mut density = grid.passive_void.iter().zip(&grid.passive_solid).map(|(&void, &solid)|
         if void { 0.0 } else if solid { 1.0 } else { initial }).collect::<Vec<_>>();
-    let (initial_compliance, _, _) = compliance_and_sensitivity(&grid, &springs, &density);
-    let iterations = 16;
+    let (initial_compliance, _, _, _) = compliance_and_sensitivity(&grid, &springs, &density);
+    let iterations = 8;
     for _ in 0..iterations {
-        let (_, _, sensitivity) = compliance_and_sensitivity(&grid, &springs, &density);
+        let (_, _, sensitivity, _) = compliance_and_sensitivity(&grid, &springs, &density);
         let sensitivity = filtered(&grid, &sensitivity);
         optimality_update(&grid, &mut density, &sensitivity, target);
     }
     let path = enforce_connectivity(&grid, &mut density, target);
-    remove_floating_material(&grid, &mut density, &path, target);
-    let (final_compliance, max_displacement, _) = compliance_and_sensitivity(&grid, &springs, &density);
+    if prune_islands { remove_floating_material(&grid, &mut density, &path, target); }
+    let (final_compliance, max_displacement, _, max_stress) = compliance_and_sensitivity(&grid, &springs, &density);
     TopologyResult {
         dimensions: grid.dimensions,
         passive_solid_indices: grid.passive_solid.iter().enumerate().filter_map(|(index, solid)| solid.then_some(index)).collect(),
@@ -258,8 +268,16 @@ fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult {
         initial_compliance,
         final_compliance,
         max_displacement,
+        max_stress,
+        minimum_safety_factor: grid.failure_stress_pa / max_stress.max(1.0),
         iterations,
     }
+}
+
+fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult { optimize_grid(preset, drone_grid(), true) }
+
+pub fn optimize_assembly_frame(preset: OptimizationPreset, input: &AssemblySolverInput) -> Result<TopologyResult, String> {
+    Ok(optimize_grid(preset, assembly_grid(input)?, false))
 }
 
 pub fn optimize_drone_frame(preset: OptimizationPreset) -> TopologyResult {

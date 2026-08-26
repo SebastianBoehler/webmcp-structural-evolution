@@ -12,6 +12,8 @@ export interface ProbeInput {
   readonly dimensions: ProbeDimensions;
   readonly values: Float32Array;
   readonly topologyPreset?: "lightweight" | "balanced" | "stiffness";
+  readonly assembly?: import("../optimization/assembly-topology-input").AssemblyTopologyInput;
+  readonly topologyGrid?: import("../viewer/field-instances").VoxelGrid;
 }
 
 type UnknownRecord = Record<PropertyKey, unknown>;
