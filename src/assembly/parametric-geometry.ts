@@ -12,13 +12,15 @@ type CsgBrush = InstanceType<CsgRuntime["Brush"]>;
 
 type Length = Readonly<{ value: number; unit: "m" | "mm" }>;
 type Vector = Readonly<{ x: Length; y: Length; z: Length }>;
-type Orientation = Readonly<{ roll: Readonly<{ value: number }>; pitch: Readonly<{ value: number }>; yaw: Readonly<{ value: number }> }>;
+type Angle = Readonly<{ value: number; unit: "deg" | "rad" }>;
+type Orientation = Readonly<{ roll: Angle; pitch: Angle; yaw: Angle }>;
 
 const metres = (length: Length) => length.unit === "mm" ? length.value / 1_000 : length.value;
+const radians = (angle: Angle) => angle.unit === "deg" ? angle.value * Math.PI / 180 : angle.value;
 const vector = (value: Vector) => new THREE.Vector3(metres(value.x), metres(value.y), metres(value.z));
 
 function rotation(value: Orientation): THREE.Matrix4 {
-  return new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(value.roll.value, value.pitch.value, value.yaw.value));
+  return new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(radians(value.roll), radians(value.pitch), radians(value.yaw)));
 }
 
 function references(node: GraphNode): readonly string[] {
@@ -60,7 +62,7 @@ function validateGraph(graph: ParametricGraph): string {
 
   const geometryConsumers = new Set<string>();
   for (const node of graph.nodes) {
-    if (node.kind !== "named-interface") references(node).forEach((id) => geometryConsumers.add(id));
+    references(node).forEach((id) => geometryConsumers.add(id));
   }
   const roots = graph.nodes.filter((node) => node.kind !== "named-interface" && !geometryConsumers.has(node.id));
   if (roots.length !== 1) throw new RangeError("Parametric graph must have exactly one solid root");

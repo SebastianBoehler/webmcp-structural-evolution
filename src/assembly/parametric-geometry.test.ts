@@ -4,6 +4,8 @@ import type { ParametricGraph } from "../domain/component-model";
 import { compileParametricGeometry } from "./parametric-geometry";
 
 const metre = (value: number) => ({ value, unit: "m" as const });
+const degrees = (value: number) => ({ value, unit: "deg" as const });
+const radians = (value: number) => ({ value, unit: "rad" as const });
 const origin = { x: metre(0), y: metre(0), z: metre(0) };
 const orientation = { roll: { value: 0, unit: "rad" as const }, pitch: { value: 0, unit: "rad" as const }, yaw: { value: 0, unit: "rad" as const } };
 
@@ -59,6 +61,31 @@ describe("compileParametricGeometry", () => {
 
   it("rejects graphs over the operation budget before geometry execution", async () => {
     await expect(compileParametricGeometry(graphWithNodes(257))).rejects.toThrow("256 operations");
+  });
+
+  it("treats nonzero degree and radian rotations as equivalent", async () => {
+    const rotatedBox = (yaw: ReturnType<typeof degrees> | ReturnType<typeof radians>): ParametricGraph => ({ nodes: [
+      { kind: "box", id: "box", center: origin, size: { x: metre(0.03), y: metre(0.01), z: metre(0.005) } },
+      { kind: "transform", id: "rotated", source: "box", transform: { position: origin, orientation: { roll: radians(0), pitch: radians(0), yaw } } },
+    ] });
+
+    const [degreesMesh, radiansMesh] = await Promise.all([
+      compileParametricGeometry(rotatedBox(degrees(90))),
+      compileParametricGeometry(rotatedBox(radians(Math.PI / 2))),
+    ]);
+
+    expect(degreesMesh.sizeMm).toEqual(radiansMesh.sizeMm);
+    expect(degreesMesh.sizeMm).toEqual([10, 30, 5]);
+  });
+
+  it("allows a solid to flow through an intermediate named-interface alias", async () => {
+    const graph: ParametricGraph = { nodes: [
+      { kind: "box", id: "mount", center: origin, size: { x: metre(0.01), y: metre(0.02), z: metre(0.003) } },
+      { kind: "named-interface", id: "motor-mount", source: "mount" },
+      { kind: "transform", id: "positioned-mount", source: "motor-mount", transform: { position: { x: metre(0.02), y: metre(0), z: metre(0) }, orientation } },
+    ] };
+
+    await expect(compileParametricGeometry(graph)).resolves.toMatchObject({ sizeMm: [10, 20, 3] });
   });
 
   it.each([
