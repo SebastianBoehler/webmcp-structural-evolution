@@ -25,6 +25,10 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
       relativeL2: result.relativeL2,
       tolerance: result.tolerance,
       ...(result.topology ? { topology: { ...result.topology } } : {}),
+      ...(result.analysis ? { analysis: {
+        displacement: new Float32Array(result.analysis.displacement),
+        stress: new Float32Array(result.analysis.stress),
+      } } : {}),
       ...(result.grid ? { grid: result.grid } : {}),
     };
   }

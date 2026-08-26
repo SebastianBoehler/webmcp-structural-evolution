@@ -4,6 +4,7 @@ import type { AlternativeLayer } from "./alternative-instances";
 import type { CleanupLedger } from "./cleanup-ledger";
 import type { PackedInstances, VoxelGrid } from "./field-instances";
 import { createTopologySurface } from "./topology-surface";
+import type { ScalarAnalysisField } from "./render-envelope";
 
 export interface FieldMeshSet {
   readonly meshes: readonly THREE.InstancedMesh[];
@@ -14,12 +15,14 @@ interface MeshOwnership extends Pick<CleanupLedger, "own"> {
   attach(mesh: THREE.Object3D): void;
 }
 
-function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership) {
+function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership, ghosted = false) {
   const material = new THREE.MeshStandardMaterial({
     color: 0x5da9d6,
     metalness: 0.08,
     roughness: 0.38,
     side: THREE.DoubleSide,
+    transparent: ghosted,
+    opacity: ghosted ? 0.18 : 1,
   });
   ownership.own(() => material.dispose());
   const surface = createTopologySurface(grid, density, material);
@@ -35,6 +38,7 @@ function addInstances(
   grid: VoxelGrid,
   color?: THREE.Color,
   startIndex = 0,
+  colorForField?: (fieldIndex: number) => THREE.Color,
 ): void {
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3();
@@ -53,7 +57,8 @@ function addInstances(
     matrix.compose(position, orientation, scale);
     const index = startIndex + offset;
     mesh.setMatrixAt(index, matrix);
-    if (color) mesh.setColorAt(index, color);
+    if (colorForField) mesh.setColorAt(index, colorForField(fieldIndex));
+    else if (color) mesh.setColorAt(index, color);
   });
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -105,6 +110,39 @@ function currentMesh(
   );
 }
 
+const ANALYSIS_BANDS = 7;
+
+function analysisMeshes(
+  grid: VoxelGrid,
+  records: PackedInstances,
+  analysis: ScalarAnalysisField,
+  ownership: MeshOwnership,
+): readonly THREE.InstancedMesh[] {
+  const bands = Array.from({ length: ANALYSIS_BANDS }, () => [] as number[]);
+  const maximum = Math.max(analysis.maximum, 1.0e-12);
+  records.forEach((fieldIndex) => {
+    const normalized = Math.max(0, Math.min(1, analysis.values[fieldIndex]! / maximum));
+    bands[Math.min(ANALYSIS_BANDS - 1, Math.floor(normalized * ANALYSIS_BANDS))]!.push(fieldIndex);
+  });
+  return bands.flatMap((indices, band) => {
+    if (indices.length === 0) return [];
+    const normalized = band / (ANALYSIS_BANDS - 1);
+    const color = new THREE.Color(0x16b9ff).lerp(new THREE.Color(0xff2d55), normalized);
+    return [buildMesh(
+      grid,
+      indices.length,
+      () => new THREE.MeshBasicMaterial({ color, toneMapped: false }),
+      (mesh) => {
+        mesh.name = `verified-${analysis.kind}-band-${band}`;
+        mesh.renderOrder = 1;
+        anchorMesh(mesh, grid, [0, 0, 0]);
+        addInstances(mesh, new Uint32Array(indices), grid);
+      },
+      ownership,
+    )];
+  });
+}
+
 function ghostMesh(layer: AlternativeLayer, ownership: MeshOwnership): THREE.InstancedMesh {
   return buildMesh(
     layer.grid,
@@ -134,15 +172,19 @@ export function createFieldMeshes(
   layers: readonly AlternativeLayer[],
   ownership: MeshOwnership,
   density?: Float32Array,
+  analysis?: ScalarAnalysisField,
 ): FieldMeshSet {
   const meshes: THREE.InstancedMesh[] = [];
   const ghostMaterials = new Map<string, THREE.MeshBasicMaterial>();
   if (currentInstances.length > 0) {
-    const voxels = currentMesh(grid, currentInstances, ownership);
-    voxels.visible = !density;
-    meshes.push(voxels);
+    if (analysis) meshes.push(...analysisMeshes(grid, currentInstances, analysis, ownership));
+    else {
+      const voxels = currentMesh(grid, currentInstances, ownership);
+      voxels.visible = !density;
+      meshes.push(voxels);
+    }
   }
-  if (density) densitySurface(grid, density, ownership);
+  if (density && !analysis) densitySurface(grid, density, ownership);
   for (const layer of layers) {
     const mesh = ghostMesh(layer, ownership);
     meshes.push(mesh);

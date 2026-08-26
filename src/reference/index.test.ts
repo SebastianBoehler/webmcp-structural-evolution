@@ -22,9 +22,13 @@ describe("relativeL2", () => {
       height: 2,
       depth: 1,
       density: new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]),
+      displacement: new Float32Array([0, 0.1, 0.2, 0.3, 0.4, 0.42]),
+      stress: new Float32Array([1, 2, 3, 4, 5, 12]),
       initial_compliance: 18,
       final_compliance: 7,
       max_displacement: 0.42,
+      max_stress: 12,
+      minimum_safety_factor: 4,
       material_fraction: 0.36,
       iterations: 16,
     });
@@ -98,10 +102,14 @@ describe("relativeL2", () => {
     expect(result.dimensions).toEqual({ width: 3, height: 2, depth: 1 });
     expect(result.density).toBeInstanceOf(Float32Array);
     expect(result.density).toEqual(new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]));
+    expect(result.displacement).toHaveLength(6);
+    expect(result.stress).toHaveLength(6);
     expect(result.metrics).toEqual({
       initialCompliance: 18,
       finalCompliance: 7,
       maxDisplacement: 0.42,
+      maxStress: 12,
+      minimumSafetyFactor: 4,
       materialFraction: 0.36,
       iterations: 16,
     });
@@ -114,6 +122,8 @@ describe("relativeL2", () => {
       height: 2,
       depth: 1,
       density: new Float32Array([1]),
+      displacement: new Float32Array([1]),
+      stress: new Float32Array([1]),
       initial_compliance: 18,
       final_compliance: Number.NaN,
       max_displacement: 0.42,

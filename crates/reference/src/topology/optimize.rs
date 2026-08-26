@@ -15,12 +15,23 @@ fn filtered(grid: &Grid, values: &[f32]) -> Vec<f32> {
                     for dy in -1..=1 {
                         for dx in -1..=1 {
                             let point = [x as isize + dx, y as isize + dy, z as isize + dz];
-                            if point[0] < 0 || point[1] < 0 || point[2] < 0
-                                || point[0] >= width as isize || point[1] >= height as isize
-                                || point[2] >= depth as isize { continue; }
+                            if point[0] < 0
+                                || point[1] < 0
+                                || point[2] < 0
+                                || point[0] >= width as isize
+                                || point[1] >= height as isize
+                                || point[2] >= depth as isize
+                            {
+                                continue;
+                            }
                             let distance = ((dx * dx + dy * dy + dz * dz) as f32).sqrt();
                             let local_weight = (1.75 - distance).max(0.0);
-                            sum += local_weight * values[grid.index(point[0] as usize, point[1] as usize, point[2] as usize)];
+                            sum += local_weight
+                                * values[grid.index(
+                                    point[0] as usize,
+                                    point[1] as usize,
+                                    point[2] as usize,
+                                )];
                             weight += local_weight;
                         }
                     }
@@ -48,7 +59,11 @@ fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], targ
     let move_limit = 0.16;
     let mut lower = 1.0e-9_f32;
     let mut upper = 1.0e9_f32;
-    let maximum_sensitivity = sensitivity.iter().map(|value| value.abs()).fold(0.0_f32, f32::max).max(1.0e-12);
+    let maximum_sensitivity = sensitivity
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0_f32, f32::max)
+        .max(1.0e-12);
     let mut proposal = density.to_vec();
     for _ in 0..64 {
         let multiplier = (lower * upper).sqrt();
@@ -60,10 +75,17 @@ fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], targ
             } else {
                 let normalized = sensitivity[index] / maximum_sensitivity;
                 let scaled = density[index] * (-normalized / multiplier).max(0.0).sqrt();
-                scaled.clamp((density[index] - move_limit).max(0.02), (density[index] + move_limit).min(1.0))
+                scaled.clamp(
+                    (density[index] - move_limit).max(0.02),
+                    (density[index] + move_limit).min(1.0),
+                )
             };
         }
-        if material_fraction(grid, &proposal) > target { lower = multiplier; } else { upper = multiplier; }
+        if material_fraction(grid, &proposal) > target {
+            lower = multiplier;
+        } else {
+            upper = multiplier;
+        }
     }
     density.copy_from_slice(&proposal);
 }
@@ -85,13 +107,20 @@ fn connectivity_path(grid: &Grid, density: &[f32], start: usize) -> Vec<usize> {
         let y = (current / width) % height;
         let z = current / (width * height);
         for [nx, ny, nz] in [
-            [x.wrapping_sub(1), y, z], [x + 1, y, z],
-            [x, y.wrapping_sub(1), z], [x, y + 1, z],
-            [x, y, z.wrapping_sub(1)], [x, y, z + 1],
+            [x.wrapping_sub(1), y, z],
+            [x + 1, y, z],
+            [x, y.wrapping_sub(1), z],
+            [x, y + 1, z],
+            [x, y, z.wrapping_sub(1)],
+            [x, y, z + 1],
         ] {
-            if nx >= width || ny >= height || nz >= depth { continue; }
+            if nx >= width || ny >= height || nz >= depth {
+                continue;
+            }
             let neighbor = grid.index(nx, ny, nz);
-            if visited[neighbor] || grid.passive_void[neighbor] || density[neighbor] < 0.02 { continue; }
+            if visited[neighbor] || grid.passive_void[neighbor] || density[neighbor] < 0.02 {
+                continue;
+            }
             visited[neighbor] = true;
             previous[neighbor] = current;
             queue.push_back(neighbor);
@@ -110,16 +139,32 @@ fn mount_starts(grid: &Grid) -> Vec<usize> {
     let mut starts = Vec::new();
     let mut seen = vec![false; grid.node_count()];
     for index in 0..seen.len() {
-        if seen[index] || !grid.passive_solid[index] { continue; }
+        if seen[index] || !grid.passive_solid[index] {
+            continue;
+        }
         starts.push(index);
         let mut queue = std::collections::VecDeque::from([index]);
         seen[index] = true;
         while let Some(current) = queue.pop_front() {
-            let x = current % width; let y = (current / width) % height; let z = current / (width * height);
-            for [nx, ny, nz] in [[x.wrapping_sub(1), y, z], [x + 1, y, z], [x, y.wrapping_sub(1), z], [x, y + 1, z], [x, y, z.wrapping_sub(1)], [x, y, z + 1]] {
-                if nx >= width || ny >= height || nz >= depth { continue; }
+            let x = current % width;
+            let y = (current / width) % height;
+            let z = current / (width * height);
+            for [nx, ny, nz] in [
+                [x.wrapping_sub(1), y, z],
+                [x + 1, y, z],
+                [x, y.wrapping_sub(1), z],
+                [x, y + 1, z],
+                [x, y, z.wrapping_sub(1)],
+                [x, y, z + 1],
+            ] {
+                if nx >= width || ny >= height || nz >= depth {
+                    continue;
+                }
                 let neighbor = grid.index(nx, ny, nz);
-                if !seen[neighbor] && grid.passive_solid[neighbor] { seen[neighbor] = true; queue.push_back(neighbor); }
+                if !seen[neighbor] && grid.passive_solid[neighbor] {
+                    seen[neighbor] = true;
+                    queue.push_back(neighbor);
+                }
             }
         }
     }
@@ -129,25 +174,91 @@ fn mount_starts(grid: &Grid) -> Vec<usize> {
 fn enforce_connectivity(grid: &Grid, density: &mut [f32], target: f32) -> Vec<bool> {
     let [width, height, depth] = grid.dimensions;
     let mut path_mask = vec![false; density.len()];
-    for start in mount_starts(grid) {
-        for index in connectivity_path(grid, density, start) { path_mask[index] = true; }
+    for (index, point) in grid.coordinates.iter().copied().enumerate() {
+        if grid.passive_void[index] {
+            continue;
+        }
+        path_mask[index] = grid.load_path_guides.iter().any(|guide| {
+            guide.points_m.windows(2).any(|segment| {
+                let start = segment[0];
+                let end = segment[1];
+                let delta = [end[0] - start[0], end[1] - start[1]];
+                let length_squared = delta[0].mul_add(delta[0], delta[1] * delta[1]).max(1.0e-12);
+                let projection = (((point[0] - start[0]) * delta[0]
+                    + (point[1] - start[1]) * delta[1])
+                    / length_squared)
+                    .clamp(0.0, 1.0);
+                let nearest = [
+                    start[0] + projection * delta[0],
+                    start[1] + projection * delta[1],
+                    start[2] + projection * (end[2] - start[2]),
+                ];
+                (point[0] - nearest[0]).hypot(point[1] - nearest[1]) <= guide.member_width_m * 0.5
+                    && (point[2] - nearest[2]).abs() <= guide.frame_thickness_m * 0.5
+            })
+        });
     }
-    let dilation_passes = if target >= 0.44 { 2 } else if target >= 0.34 { 1 } else { 0 };
-    for _ in 0..dilation_passes {
-        let previous = path_mask.clone();
-        for index in 0..previous.len() {
-            if !previous[index] { continue; }
-            let x = index % width;
-            let y = (index / width) % height;
-            let z = index / (width * height);
-            for [nx, ny, nz] in [
-                [x.wrapping_sub(1), y, z], [x + 1, y, z],
-                [x, y.wrapping_sub(1), z], [x, y + 1, z],
-                [x, y, z.wrapping_sub(1)], [x, y, z + 1],
-            ] {
-                if nx >= width || ny >= height || nz >= depth { continue; }
-                let neighbor = grid.index(nx, ny, nz);
-                if !grid.passive_void[neighbor] { path_mask[neighbor] = true; }
+    let mut centerline = vec![false; density.len()];
+    for start in mount_starts(grid) {
+        for index in connectivity_path(grid, density, start) {
+            path_mask[index] = true;
+            centerline[index] = true;
+        }
+    }
+    // A connected one-cell path is mathematically admissible to the lattice but not a
+    // printable FPV arm. Expand the solved centerline in physical units so anisotropic
+    // voxels preserve both the requested arm width and laminate thickness.
+    let half_thickness = grid.minimum_frame_thickness_m * 0.5;
+    let z_radius = (half_thickness / grid.cell_size_m[2]).ceil() as isize;
+    let interface_points = grid
+        .passive_solid
+        .iter()
+        .enumerate()
+        .filter_map(|(index, solid)| solid.then_some(grid.coordinates[index]))
+        .collect::<Vec<_>>();
+    for (index, on_path) in centerline.iter().copied().enumerate() {
+        if !on_path {
+            continue;
+        }
+        let x = (index % width) as isize;
+        let y = ((index / width) % height) as isize;
+        let z = (index / (width * height)) as isize;
+        let point = grid.coordinates[index];
+        let interface_distance = interface_points
+            .iter()
+            .map(|interface| (point[0] - interface[0]).hypot(point[1] - interface[1]))
+            .fold(f32::INFINITY, f32::min);
+        let flare = (1.0 - interface_distance / 0.025).clamp(0.0, 1.0) * 0.004;
+        let planar_radius = grid.minimum_load_path_width_m * 0.5 + flare;
+        let x_radius = (planar_radius / grid.cell_size_m[0]).ceil() as isize;
+        let y_radius = (planar_radius / grid.cell_size_m[1]).ceil() as isize;
+        for dz in -z_radius..=z_radius {
+            for dy in -y_radius..=y_radius {
+                for dx in -x_radius..=x_radius {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    let nz = z + dz;
+                    if nx < 0
+                        || ny < 0
+                        || nz < 0
+                        || nx >= width as isize
+                        || ny >= height as isize
+                        || nz >= depth as isize
+                    {
+                        continue;
+                    }
+                    let planar_distance =
+                        (dx as f32 * grid.cell_size_m[0]).hypot(dy as f32 * grid.cell_size_m[1]);
+                    if planar_distance > planar_radius
+                        || (dz as f32 * grid.cell_size_m[2]).abs() > half_thickness
+                    {
+                        continue;
+                    }
+                    let neighbor = grid.index(nx as usize, ny as usize, nz as usize);
+                    if !grid.passive_void[neighbor] {
+                        path_mask[neighbor] = true;
+                    }
+                }
             }
         }
     }
@@ -157,12 +268,21 @@ fn enforce_connectivity(grid: &Grid, density: &mut [f32], target: f32) -> Vec<bo
     for _ in 0..48 {
         let scale = (lower + upper) * 0.5;
         for index in 0..density.len() {
-            density[index] = if grid.passive_solid[index] { 1.0 }
-                else if grid.passive_void[index] { 0.0 }
-                else if path_mask[index] { baseline[index].max(0.38) }
-                else { (baseline[index] * scale).max(0.02) };
+            density[index] = if grid.passive_solid[index] {
+                1.0
+            } else if grid.passive_void[index] {
+                0.0
+            } else if path_mask[index] {
+                1.0
+            } else {
+                (baseline[index] * scale).max(0.02)
+            };
         }
-        if material_fraction(grid, density) > target { upper = scale; } else { lower = scale; }
+        if material_fraction(grid, density) > target {
+            upper = scale;
+        } else {
+            lower = scale;
+        }
     }
     path_mask
 }
@@ -177,11 +297,16 @@ fn supported_material(grid: &Grid, density: &[f32], start: usize) -> Vec<bool> {
         let y = (current / width) % height;
         let z = current / (width * height);
         for [nx, ny, nz] in [
-            [x.wrapping_sub(1), y, z], [x + 1, y, z],
-            [x, y.wrapping_sub(1), z], [x, y + 1, z],
-            [x, y, z.wrapping_sub(1)], [x, y, z + 1],
+            [x.wrapping_sub(1), y, z],
+            [x + 1, y, z],
+            [x, y.wrapping_sub(1), z],
+            [x, y + 1, z],
+            [x, y, z.wrapping_sub(1)],
+            [x, y, z + 1],
         ] {
-            if nx >= width || ny >= height || nz >= depth { continue; }
+            if nx >= width || ny >= height || nz >= depth {
+                continue;
+            }
             let neighbor = grid.index(nx, ny, nz);
             if !supported[neighbor] && density[neighbor] >= 0.32 {
                 supported[neighbor] = true;
@@ -194,13 +319,21 @@ fn supported_material(grid: &Grid, density: &[f32], start: usize) -> Vec<bool> {
 
 fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], target: f32) {
     let [width, height, depth] = grid.dimensions;
-    let start = grid.fixed_dofs.chunks_exact(3).position(|dofs| dofs[0]).unwrap_or(grid.index(width / 2, height / 2, depth / 2));
+    let start = grid
+        .fixed_dofs
+        .chunks_exact(3)
+        .position(|dofs| dofs[0])
+        .unwrap_or(grid.index(width / 2, height / 2, depth / 2));
     for _ in 0..4 {
         let supported = supported_material(grid, density, start);
         for index in 0..density.len() {
-            if grid.passive_void[index] { density[index] = 0.0; }
-            else if grid.passive_solid[index] { density[index] = 1.0; }
-            else if !supported[index] { density[index] = 0.02; }
+            if grid.passive_void[index] {
+                density[index] = 0.0;
+            } else if grid.passive_solid[index] {
+                density[index] = 1.0;
+            } else if !supported[index] {
+                density[index] = 0.02;
+            }
         }
         let baseline = density.to_vec();
         let mut lower = 0.0_f32;
@@ -208,31 +341,56 @@ fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], tar
         for _ in 0..48 {
             let scale = (lower + upper) * 0.5;
             for index in 0..density.len() {
-                density[index] = if grid.passive_void[index] { 0.0 }
-                    else if grid.passive_solid[index] { 1.0 }
-                    else if path[index] { baseline[index].max(0.38) }
-                    else if supported[index] { (baseline[index] * scale).clamp(0.02, 1.0) }
-                    else { 0.02 };
+                density[index] = if grid.passive_void[index] {
+                    0.0
+                } else if grid.passive_solid[index] {
+                    1.0
+                } else if path[index] {
+                    1.0
+                } else if supported[index] {
+                    (baseline[index] * scale).clamp(0.02, 1.0)
+                } else {
+                    0.02
+                };
             }
-            if material_fraction(grid, density) > target { upper = scale; } else { lower = scale; }
+            if material_fraction(grid, density) > target {
+                upper = scale;
+            } else {
+                lower = scale;
+            }
         }
     }
     let supported = supported_material(grid, density, start);
     for index in 0..density.len() {
-        if grid.passive_void[index] { density[index] = 0.0; }
-        else if grid.passive_solid[index] { density[index] = 1.0; }
-        else if !supported[index] { density[index] = 0.02; }
+        if grid.passive_void[index] {
+            density[index] = 0.0;
+        } else if grid.passive_solid[index] {
+            density[index] = 1.0;
+        } else if !supported[index] {
+            density[index] = 0.02;
+        }
     }
     // Island material is reassigned only to the already supported component.
     // Adding density here can thicken an existing load path, never seed a new one.
     for _ in 0..12 {
         let deficit = target - material_fraction(grid, density);
-        if deficit <= 1.0e-4 { break; }
-        let eligible = density.iter().enumerate().filter(|(index, value)| {
-            supported[*index] && !grid.passive_solid[*index]
-                && !grid.passive_void[*index] && **value < 1.0
-        }).map(|(index, _)| index).collect::<Vec<_>>();
-        if eligible.is_empty() { break; }
+        if deficit <= 1.0e-4 {
+            break;
+        }
+        let eligible = density
+            .iter()
+            .enumerate()
+            .filter(|(index, value)| {
+                supported[*index]
+                    && !grid.passive_solid[*index]
+                    && !grid.passive_void[*index]
+                    && **value < 1.0
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if eligible.is_empty() {
+            break;
+        }
         let non_void = grid.passive_void.iter().filter(|void| !**void).count() as f32;
         let delta = deficit * non_void / eligible.len() as f32;
         for index in eligible {
@@ -243,28 +401,63 @@ fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], tar
 
 fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) -> TopologyResult {
     let springs = springs(&grid);
-    let target = preset.volume_fraction();
+    let target = if grid.load_path_guides.is_empty() {
+        preset.volume_fraction()
+    } else {
+        match preset {
+            OptimizationPreset::Lightweight => 0.20,
+            OptimizationPreset::Balanced => 0.26,
+            OptimizationPreset::Stiffness => 0.34,
+        }
+    };
     let solid_fraction = grid.passive_solid.iter().filter(|solid| **solid).count() as f32
         / grid.passive_void.iter().filter(|void| !**void).count() as f32;
     let initial = ((target - solid_fraction) / (1.0 - solid_fraction)).clamp(0.04, 0.95);
-    let mut density = grid.passive_void.iter().zip(&grid.passive_solid).map(|(&void, &solid)|
-        if void { 0.0 } else if solid { 1.0 } else { initial }).collect::<Vec<_>>();
-    let (initial_compliance, _, _, _) = compliance_and_sensitivity(&grid, &springs, &density);
+    let mut density = grid
+        .passive_void
+        .iter()
+        .zip(&grid.passive_solid)
+        .map(|(&void, &solid)| {
+            if void {
+                0.0
+            } else if solid {
+                1.0
+            } else {
+                initial
+            }
+        })
+        .collect::<Vec<_>>();
+    let (initial_compliance, _, _, _, _, _) = compliance_and_sensitivity(&grid, &springs, &density);
     let iterations = 8;
     for _ in 0..iterations {
-        let (_, _, sensitivity, _) = compliance_and_sensitivity(&grid, &springs, &density);
+        let (_, _, sensitivity, _, _, _) = compliance_and_sensitivity(&grid, &springs, &density);
         let sensitivity = filtered(&grid, &sensitivity);
         optimality_update(&grid, &mut density, &sensitivity, target);
     }
     let path = enforce_connectivity(&grid, &mut density, target);
-    if prune_islands { remove_floating_material(&grid, &mut density, &path, target); }
-    let (final_compliance, max_displacement, _, max_stress) = compliance_and_sensitivity(&grid, &springs, &density);
+    if prune_islands {
+        remove_floating_material(&grid, &mut density, &path, target);
+    }
+    let (final_compliance, max_displacement, _, max_stress, displacement, stress) =
+        compliance_and_sensitivity(&grid, &springs, &density);
     TopologyResult {
         dimensions: grid.dimensions,
-        passive_solid_indices: grid.passive_solid.iter().enumerate().filter_map(|(index, solid)| solid.then_some(index)).collect(),
-        passive_void_indices: grid.passive_void.iter().enumerate().filter_map(|(index, void)| void.then_some(index)).collect(),
+        passive_solid_indices: grid
+            .passive_solid
+            .iter()
+            .enumerate()
+            .filter_map(|(index, solid)| solid.then_some(index))
+            .collect(),
+        passive_void_indices: grid
+            .passive_void
+            .iter()
+            .enumerate()
+            .filter_map(|(index, void)| void.then_some(index))
+            .collect(),
         material_fraction: material_fraction(&grid, &density),
         density,
+        displacement,
+        stress,
         initial_compliance,
         final_compliance,
         max_displacement,
@@ -274,10 +467,15 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
     }
 }
 
-fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult { optimize_grid(preset, drone_grid(), true) }
+fn optimize_uncached(preset: OptimizationPreset) -> TopologyResult {
+    optimize_grid(preset, drone_grid(), true)
+}
 
-pub fn optimize_assembly_frame(preset: OptimizationPreset, input: &AssemblySolverInput) -> Result<TopologyResult, String> {
-    Ok(optimize_grid(preset, assembly_grid(input)?, false))
+pub fn optimize_assembly_frame(
+    preset: OptimizationPreset,
+    input: &AssemblySolverInput,
+) -> Result<TopologyResult, String> {
+    Ok(optimize_grid(preset, assembly_grid(input)?, true))
 }
 
 pub fn optimize_drone_frame(preset: OptimizationPreset) -> TopologyResult {
@@ -285,8 +483,12 @@ pub fn optimize_drone_frame(preset: OptimizationPreset) -> TopologyResult {
     static BALANCED: OnceLock<TopologyResult> = OnceLock::new();
     static STIFFNESS: OnceLock<TopologyResult> = OnceLock::new();
     match preset {
-        OptimizationPreset::Lightweight => LIGHTWEIGHT.get_or_init(|| optimize_uncached(preset)).clone(),
+        OptimizationPreset::Lightweight => LIGHTWEIGHT
+            .get_or_init(|| optimize_uncached(preset))
+            .clone(),
         OptimizationPreset::Balanced => BALANCED.get_or_init(|| optimize_uncached(preset)).clone(),
-        OptimizationPreset::Stiffness => STIFFNESS.get_or_init(|| optimize_uncached(preset)).clone(),
+        OptimizationPreset::Stiffness => {
+            STIFFNESS.get_or_init(|| optimize_uncached(preset)).clone()
+        }
     }
 }

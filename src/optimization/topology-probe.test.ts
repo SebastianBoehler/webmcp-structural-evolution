@@ -16,6 +16,8 @@ describe("runTopologyProbe", () => {
     reference.optimize.mockReset().mockResolvedValue({
       dimensions: { width: 25, height: 25, depth: 5 },
       density: new Float32Array(25 * 25 * 5).fill(0.36),
+      displacement: new Float32Array(25 * 25 * 5).fill(0.1),
+      stress: new Float32Array(25 * 25 * 5).fill(2),
       metrics: {
         initialCompliance: 100,
         finalCompliance: 42,
@@ -31,7 +33,7 @@ describe("runTopologyProbe", () => {
 
     const result = await runTopologyProbe(input("balanced"));
 
-    expect(reference.optimize).toHaveBeenCalledWith("balanced");
+    expect(reference.optimize).toHaveBeenCalledWith("balanced", undefined);
     expect(result).toMatchObject({
       status: "verified",
       topology: {
@@ -61,6 +63,8 @@ describe("runTopologyProbe", () => {
     reference.optimize.mockResolvedValueOnce({
       dimensions: { width: 2, height: 2, depth: 1 },
       density: new Float32Array(4),
+      displacement: new Float32Array(4),
+      stress: new Float32Array(4),
       metrics: { initialCompliance: 1, finalCompliance: 1, maxDisplacement: 1, materialFraction: 1, iterations: 1 },
     });
 

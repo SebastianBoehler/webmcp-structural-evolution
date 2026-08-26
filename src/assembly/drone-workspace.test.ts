@@ -16,6 +16,13 @@ import { droneAssemblyVisuals, INITIAL_MOTORS } from "./drone-workspace";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
 
 describe("drone assembly workspace", () => {
+  it("starts with every routed harness treated as an intentional motor-to-ESC connection", () => {
+    const view = renderHook(() => useAssemblyWorkspace());
+
+    expect(view.result.current.conflicts).toEqual([]);
+    expect(view.result.current.parts.filter(({ id }) => id.startsWith("wiring-"))).toHaveLength(8);
+  });
+
   it("starts as a recognizable four-motor assembly with attached rotor safety geometry", () => {
     const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
 
@@ -73,11 +80,11 @@ describe("drone assembly workspace", () => {
     await act(() => view.result.current.movePart("motor-east", [118, 14, 3]));
 
     const after = view.result.current.parts.filter(({ dragGroup }) => dragGroup === "motor-east");
-    expect(after).toHaveLength(9);
+    expect(after).toHaveLength(before.length);
     expect(after.map(({ center }, index) => [
       center[0] - before[index]!.center[0],
       center[1] - before[index]!.center[1],
-    ])).toEqual(Array.from({ length: 9 }, () => [13, 14]));
+    ])).toEqual(Array.from({ length: before.length }, () => [13, 14]));
     expect(view.result.current.layoutState).toBe("changed");
     expect(view.result.current.layoutVersion).toBe(2);
   });
@@ -102,7 +109,7 @@ describe("drone assembly workspace", () => {
       } : {
         radius: volume.radius.value * 1_000,
         height: volume.height.value * 1_000,
-        yaw: volume.orientation.yaw.value,
+        yaw: 0,
       }),
     })).sort((left, right) => left.id.localeCompare(right.id));
 
@@ -178,11 +185,12 @@ describe("drone assembly workspace", () => {
     await act(async () => { await view.result.current.importFile(file); });
 
     expect(packages.parse).toHaveBeenCalledWith(file);
-    expect(view.result.current.imports[0]).toMatchObject({
+    expect(view.result.current.imports.find(({ name }) => name === "MOTOR-1")).toMatchObject({
       name: "MOTOR-1",
       sizeMm: [30, 30, 20],
       validation: "package-digest-verified",
     });
-    expect(view.result.current.parts.find(({ id }) => id === view.result.current.imports[0]?.id)?.kind).toBe("model");
+    const imported = view.result.current.imports.find(({ name }) => name === "MOTOR-1");
+    expect(view.result.current.parts.find(({ id }) => id === imported?.id)?.kind).toBe("model");
   });
 });

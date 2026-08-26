@@ -39,10 +39,18 @@ export interface TopologyMetrics {
   readonly minimumSafetyFactor: number;
   readonly materialFraction: number;
   readonly iterations: number;
+  readonly assemblyMassKg?: number;
+  readonly planarCenterOfMassOffsetM?: number;
+  readonly estimatedFrameMassKg?: number;
+}
+
+export interface StructuralAnalysisFields {
+  readonly displacement: Float32Array;
+  readonly stress: Float32Array;
 }
 
 export type ProbeResult =
-  | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics; readonly grid?: VoxelGrid } & ProbeMetrics)
+  | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics; readonly analysis?: StructuralAnalysisFields; readonly grid?: VoxelGrid } & ProbeMetrics)
   | ({
       readonly status: "mismatch";
       readonly code: "verification-mismatch";

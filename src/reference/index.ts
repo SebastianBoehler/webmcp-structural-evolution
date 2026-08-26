@@ -33,6 +33,8 @@ export type TopologyPreset = "lightweight" | "balanced" | "stiffness";
 export interface TopologyOptimizationResult {
   readonly dimensions: { readonly width: number; readonly height: number; readonly depth: number };
   readonly density: Float32Array;
+  readonly displacement: Float32Array;
+  readonly stress: Float32Array;
   readonly metrics: {
     readonly initialCompliance: number;
     readonly finalCompliance: number;
@@ -56,6 +58,8 @@ export async function optimizeDroneFrame(
   const result = assembly ? reference.optimize_assembly_frame(preset, assembly) : reference.optimize_demo_frame(preset);
   const dimensions = { width: result.width, height: result.height, depth: result.depth };
   const density = result.density;
+  const displacement = result.displacement;
+  const stress = result.stress;
   const metrics = {
     initialCompliance: result.initial_compliance,
     finalCompliance: result.final_compliance,
@@ -73,8 +77,13 @@ export async function optimizeDroneFrame(
   const validDensity = density instanceof Float32Array
     && density.length === expectedLength
     && density.every((value) => finite(value) && value >= 0 && value <= 1);
-  if (!validDimensions || !validMetrics || !validDensity) {
+  const validAnalysis = [displacement, stress].every((field) => field instanceof Float32Array
+    && field.length === expectedLength && field.every((value) => finite(value) && value >= 0));
+  if (!validDimensions || !validMetrics || !validDensity || !validAnalysis) {
     throw new Error("Invalid topology result returned by the Wasm solver.");
   }
-  return { dimensions, density: new Float32Array(density), metrics };
+  return {
+    dimensions, density: new Float32Array(density),
+    displacement: new Float32Array(displacement), stress: new Float32Array(stress), metrics,
+  };
 }

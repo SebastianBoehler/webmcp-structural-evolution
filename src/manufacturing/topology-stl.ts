@@ -9,8 +9,8 @@ export function serializeTopologyStl(grid: VoxelGrid, density: Float32Array): Da
   const surface = createTopologySurface(grid, density, material);
   const compact = new THREE.BufferGeometry();
   try {
-    const count = surface.geometry.drawRange.count;
     const source = surface.geometry.getAttribute("position");
+    const count = source.count;
     const positions = new Float32Array(count * 3);
     positions.set((source.array as Float32Array).subarray(0, count * 3));
     compact.setAttribute("position", new THREE.BufferAttribute(positions, 3));

@@ -27,11 +27,20 @@ import {
 import { compileParametricGeometry } from "./parametric-geometry";
 import { decodeStepFile, type CadMesh } from "./step-import";
 import { defineImportedComponent, importedFileAsset } from "./workspace-component-import";
+import { REFERENCE_DISPLAY_RESOURCES } from "./reference-display-resources";
 
 const identifier = (): string => globalThis.crypto?.randomUUID?.() ?? `component-${Date.now()}`;
 const m = (value: number) => ({ value: value / 1_000, unit: "m" as const });
 const rad = (value: number) => ({ value, unit: "rad" as const });
 type ReceiptSpec = { readonly action: string; readonly inputs: Record<string, string> };
+
+function envelopeSizeMm(definition: ComponentDefinition): [number, number, number] {
+  const value = (length: { readonly value: number; readonly unit: "m" | "mm" }) =>
+    length.unit === "m" ? length.value * 1_000 : length.value;
+  return definition.envelope.kind === "box"
+    ? [value(definition.envelope.size.x), value(definition.envelope.size.y), value(definition.envelope.size.z)]
+    : [value(definition.envelope.radius) * 2, value(definition.envelope.radius) * 2, value(definition.envelope.height)];
+}
 
 function actionReceipt(action: AssemblyAction): ReceiptSpec {
   if (action.kind === "stage") return { action: "stage_component_definition", inputs: { parentRevision: action.parentRevision, componentRevision: action.component.revision } };
@@ -77,7 +86,9 @@ function importedView(state: AssemblyAuthoringState, resources: Readonly<Record<
 export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
   const inventory = options.inventory ?? INITIAL_DRONE_INVENTORY;
   const [workspace, setWorkspace] = useState(options.initialState ?? initialDroneWorkspace);
-  const [resources, setResources] = useState<Readonly<Record<string, ComponentRenderResource>>>({});
+  const [resources, setResources] = useState<Readonly<Record<string, ComponentRenderResource>>>(
+    options.initialState ? {} : REFERENCE_DISPLAY_RESOURCES,
+  );
   const [receipts, setReceipts] = useState<readonly ActionReceipt[]>([]);
   const [pending, setPending] = useState<PendingComponentImport>();
   const [layoutState, setLayoutState] = useState<"verified" | "dragging" | "changed">("verified");
@@ -230,6 +241,42 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
     return installAsset(asset.definition, asset.resource);
   }, [installAsset]);
 
+  const replaceDisplayFile = useCallback(async (instanceId: string, file: File) => {
+    const started = performance.now();
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (!extension || !["glb", "gltf", "step", "stp"].includes(extension)) {
+      throw new Error("Choose a STEP, STP, GLB, or glTF display file.");
+    }
+    const current = stateRef.current;
+    const instance = current.draft.components.find(({ instanceId: id }) => id === instanceId);
+    if (!instance) throw new Error(`Select a placed component before replacing display CAD: ${instanceId}`);
+    const definition = current.catalog.find(({ revision }) => revision === instance.componentRevision);
+    if (!definition) throw new Error(`Component definition is missing for ${instanceId}`);
+    const assetUrl = URL.createObjectURL(file);
+    blobUrls.current.add(assetUrl);
+    const mesh = extension === "step" || extension === "stp" ? await decodeStepFile(file) : undefined;
+    const resource: ComponentRenderResource = {
+      name: definition.partNumber,
+      category: definition.category === "motor" || definition.category === "propeller" ? definition.category : "other",
+      assetUrl,
+      assetUnits: mesh ? "mm" : "m",
+      sourceUrl: definition.provenance.sources[0]!.reference,
+      sizeMm: mesh ? [...mesh.sizeMm] : envelopeSizeMm(definition),
+      validation: "manufacturer-dimensions",
+      stagedBy: "human",
+      ...(mesh ? { mesh } : {}),
+    };
+    setResources((available) => ({ ...available, [definition.revision]: resource }));
+    setReceipts((available) => [...available, defineActionReceipt({
+      id: identifier(), action: "replace_component_display_geometry",
+      validatedInputs: { instanceId, componentRevision: definition.revision, filename: file.name },
+      affectedRevision: current.revision,
+      outcome: { status: "succeeded", result: { revision: current.revision } },
+      duration: { value: performance.now() - started, unit: "ms" }, createdAt: new Date().toISOString(),
+    })]);
+    return instanceId;
+  }, []);
+
   const stageImport = useCallback((input: ComponentImport) => {
     const staged = { ...input, id: identifier(), stagedBy: "agent" as const };
     setPending(staged); return staged;
@@ -245,7 +292,7 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
 
   return {
     ...workspace, draft, inventory, motors, parts, conflicts, receipts, imports, pending, layoutState, layoutVersion,
-    setLayoutState, movePart, importFile, stageImport, approveImport, rejectImport,
+    setLayoutState, movePart, importFile, replaceDisplayFile, stageImport, approveImport, rejectImport,
     stageComponent, placeComponent, constrainComponent, protectRegion, compileAssembly,
   };
 }

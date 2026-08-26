@@ -13,8 +13,12 @@ pub(crate) struct Spring {
 pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
     let [width, height, depth] = grid.dimensions;
     let offsets = [
-        [1, 0, 0], [0, 1, 0], [0, 0, 1],
-        [1, 1, 0], [1, 0, 1], [0, 1, 1],
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        [1, 1, 0],
+        [1, 0, 1],
+        [0, 1, 1],
     ];
     let mut result = Vec::new();
     for z in 0..depth {
@@ -22,16 +26,31 @@ pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
             for x in 0..width {
                 for [dx, dy, dz] in offsets {
                     let neighbor = [x as isize + dx, y as isize + dy, z as isize + dz];
-                    if neighbor[0] < 0 || neighbor[1] < 0 || neighbor[2] < 0
+                    if neighbor[0] < 0
+                        || neighbor[1] < 0
+                        || neighbor[2] < 0
                         || neighbor[0] >= width as isize
                         || neighbor[1] >= height as isize
-                        || neighbor[2] >= depth as isize { continue; }
-                    let delta = [dx as f32 * grid.cell_size_m[0], dy as f32 * grid.cell_size_m[1], dz as f32 * grid.cell_size_m[2]];
+                        || neighbor[2] >= depth as isize
+                    {
+                        continue;
+                    }
+                    let delta = [
+                        dx as f32 * grid.cell_size_m[0],
+                        dy as f32 * grid.cell_size_m[1],
+                        dz as f32 * grid.cell_size_m[2],
+                    ];
                     let length = delta.iter().map(|value| value * value).sum::<f32>().sqrt();
-                    let representative_area = (grid.cell_size_m[0] * grid.cell_size_m[1] * grid.cell_size_m[2]).powf(2.0 / 3.0);
+                    let representative_area =
+                        (grid.cell_size_m[0] * grid.cell_size_m[1] * grid.cell_size_m[2])
+                            .powf(2.0 / 3.0);
                     result.push(Spring {
                         left: grid.index(x, y, z),
-                        right: grid.index(neighbor[0] as usize, neighbor[1] as usize, neighbor[2] as usize),
+                        right: grid.index(
+                            neighbor[0] as usize,
+                            neighbor[1] as usize,
+                            neighbor[2] as usize,
+                        ),
                         direction: [delta[0] / length, delta[1] / length, delta[2] / length],
                         length_m: length,
                         area_m2: representative_area,
@@ -47,8 +66,11 @@ pub(crate) fn springs(grid: &Grid) -> Vec<Spring> {
 fn spring_stiffness(spring: Spring, density: &[f32]) -> f32 {
     let average = (density[spring.left] + density[spring.right]) * 0.5;
     // SIMP penalization on a physically dimensioned axial spring lattice: EA/L in N/m.
-    let solid = spring.youngs_modulus_pa * spring.area_m2 / spring.length_m.max(1.0e-6);
-    solid * (1.0e-5 + average.powi(3))
+    solid_stiffness(spring) * (1.0e-5 + average.powi(3))
+}
+
+fn solid_stiffness(spring: Spring) -> f32 {
+    spring.youngs_modulus_pa * spring.area_m2 / spring.length_m.max(1.0e-6)
 }
 
 fn apply_operator(grid: &Grid, springs: &[Spring], density: &[f32], x: &[f32], y: &mut [f32]) {
@@ -56,8 +78,12 @@ fn apply_operator(grid: &Grid, springs: &[Spring], density: &[f32], x: &[f32], y
     for &spring in springs {
         let left = spring.left * 3;
         let right = spring.right * 3;
-        let relative = spring.direction.iter().enumerate().map(|(axis, direction)|
-            direction * (x[left + axis] - x[right + axis])).sum::<f32>();
+        let relative = spring
+            .direction
+            .iter()
+            .enumerate()
+            .map(|(axis, direction)| direction * (x[left + axis] - x[right + axis]))
+            .sum::<f32>();
         let force = spring_stiffness(spring, density) * relative;
         for (axis, direction) in spring.direction.iter().copied().enumerate() {
             y[left + axis] += force * direction;
@@ -65,7 +91,9 @@ fn apply_operator(grid: &Grid, springs: &[Spring], density: &[f32], x: &[f32], y
         }
     }
     for (dof, fixed) in grid.fixed_dofs.iter().copied().enumerate() {
-        if fixed { y[dof] = x[dof]; }
+        if fixed {
+            y[dof] = x[dof];
+        }
     }
 }
 
@@ -80,7 +108,9 @@ fn diagonal(grid: &Grid, springs: &[Spring], density: &[f32]) -> Vec<f32> {
         }
     }
     for (dof, fixed) in grid.fixed_dofs.iter().copied().enumerate() {
-        if fixed { diagonal[dof] = 1.0; }
+        if fixed {
+            diagonal[dof] = 1.0;
+        }
     }
     diagonal
 }
@@ -93,7 +123,9 @@ pub(crate) fn solve(grid: &Grid, springs: &[Spring], density: &[f32], load: &[f3
     let diagonal = diagonal(grid, springs, density);
     let mut rhs = load.to_vec();
     for (dof, fixed) in grid.fixed_dofs.iter().copied().enumerate() {
-        if fixed { rhs[dof] = 0.0; }
+        if fixed {
+            rhs[dof] = 0.0;
+        }
     }
     let mut x = vec![0.0; rhs.len()];
     let mut residual = rhs.clone();
@@ -105,17 +137,25 @@ pub(crate) fn solve(grid: &Grid, springs: &[Spring], density: &[f32], load: &[f3
     for _ in 0..32 {
         apply_operator(grid, springs, density, &direction, &mut product);
         let denominator = dot(&direction, &product);
-        if denominator.abs() < 1.0e-12 { break; }
+        if denominator.abs() < 1.0e-12 {
+            break;
+        }
         let alpha = rz / denominator;
         for index in 0..x.len() {
             x[index] += alpha * direction[index];
             residual[index] -= alpha * product[index];
         }
-        if dot(&residual, &residual).sqrt() / rhs_norm < 2.0e-5 { break; }
-        z.iter_mut().enumerate().for_each(|(index, value)| *value = residual[index] / diagonal[index]);
+        if dot(&residual, &residual).sqrt() / rhs_norm < 2.0e-5 {
+            break;
+        }
+        z.iter_mut()
+            .enumerate()
+            .for_each(|(index, value)| *value = residual[index] / diagonal[index]);
         let next_rz = dot(&residual, &z);
         let beta = next_rz / rz.max(1.0e-20);
-        for index in 0..direction.len() { direction[index] = z[index] + beta * direction[index]; }
+        for index in 0..direction.len() {
+            direction[index] = z[index] + beta * direction[index];
+        }
         rz = next_rz;
     }
     x
@@ -125,30 +165,91 @@ pub(crate) fn compliance_and_sensitivity(
     grid: &Grid,
     springs: &[Spring],
     density: &[f32],
-) -> (f32, f32, Vec<f32>, f32) {
+) -> (f32, f32, Vec<f32>, f32, Vec<f32>, Vec<f32>) {
     let mut compliance = 0.0;
     let mut max_displacement = 0.0_f32;
     let mut sensitivity = vec![0.0; density.len()];
     let mut max_stress = 0.0_f32;
+    let mut displacement_field = vec![0.0_f32; density.len()];
+    let mut stress_field = vec![0.0_f32; density.len()];
     for load in &grid.load_cases {
         let displacement = solve(grid, springs, density, load);
         compliance += dot(load, &displacement);
-        for vector in displacement.chunks_exact(3) {
-            max_displacement = max_displacement.max(vector.iter().map(|value| value * value).sum::<f32>().sqrt());
+        for (node, vector) in displacement.chunks_exact(3).enumerate() {
+            let magnitude = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+            max_displacement = max_displacement.max(magnitude);
+            displacement_field[node] = displacement_field[node].max(magnitude);
         }
         for &spring in springs {
             let left = spring.left * 3;
             let right = spring.right * 3;
-            let extension = spring.direction.iter().enumerate().map(|(axis, direction)|
-                direction * (displacement[left + axis] - displacement[right + axis])).sum::<f32>();
+            let extension = spring
+                .direction
+                .iter()
+                .enumerate()
+                .map(|(axis, direction)| {
+                    direction * (displacement[left + axis] - displacement[right + axis])
+                })
+                .sum::<f32>();
             let average = ((density[spring.left] + density[spring.right]) * 0.5).max(0.001);
             let axial_force = spring_stiffness(spring, density) * extension;
-            let effective_area = (spring.area_m2 * average.powi(3)).max(1.0e-12);
-            max_stress = max_stress.max(axial_force.abs() / effective_area);
-            let derivative = -1.5 * average.powi(2) * extension * extension;
+            // Stress is a property of the thresholded printable load path. Near-void SIMP
+            // springs stabilize the solve but are absent from the manufactured part and must
+            // not define its peak stress or safety factor.
+            if average >= 0.32 {
+                let effective_area = (spring.area_m2 * average.powi(3)).max(1.0e-12);
+                let stress = axial_force.abs() / effective_area;
+                max_stress = max_stress.max(stress);
+                stress_field[spring.left] = stress_field[spring.left].max(stress);
+                stress_field[spring.right] = stress_field[spring.right].max(stress);
+            }
+            // Each endpoint owns half of d(EA/L * rho^3) / d(rho). Retaining EA/L is
+            // essential: omitting it changes the optimized layout when the mesh is refined.
+            let derivative =
+                -1.5 * solid_stiffness(spring) * average.powi(2) * extension * extension;
             sensitivity[spring.left] += derivative;
             sensitivity[spring.right] += derivative;
         }
     }
-    (compliance, max_displacement, sensitivity, max_stress)
+    (
+        compliance,
+        max_displacement,
+        sensitivity,
+        max_stress,
+        displacement_field,
+        stress_field,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn two_node_grid() -> Grid {
+        Grid {
+            dimensions: [2, 1, 1],
+            coordinates: vec![[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
+            passive_solid: vec![false; 2],
+            passive_void: vec![false; 2],
+            fixed_dofs: vec![true, true, true, false, false, false],
+            load_cases: vec![vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]],
+            cell_size_m: [0.01, 0.01, 0.01],
+            youngs_modulus_pa: 3_500_000_000.0,
+            failure_stress_pa: 50_000_000.0,
+            minimum_load_path_width_m: 0.01,
+            minimum_frame_thickness_m: 0.005,
+            load_path_guides: vec![],
+        }
+    }
+
+    #[test]
+    fn near_void_stabilization_springs_do_not_define_printed_peak_stress() {
+        let grid = two_node_grid();
+        let links = springs(&grid);
+        let (_, _, _, void_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[0.02, 0.02]);
+        let (_, _, _, solid_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[1.0, 1.0]);
+
+        assert_eq!(void_stress, 0.0);
+        assert!(solid_stress > 0.0);
+    }
 }

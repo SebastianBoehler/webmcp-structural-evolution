@@ -1,4 +1,4 @@
-export const MAX_FIELD_INSTANCES = 64 ** 3;
+export const MAX_FIELD_INSTANCES = 128 ** 3;
 
 export type Vector3Tuple = readonly [number, number, number];
 export type QuaternionTuple = readonly [number, number, number, number];

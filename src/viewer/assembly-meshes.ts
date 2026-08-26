@@ -81,11 +81,15 @@ export function createAssemblyMeshes(
         scene.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;
           const mesh = object;
-          if (Array.isArray(mesh.material)) {
-            mesh.material = mesh.material.map(() => materialFor(part));
-          } else {
-            mesh.material = materialFor(part);
-          }
+          const importedMaterial = (source: THREE.Material) => {
+            if (!(source instanceof THREE.MeshStandardMaterial)) return materialFor(part);
+            const material = materialFor(part, source.color.getHex(), source.opacity, source.metalness);
+            material.roughness = source.roughness;
+            return material;
+          };
+          mesh.material = Array.isArray(mesh.material)
+            ? mesh.material.map(importedMaterial)
+            : importedMaterial(mesh.material);
           ownership.own(() => mesh.geometry.dispose());
           ownMesh(mesh, part);
         });

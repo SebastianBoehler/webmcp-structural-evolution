@@ -7,11 +7,23 @@ describe("compileLiveTopologyContext", () => {
   it("derives the physical FPV solver domain, supports, loads, and keep-outs from the live assembly", () => {
     const context = compileLiveTopologyContext(initialDroneWorkspace);
 
-    expect(context.grid.dimensions).toEqual({ width: 48, height: 48, depth: 12 });
+    expect(context.grid.dimensions).toEqual({ width: 128, height: 128, depth: 32 });
     expect(context.input.motorMounts).toHaveLength(4);
     expect(context.input.supports).not.toHaveLength(0);
+    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({ kind: "box", sizeM: [0.084, 0.05, 0.003] }));
     expect(context.input.protectedVoids).not.toHaveLength(0);
-    expect(context.input.motorMounts.map(({ centerM }) => centerM)).toContainEqual([0.105, 0, 0.003]);
+    expect(context.input.accessVoids).toHaveLength(22);
+    expect(context.input.accessVoids.slice(0, 16).every((volume) =>
+      volume.kind === "cylinder" && volume.radiusM === 0.00334 && volume.heightM === 0.024,
+    )).toBe(true);
+    expect(context.input.motorMounts.map(({ centerM }) => centerM)).toContainEqual([0.105, 0, 0]);
     expect(context.input.material).toEqual({ youngsModulusPa: 3_500_000_000, failureStressPa: 50_000_000 });
+    expect(context.input.minimumLoadPathWidthM).toBe(0.005);
+    expect(context.input.minimumFrameThicknessM).toBe(0.005);
+    expect(context.input.loadPathGuides).toHaveLength(16);
+    expect(context.input.loadPathGuides.every(({ pointsM }) => pointsM.length === 4)).toBe(true);
+    expect(context.input.loadPathGuides.some(({ pointsM }) => pointsM.some(([, , z]) => z >= 0.01))).toBe(true);
+    expect(context.input.assemblyMassKg).toBeCloseTo(0.495, 3);
+    expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(1e-6);
   });
 });

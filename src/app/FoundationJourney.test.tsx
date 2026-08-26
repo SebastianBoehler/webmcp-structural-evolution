@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
+import { initialDroneWorkspace } from "../assembly/drone-workspace";
 import {
   DRONE_ARM_FOUNDATION_CONTEXT,
   DRONE_ARM_FOUNDATION_STUDY,
@@ -46,7 +47,7 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByText(/drop a trusted local zip package, step, stp, glb, or gltf/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();
-  expect(screen.getByText(/25 × 25 × 5/)).toBeVisible();
+  expect(screen.getByText(/128 × 128 × 32/)).toBeVisible();
   fireEvent.click(screen.getByText("Engineering details"));
   expect(screen.getByText("assembly · mm")).toBeVisible();
 
@@ -175,7 +176,7 @@ test("forwards WebMCP cancellation to one terminal transaction", async () => {
   await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
   const controller = new AbortController();
   const invocation = context.execute("generate_topology_candidate", {
-    parentRevision: DRONE_ARM_FOUNDATION_STUDY.study.revision,
+    parentRevision: initialDroneWorkspace.revision,
     variant: "balanced",
     hypothesis: "Exercise the deterministic balanced",
     prediction: "Verification stays within the probe budget",

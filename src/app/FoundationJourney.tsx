@@ -12,6 +12,7 @@ import {
 } from "../samples/drone-arm-foundation";
 import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer";
 import type { AlternativeMode } from "../viewer/alternative-instances";
+import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
 import { ComponentBrowser } from "./ComponentBrowser";
 import { AlternativeSelector } from "./AlternativeSelector";
@@ -34,16 +35,16 @@ const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
 const initialAcceptedRevision = fixture.assembly.revision;
 const probeCopy: Record<ProbeVariant, { hypothesis: string; prediction: string }> = {
   balanced: {
-    hypothesis: "Balance frame stiffness and material use across hover and agility loads",
-    prediction: "Compliance should fall while preserving 36 percent material and every keep-out",
+    hypothesis: "Balance a spatial truss across hover agility and torsion loads",
+    prediction: "Retain 26 percent material plus every must-pass path and keep-out",
   },
   "lightweight": {
     hypothesis: "Reduce frame mass while preserving continuous motor-to-core load paths",
-    prediction: "Material should fall to 28 percent with higher but finite compliance",
+    prediction: "Material should fall to 20 percent with higher but finite compliance",
   },
   "stiffness": {
     hypothesis: "Prioritize stiffness for aggressive roll pitch and torsion load cases",
-    prediction: "Compliance and displacement should improve using a 46 percent material budget",
+    prediction: "Compliance and displacement should improve using a 34 percent material budget",
   },
 };
 
@@ -54,6 +55,10 @@ export interface FoundationJourneyProps {
 }
 export function FoundationJourney({ capability, compute, viewerEnvironment }: FoundationJourneyProps) {
   const workspace = useAssemblyWorkspace();
+  const liveTopology = useMemo(
+    () => compileLiveTopologyContext(workspace),
+    [workspace.revision],
+  );
   const { state, services, experimentRail } = useProjectState({
     contextRevision: workspace.revision,
     context: initialContext,
@@ -62,14 +67,16 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     locks: initialContext.locks,
     capability,
     compute,
-    buildProbeInput: (variant) => buildProbeInput(variant, compileLiveTopologyContext(workspace)),
+    buildProbeInput: (variant) => buildProbeInput(variant, liveTopology),
   });
   const { theme, setTheme } = useTheme();
   const activityReceipts = [...state.receipts, ...workspace.receipts].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const [mode, setMode] = useState<AlternativeMode>("overlay");
+  const [analysisLayer, setAnalysisLayer] = useState<"density" | "loads" | "displacement" | "stress" | "safety">("density");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
   const [selectedPart, setSelectedPart] = useState("arm-design-region");
   const [showConstraints, setShowConstraints] = useState(false);
+  const [showComponents, setShowComponents] = useState(true);
   const [activeDrawer, setActiveDrawer] = useState<DrawerView>();
   const [componentsOpen, setComponentsOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -84,8 +91,14 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     const status = latestVariant(variant)?.status;
     return !status || status === "failed" || status === "mismatch" || status === "canceled";
   };
+  const balanced = latestVariant("balanced");
+  const balancedTopology = balanced?.result?.status === "verified" ? balanced.result.topology : undefined;
+  const balancedFailsMaterialScreen = balancedTopology !== undefined
+    && balancedTopology.minimumSafetyFactor < 1;
   const nextVariant = !accepted
-    ? canRetry("balanced") ? "balanced" : undefined
+    ? canRetry("balanced") ? "balanced"
+      : balancedFailsMaterialScreen && canRetry("stiffness") ? "stiffness"
+        : undefined
     : canRetry("lightweight") ? "lightweight"
       : latestVariant("lightweight")?.status === "verified" && canRetry("stiffness")
         ? "stiffness" : undefined;
@@ -147,12 +160,19 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const visibleParts = useMemo(
-    () => workspace.parts.filter((part) =>
+  const visibleParts = useMemo(() => {
+    const parts = workspace.parts.filter((part) =>
       (showConstraints || part.appearance !== "constraint")
-      && (viewerCurrent === null || part.appearance !== "design-region")),
-    [showConstraints, viewerCurrent, workspace.parts],
-  );
+      && (showComponents || part.appearance !== "component")
+      && (viewerCurrent === null || part.appearance !== "design-region"));
+    if (!viewerCurrent || analysisLayer !== "loads") return parts;
+    const loadVectors: readonly AssemblyVisualPart[] = workspace.motors.map((motor) => ({
+      id: `${motor.id}-load-vector`, selectionId: motor.id, label: `${motor.label} 18 N thrust load`,
+      appearance: "generated", kind: "load-vector", center: motor.anchor,
+      forceN: [0, 0, -18], length: 28,
+    }));
+    return [...parts, ...loadVectors];
+  }, [analysisLayer, showComponents, showConstraints, viewerCurrent, workspace.motors, workspace.parts]);
   const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
     workspace.movePart(id, center);
   }, [workspace.movePart]);
@@ -222,12 +242,23 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             try { setSelectedPart(await workspace.importFile(file)); }
             catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
           }}
+          onReplaceDisplayFile={async (id, file) => {
+            try { setSelectedPart(await workspace.replaceDisplayFile(id, file)); }
+            catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+          }}
           onClose={() => setComponentsOpen(false)}
         />
         <section className="viewport-workspace" aria-labelledby="viewport-title">
           <header className="viewport-toolbar">
             <div><h2 id="viewport-title">Assembly viewport</h2><p>{state.context.selection.label}</p></div>
             <div className="toolbar-controls">
+              <div className="segmented-control" aria-label="Structural result layer">
+                {(["density", "loads", "displacement", "stress", "safety"] as const).map((layer) => (
+                  <button type="button" key={layer} aria-pressed={analysisLayer === layer} onClick={() => setAnalysisLayer(layer)}>
+                    {layer}
+                  </button>
+                ))}
+              </div>
               <div className="segmented-control" aria-label="Comparison mode">
                 {(["overlay", "peel", "audition"] as const).map((value) => (
                   <button type="button" key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>
@@ -235,6 +266,12 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                   </button>
                 ))}
               </div>
+              <button
+                className="toggle-button"
+                type="button"
+                aria-pressed={showComponents}
+                onClick={() => setShowComponents((shown) => !shown)}
+              >Components</button>
               <button
                 className="toggle-button"
                 type="button"
@@ -254,6 +291,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               assemblyParts={visibleParts}
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
+              analysisLayer={analysisLayer}
               statusText={viewerCurrent
                 ? workspace.layoutState === "dragging"
                   ? "Moving component · rotor safety geometry follows"
@@ -283,13 +321,13 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               selected={selectedAlternative}
               onSelect={setSelectedAlternative}
             />}
-            {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} />}
+            {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts} />}
           </div>
           <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
         </section>
         <InspectorPanel
           selectedId={selectedPart} context={state.context}
-          topologyGrid={viewerCurrent?.grid}
+          topologyGrid={viewerCurrent?.grid ?? liveTopology.grid}
           parts={workspace.parts} imports={workspace.imports}
           assembly={workspace.draft} catalog={workspace.catalog} conflicts={workspace.conflicts}
           layoutState={workspace.layoutState}

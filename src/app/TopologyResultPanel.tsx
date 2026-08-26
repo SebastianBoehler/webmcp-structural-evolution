@@ -1,21 +1,28 @@
 import { useState } from "react";
 
 import type { ViewerBranch } from "../viewer/alternative-instances";
+import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import { downloadEngineeringAssemblyGlb } from "../manufacturing/engineering-assembly-glb";
 import { downloadTopologyStl } from "../manufacturing/topology-stl";
 import "./topology-result-panel.css";
 
 export interface TopologyResultPanelProps {
   readonly branch: ViewerBranch;
   readonly variant?: string;
+  readonly assemblyParts?: readonly AssemblyVisualPart[];
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 const compact = (value: number) => value >= 100 ? value.toFixed(0) : value.toFixed(2);
-const millimetres = (value: number) => compact(value * 1_000);
+const millimetres = (value: number) => {
+  const mm = value * 1_000;
+  return mm > 0 && mm < 0.1 ? mm.toFixed(3) : compact(mm);
+};
 const megapascals = (value: number) => compact(value / 1_000_000);
 
-export function TopologyResultPanel({ branch, variant = "balanced" }: TopologyResultPanelProps) {
+export function TopologyResultPanel({ branch, variant = "balanced", assemblyParts = [] }: TopologyResultPanelProps) {
   const [exported, setExported] = useState(false);
+  const [glbStatus, setGlbStatus] = useState<"idle" | "exporting" | "exported">("idle");
   if (branch.result.status !== "verified" || !branch.result.topology) return null;
   const output = branch.result.output;
   const metrics = branch.result.topology;
@@ -34,16 +41,31 @@ export function TopologyResultPanel({ branch, variant = "balanced" }: TopologyRe
         <div><dt>Peak displacement</dt><dd>{millimetres(metrics.maxDisplacement)} mm</dd></div>
         <div><dt>Peak axial stress</dt><dd>{megapascals(metrics.maxStress)} MPa</dd></div>
         <div><dt>Minimum safety factor</dt><dd>{compact(metrics.minimumSafetyFactor)}×</dd></div>
+        {metrics.assemblyMassKg !== undefined && <div><dt>Accounted assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
+        {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated PLA frame mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
+        {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
         <div><dt>Physical solve</dt><dd>4 loads · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
       </dl>
       <button
         type="button"
         className="topology-result__export"
+        disabled={!safe}
         onClick={() => {
           downloadTopologyStl(branch.grid, output);
           setExported(true);
         }}
-      >{exported ? "STL exported" : "Export frame STL"}</button>
+      >{!safe ? "STL blocked: unsafe candidate" : exported ? "STL exported" : "Export frame STL"}</button>
+      <button
+        type="button"
+        className="topology-result__export"
+        disabled={!safe || glbStatus === "exporting"}
+        onClick={() => {
+          setGlbStatus("exporting");
+          void downloadEngineeringAssemblyGlb(branch.grid, output, assemblyParts)
+            .then(() => setGlbStatus("exported"))
+            .catch(() => setGlbStatus("idle"));
+        }}
+      >{!safe ? "GLB blocked: unsafe candidate" : glbStatus === "exporting" ? "Building PBR GLB…" : glbStatus === "exported" ? "Assembly GLB exported" : "Export PBR assembly GLB"}</button>
     </section>
   );
 }

@@ -9,6 +9,7 @@ const props = (onImportFile: (file: File) => void | Promise<void>) => ({
   parts: [],
   onSelect: vi.fn(),
   onImportFile,
+  onReplaceDisplayFile: vi.fn(),
   onClose: vi.fn(),
 });
 
@@ -35,5 +36,18 @@ describe("ComponentBrowser local package import", () => {
     });
 
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Package has no display representation"));
+  });
+
+  it("replaces display CAD only after a placed component is selected", () => {
+    const onReplaceDisplayFile = vi.fn();
+    render(<ComponentBrowser {...props(vi.fn())} selectedId="motor-east" parts={[{
+      id: "motor-east", selectionId: "motor-east", label: "East motor", appearance: "component",
+      kind: "box", center: [0, 0, 0], size: [28, 28, 20],
+    }]} onReplaceDisplayFile={onReplaceDisplayFile} />);
+    const file = new File(["glb"], "motor.glb", { type: "model/gltf-binary" });
+
+    fireEvent.change(screen.getByLabelText("Choose replacement display CAD"), { target: { files: [file] } });
+
+    expect(onReplaceDisplayFile).toHaveBeenCalledWith("motor-east", file);
   });
 });

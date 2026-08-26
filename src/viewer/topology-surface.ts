@@ -4,7 +4,8 @@ import { MarchingCubes } from "three/examples/jsm/objects/MarchingCubes.js";
 import type { VoxelGrid } from "./field-instances";
 
 export const TOPOLOGY_ISOLATION = 0.32;
-const SURFACE_SAMPLING = 3;
+const SURFACE_SAMPLING = 2;
+const surfaceCache = new WeakMap<Float32Array, Float32Array>();
 function densityAt(
   density: Float32Array,
   dimensions: VoxelGrid["dimensions"],
@@ -29,11 +30,9 @@ function densityAt(
   return lerp(lower, upper, tz);
 }
 
-export function createTopologySurface(
-  grid: VoxelGrid,
-  density: Float32Array,
-  material: THREE.Material,
-): MarchingCubes {
+function extractSurfacePositions(grid: VoxelGrid, density: Float32Array): Float32Array {
+  const cached = surfaceCache.get(density);
+  if (cached) return cached;
   const { width, height, depth } = grid.dimensions;
   if (density.length !== width * height * depth) {
     throw new Error("Density surface does not match the topology grid.");
@@ -42,8 +41,9 @@ export function createTopologySurface(
   const sampledHeight = height * SURFACE_SAMPLING;
   const sampledDepth = depth * SURFACE_SAMPLING;
   const resolution = Math.max(sampledWidth, sampledHeight, sampledDepth) + 4;
-  const maximumTriangles = 5 * (sampledWidth - 1) * (sampledHeight - 1) * (sampledDepth - 1);
-  const surface = new MarchingCubes(resolution, material, false, false, maximumTriangles);
+  const maximumTriangles = Math.min(750_000, 5 * (sampledWidth - 1) * (sampledHeight - 1) * (sampledDepth - 1));
+  const extractionMaterial = new THREE.MeshBasicMaterial();
+  const surface = new MarchingCubes(resolution, extractionMaterial, false, false, maximumTriangles);
   surface.name = "verified-topology-surface";
   surface.isolation = TOPOLOGY_ISOLATION;
   const xOffset = Math.floor((resolution - sampledWidth) / 2);
@@ -61,7 +61,31 @@ export function createTopologySurface(
     }
   }
   surface.update();
-  surface.geometry.computeVertexNormals();
+  const count = surface.geometry.drawRange.count;
+  const source = surface.geometry.getAttribute("position").array as Float32Array;
+  const positions = new Float32Array(count * 3);
+  positions.set(source.subarray(0, count * 3));
+  surface.geometry.dispose();
+  extractionMaterial.dispose();
+  surfaceCache.set(density, positions);
+  return positions;
+}
+
+export function createTopologySurface(
+  grid: VoxelGrid,
+  density: Float32Array,
+  material: THREE.Material,
+): THREE.Mesh {
+  const { width, height, depth } = grid.dimensions;
+  if (density.length !== width * height * depth) {
+    throw new Error("Density surface does not match the topology grid.");
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(extractSurfacePositions(grid, density), 3));
+  geometry.computeVertexNormals();
+  const surface = new THREE.Mesh(geometry, material);
+  surface.name = "verified-topology-surface";
+  const resolution = Math.max(width, height, depth) * SURFACE_SAMPLING + 4;
   surface.scale.set(
     grid.cellSize[0] * resolution / (2 * SURFACE_SAMPLING),
     grid.cellSize[1] * resolution / (2 * SURFACE_SAMPLING),

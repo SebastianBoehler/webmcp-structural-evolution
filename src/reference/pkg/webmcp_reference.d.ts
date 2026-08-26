@@ -7,6 +7,7 @@ export class WasmTopologyResult {
     [Symbol.dispose](): void;
     readonly density: Float32Array;
     readonly depth: number;
+    readonly displacement: Float32Array;
     readonly final_compliance: number;
     readonly height: number;
     readonly initial_compliance: number;
@@ -15,6 +16,7 @@ export class WasmTopologyResult {
     readonly max_displacement: number;
     readonly max_stress: number;
     readonly minimum_safety_factor: number;
+    readonly stress: Float32Array;
     readonly width: number;
 }
 
@@ -31,8 +33,10 @@ export interface InitOutput {
     readonly __wbg_wasmtopologyresult_free: (a: number, b: number) => void;
     readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
+    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmtopologyresult_density: (a: number) => [number, number];
     readonly wasmtopologyresult_depth: (a: number) => number;
+    readonly wasmtopologyresult_displacement: (a: number) => [number, number];
     readonly wasmtopologyresult_final_compliance: (a: number) => number;
     readonly wasmtopologyresult_height: (a: number) => number;
     readonly wasmtopologyresult_initial_compliance: (a: number) => number;
@@ -41,8 +45,8 @@ export interface InitOutput {
     readonly wasmtopologyresult_max_displacement: (a: number) => number;
     readonly wasmtopologyresult_max_stress: (a: number) => number;
     readonly wasmtopologyresult_minimum_safety_factor: (a: number) => number;
+    readonly wasmtopologyresult_stress: (a: number) => [number, number];
     readonly wasmtopologyresult_width: (a: number) => number;
-    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

@@ -10,13 +10,15 @@ export interface ComponentBrowserProps {
   readonly conflictCount?: number;
   readonly onSelect: (componentId: string) => void;
   readonly onImportFile: (file: File) => void | Promise<void>;
+  readonly onReplaceDisplayFile: (componentId: string, file: File) => void | Promise<void>;
   readonly onClose: () => void;
 }
 
-export function ComponentBrowser({ selectedId, open, parts, revision, conflictCount = 0, onSelect, onImportFile, onClose }: ComponentBrowserProps) {
+export function ComponentBrowser({ selectedId, open, parts, revision, conflictCount = 0, onSelect, onImportFile, onReplaceDisplayFile, onClose }: ComponentBrowserProps) {
   const [query, setQuery] = useState("");
   const [importError, setImportError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
+  const replacementInputRef = useRef<HTMLInputElement>(null);
   const components = useMemo(() => parts.filter((part) =>
     part.appearance === "component" &&
     !part.id.startsWith("reference-arm") &&
@@ -29,6 +31,15 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
       setImportError(error instanceof Error ? error.message : "Component import failed");
     }
   };
+  const replaceDisplayFile = async (file: File) => {
+    setImportError(undefined);
+    try {
+      await onReplaceDisplayFile(selectedId, file);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Display CAD replacement failed");
+    }
+  };
+  const selectedComponent = components.some(({ selectionId }) => selectionId === selectedId);
 
   return (
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
@@ -87,6 +98,19 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
         {revision ? <p>{conflictCount === 0 ? "No unresolved assembly conflicts." : `${conflictCount} unresolved assembly conflicts.`}</p> : null}
         <p>Drop a trusted local ZIP package, STEP, STP, GLB, or glTF. Files stay local; package integrity is verified before use.</p>
         {importError ? <p role="alert">{importError}</p> : null}
+        <button type="button" disabled={!selectedComponent} onClick={() => replacementInputRef.current?.click()}>Replace selected display CAD</button>
+        <input
+          ref={replacementInputRef}
+          className="visually-hidden"
+          type="file"
+          aria-label="Choose replacement display CAD"
+          accept=".step,.stp,.glb,.gltf,model/gltf-binary,model/gltf+json"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void replaceDisplayFile(file);
+            event.target.value = "";
+          }}
+        />
         <button type="button" onClick={() => inputRef.current?.click()}>Import component file</button>
         <input
           ref={inputRef}

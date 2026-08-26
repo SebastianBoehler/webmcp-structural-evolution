@@ -16,9 +16,12 @@ fn active_path_exists(
             return true;
         }
         for [nx, ny, nz] in [
-            [x.wrapping_sub(1), y, z], [x + 1, y, z],
-            [x, y.wrapping_sub(1), z], [x, y + 1, z],
-            [x, y, z.wrapping_sub(1)], [x, y, z + 1],
+            [x.wrapping_sub(1), y, z],
+            [x + 1, y, z],
+            [x, y.wrapping_sub(1), z],
+            [x, y + 1, z],
+            [x, y, z.wrapping_sub(1)],
+            [x, y, z + 1],
         ] {
             if nx >= width || ny >= height || nz >= depth {
                 continue;
@@ -40,8 +43,12 @@ fn optimization_is_deterministic_and_reduces_compliance() {
 
     assert_eq!(first.density, second.density);
     assert!(first.final_compliance.is_finite());
-    assert!(first.final_compliance < first.initial_compliance * 0.92,
-        "compliance {} did not improve from {}", first.final_compliance, first.initial_compliance);
+    assert!(
+        first.final_compliance < first.initial_compliance * 0.92,
+        "compliance {} did not improve from {}",
+        first.final_compliance,
+        first.initial_compliance
+    );
     assert!(first.max_displacement.is_finite());
 }
 
@@ -63,10 +70,18 @@ fn presets_make_a_measurable_engineering_tradeoff() {
     let lightweight = optimize_drone_frame(OptimizationPreset::Lightweight);
     let stiffness = optimize_drone_frame(OptimizationPreset::Stiffness);
 
-    assert!(lightweight.material_fraction < stiffness.material_fraction - 0.08,
-        "lightweight {} and stiffness {} mass fractions converged", lightweight.material_fraction, stiffness.material_fraction);
-    assert!(stiffness.final_compliance < lightweight.final_compliance,
-        "stiffness compliance {} was not below lightweight {}", stiffness.final_compliance, lightweight.final_compliance);
+    assert!(
+        lightweight.material_fraction < stiffness.material_fraction - 0.08,
+        "lightweight {} and stiffness {} mass fractions converged",
+        lightweight.material_fraction,
+        stiffness.material_fraction
+    );
+    assert!(
+        stiffness.final_compliance < lightweight.final_compliance,
+        "stiffness compliance {} was not below lightweight {}",
+        stiffness.final_compliance,
+        lightweight.final_compliance
+    );
     for result in [lightweight, balanced, stiffness] {
         assert!((0.0..=1.0).contains(&result.material_fraction));
     }
@@ -105,11 +120,16 @@ fn every_rendered_density_cell_belongs_to_the_supported_frame() {
     connected[index(start)] = true;
     while let Some([x, y, z]) = queue.pop_front() {
         for [nx, ny, nz] in [
-            [x.wrapping_sub(1), y, z], [x + 1, y, z],
-            [x, y.wrapping_sub(1), z], [x, y + 1, z],
-            [x, y, z.wrapping_sub(1)], [x, y, z + 1],
+            [x.wrapping_sub(1), y, z],
+            [x + 1, y, z],
+            [x, y.wrapping_sub(1), z],
+            [x, y + 1, z],
+            [x, y, z.wrapping_sub(1)],
+            [x, y, z + 1],
         ] {
-            if nx >= width || ny >= height || nz >= depth { continue; }
+            if nx >= width || ny >= height || nz >= depth {
+                continue;
+            }
             let neighbor = index([nx, ny, nz]);
             if !connected[neighbor] && result.density[neighbor] >= 0.32 {
                 connected[neighbor] = true;
@@ -117,8 +137,14 @@ fn every_rendered_density_cell_belongs_to_the_supported_frame() {
             }
         }
     }
-    let floating = result.density.iter().enumerate()
+    let floating = result
+        .density
+        .iter()
+        .enumerate()
         .filter(|(index, value)| **value >= 0.32 && !connected[*index])
         .count();
-    assert_eq!(floating, 0, "rendered topology contains {floating} floating density cells");
+    assert_eq!(
+        floating, 0,
+        "rendered topology contains {floating} floating density cells"
+    );
 }

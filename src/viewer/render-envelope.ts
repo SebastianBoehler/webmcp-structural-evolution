@@ -21,6 +21,13 @@ export interface ViewerRenderModel {
   readonly alternativeLayers: readonly AlternativeLayer[];
   readonly assemblyParts?: readonly AssemblyVisualPart[];
   readonly densityField?: Float32Array;
+  readonly analysisField?: ScalarAnalysisField;
+}
+
+export interface ScalarAnalysisField {
+  readonly kind: "displacement" | "stress" | "safety";
+  readonly values: Float32Array;
+  readonly maximum: number;
 }
 
 export type AssemblyVisualPart = Readonly<{
@@ -65,6 +72,7 @@ export type AssemblyVisualPart = Readonly<{
       size: Vector3Tuple;
     }>
   | Readonly<{ kind: "mesh"; mesh: CadMesh }>
+  | Readonly<{ kind: "load-vector"; forceN: Vector3Tuple; length: number }>
 );
 
 export interface AxialVisualFeature { readonly radius: number; readonly height: number; readonly centerZ: number }
@@ -252,6 +260,7 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
     return;
   }
   const extents = part.kind === "mesh" ? part.mesh.sizeMm
+    : part.kind === "load-vector" ? [4, 4, part.length]
     : part.kind === "box" || part.kind === "model" || part.kind === "flight-controller"
     ? part.size
     : part.kind === "guard"
@@ -290,6 +299,7 @@ export function prepareRenderModel(model: ViewerRenderModel): PreparedRenderMode
     grid,
     currentInstances: model.currentInstances,
     densityField: model.densityField,
+    analysisField: model.analysisField,
     alternativeLayers: Object.freeze(layers),
     assemblyParts: Object.freeze(assemblyParts),
     camera: cameraFor(grid, bounds, assemblyParts.length > 0),

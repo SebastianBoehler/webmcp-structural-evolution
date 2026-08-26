@@ -146,5 +146,9 @@ export function geometryPieces(part: Exclude<AssemblyVisualPart, { kind: "model"
   if (part.kind === "motor") return motorPieces(part);
   if (part.kind === "fastener") return fastenerPieces(part);
   if (part.kind === "flight-controller") return flightControllerPieces(part);
+  if (part.kind === "load-vector") return [
+    { geometry: cylinder(1.2, part.length * 0.68), color: 0xe04d3f, position: [0, 0, -part.length * 0.34] },
+    { geometry: new THREE.ConeGeometry(3.2, part.length * 0.32, 32).rotateX(Math.PI / 2), color: 0xe04d3f, position: [0, 0, -part.length * 0.84] },
+  ];
   return propellerPieces(part);
 }

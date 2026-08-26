@@ -17,7 +17,7 @@ import {
   type ViewerRenderModel,
 } from "./field-renderer";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
-import type { AssemblyVisualPart } from "./render-envelope";
+import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
 import "./field-viewer.css";
 
 export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer";
@@ -34,6 +34,7 @@ export interface FieldViewerProps {
   readonly assemblyParts?: readonly AssemblyVisualPart[];
   readonly selectedAlternative?: string;
   readonly selectedPart?: string;
+  readonly analysisLayer?: "density" | "loads" | "displacement" | "stress" | "safety";
   readonly statusText?: string;
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
@@ -70,6 +71,7 @@ function prepareViewer(
   selectedAlternative: string | undefined,
   fallbackGrid: VoxelGrid | undefined,
   assemblyParts: readonly AssemblyVisualPart[],
+  analysisLayer: FieldViewerProps["analysisLayer"],
 ): PreparedViewer {
   const base = assemblyModel(current?.grid ?? fallbackGrid, assemblyParts);
   if (!current) return { model: base, comparisons: [], omittedCount: 0 };
@@ -92,6 +94,25 @@ function prepareViewer(
       if (audition) currentInstances = audition.auditionInstances!;
       else notice = "Choose a verified alternative to audition. The accepted field remains visible.";
     }
+    let analysisField: ScalarAnalysisField | undefined;
+    if (current.result.analysis && current.result.topology && analysisLayer && !["density", "loads"].includes(analysisLayer)) {
+      if (analysisLayer === "displacement") analysisField = {
+        kind: "displacement", values: current.result.analysis.displacement,
+        maximum: Math.max(current.result.topology.maxDisplacement, Number.EPSILON),
+      };
+      if (analysisLayer === "stress") analysisField = {
+        kind: "stress", values: current.result.analysis.stress,
+        maximum: Math.max(current.result.topology.maxStress, Number.EPSILON),
+      };
+      if (analysisLayer === "safety") {
+        const failureStress = current.result.topology.maxStress * current.result.topology.minimumSafetyFactor;
+        analysisField = {
+          kind: "safety",
+          values: Float32Array.from(current.result.analysis.stress, (stress) => stress / Math.max(failureStress, 1)),
+          maximum: 1,
+        };
+      }
+    }
     return {
       model: {
         grid: current.grid,
@@ -101,6 +122,7 @@ function prepareViewer(
             ? (alternatives.find((branch) => branch.branchRevision === selectedAlternative)!.result as { output: Float32Array }).output
             : current.result.output
           : current.result.output,
+        ...(analysisField ? { analysisField } : {}),
         alternativeLayers: mode === "audition" ? [] : extraction.layers,
         assemblyParts,
       },
@@ -128,6 +150,7 @@ export function FieldViewer({
   assemblyParts = EMPTY_ASSEMBLY_PARTS,
   selectedAlternative,
   selectedPart,
+  analysisLayer = "density",
   statusText,
   environment,
   onPartSelect,
@@ -152,7 +175,8 @@ export function FieldViewer({
     auditionSelection,
     grid,
     assemblyParts,
-  ), [current, alternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts]);
+    analysisLayer,
+  ), [current, alternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts, analysisLayer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

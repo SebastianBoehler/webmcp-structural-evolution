@@ -56,8 +56,14 @@ export const BATTERY_GRAPH: ParametricGraph = { nodes: [
   box("battery-package", [0, 0, 0], [0.078, 0.037, 0.052]),
 ] };
 
+export const CAMERA_GRAPH: ParametricGraph = { nodes: [
+  box("camera-housing", [0, 0, 0], [0.019, 0.020, 0.019]),
+  cylinder("m12-lens-envelope", [0.015, 0, 0], 0.006, 0.012),
+  { kind: "union", id: "camera-and-lens", left: "camera-housing", right: "m12-lens-envelope" },
+] };
+
 export const WIRING_GRAPH: ParametricGraph = { nodes: [
-  box("wiring-corridor", [0, 0, 0], [0.184, 0.006, 0.006]),
+  box("wiring-corridor", [0, 0, 0], [0.072, 0.006, 0.004]),
 ] };
 
 export const PROPELLER_GRAPH: ParametricGraph = { nodes: [

@@ -34,6 +34,15 @@ export class WasmTopologyResult {
         return ret >>> 0;
     }
     /**
+     * @returns {Float32Array}
+     */
+    get displacement() {
+        const ret = wasm.wasmtopologyresult_displacement(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @returns {number}
      */
     get final_compliance() {
@@ -88,6 +97,15 @@ export class WasmTopologyResult {
     get minimum_safety_factor() {
         const ret = wasm.wasmtopologyresult_minimum_safety_factor(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get stress() {
+        const ret = wasm.wasmtopologyresult_stress(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
     /**
      * @returns {number}

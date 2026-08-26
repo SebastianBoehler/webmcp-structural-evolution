@@ -71,6 +71,7 @@ export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze(reference
 export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze({
   "flight-controller": instancePoint("fc-esc-stack"),
   battery: instancePoint("battery"),
+  "fpv-camera": instancePoint("fpv-camera"),
 });
 
 function protectedCylinder(component: ComponentDefinition) {
@@ -125,12 +126,15 @@ function boxConstraint(id: string, label: string, center: Point3, component: Com
 function equipmentParts(equipment: Readonly<Record<string, Point3>>): readonly AssemblyVisualPart[] {
   const stackCenter = equipment["flight-controller"]!;
   const batteryCenter = equipment.battery!;
+  const cameraCenter = equipment["fpv-camera"]!;
   return [
     { id: "flight-controller", selectionId: "flight-controller", label: "SpeedyBee F405 V4 flight controller", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.flightController.center)), size: viewerPoint(stackDisplay.flightController.size), movable: true, dragGroup: "flight-controller" },
     { id: "flight-controller-esc", selectionId: "flight-controller", label: "SpeedyBee BLS 55A 4-in-1 ESC", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.esc.center)), size: viewerPoint(stackDisplay.esc.size), movable: true, dragGroup: "flight-controller" },
     boxConstraint("fc-esc-stack", "Avionics stack protected volume", stackCenter, stackComponent, "flight-controller"),
     { id: "battery", selectionId: "battery", label: "Tattu R-Line V5 1550mAh 6S battery", appearance: "component", kind: "box", center: batteryCenter, size: viewerPoint(batteryDisplay.size), movable: true, dragGroup: "battery" },
     boxConstraint("battery", "Battery protected volume", batteryCenter, batteryComponent, "battery"),
+    { id: "fpv-camera", selectionId: "fpv-camera", label: "RunCam Phoenix 2 FPV camera", appearance: "component", kind: "box", center: cameraCenter, size: [31, 20, 19] },
+    { id: "fpv-camera-camera-keepout", selectionId: "fpv-camera-camera-keepout", label: "FPV camera protected volume", appearance: "constraint", kind: "box", center: [49.363961031, 49.363961031, 3], rotation: [0, 0, Math.PI / 4], size: [40, 24, 23], dragGroup: "fpv-camera" },
   ];
 }
 

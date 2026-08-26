@@ -44,18 +44,24 @@ function collisionConflicts(components: readonly PositionedComponent[]) {
   const conflicts: AssemblyConflict[] = [];
   for (let left = 0; left < components.length; left += 1) for (let right = left + 1; right < components.length; right += 1) {
     const first = components[left]!, second = components[right]!;
-    if (!first.component || !second.component || intentionalMotorMate(first, second) || !collides(first, second)) continue;
+    if (!first.component || !second.component || intentionalAssemblyMate(first, second) || !collides(first, second)) continue;
     const [a, b] = [first.instance.instanceId, second.instance.instanceId].sort();
     conflicts.push({ id: `collision:${a}:${b}`, kind: "collision", message: `Collision between ${a} and ${b}`, instanceIds: [a, b] });
   }
   return conflicts;
 }
 
-function intentionalMotorMate(left: PositionedComponent, right: PositionedComponent) {
+function intentionalAssemblyMate(left: PositionedComponent, right: PositionedComponent) {
   const motor = left.component?.category === "motor" ? left : right.component?.category === "motor" ? right : undefined;
   const attached = motor === left ? right : left;
-  if (!motor || !attached.component || !["propeller", "fastener"].includes(attached.component.category)) return false;
-  return attached.instance.instanceId.startsWith(`${motor.instance.instanceId}-`);
+  const motorDirection = motor?.instance.instanceId.replace("motor-", "");
+  const attachedToMotor = attached.instance.instanceId.startsWith(`${motor?.instance.instanceId}-`)
+    || attached.instance.instanceId === `wiring-${motorDirection}`;
+  if (motor && attached.component && ["propeller", "fastener", "wiring"].includes(attached.component.category)
+    && attachedToMotor) return true;
+  const categories = [left.component?.category, right.component?.category];
+  return categories.includes("wiring") && categories.includes("avionics")
+    || categories.includes("body-interface") && categories.includes("avionics");
 }
 
 function stockConflicts(draft: AssemblyDraft, inventory: readonly InventoryItem[]) {
@@ -90,10 +96,27 @@ function componentFor(revision: string, catalog: readonly ComponentDefinition[])
 
 function collides(left: PositionedComponent, right: PositionedComponent) {
   return left.component!.collisionVolumes.some((leftVolume) => right.component!.collisionVolumes
-    .some((rightVolume) => overlaps(
-      volumeBounds(leftVolume, left.instance, left.component),
-      volumeBounds(rightVolume, right.instance, right.component),
-    )));
+    .some((rightVolume) => volumeOverlap(leftVolume, left, rightVolume, right)));
+}
+
+function volumeOverlap(
+  leftVolume: ComponentDefinition["collisionVolumes"][number], left: PositionedComponent,
+  rightVolume: ComponentDefinition["collisionVolumes"][number], right: PositionedComponent,
+) {
+  if (leftVolume.kind === "cylinder" && rightVolume.kind === "cylinder"
+    && leftVolume.orientation.roll.value === 0 && leftVolume.orientation.pitch.value === 0
+    && rightVolume.orientation.roll.value === 0 && rightVolume.orientation.pitch.value === 0) {
+    const a = worldCenter(leftVolume.center, left.instance, left.component);
+    const b = worldCenter(rightVolume.center, right.instance, right.component);
+    const planar = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const vertical = Math.abs(a[2] - b[2]);
+    return planar < metres(leftVolume.radius) + metres(rightVolume.radius)
+      && vertical < (metres(leftVolume.height) + metres(rightVolume.height)) / 2;
+  }
+  return overlaps(
+    volumeBounds(leftVolume, left.instance, left.component),
+    volumeBounds(rightVolume, right.instance, right.component),
+  );
 }
 
 function volumeBounds(

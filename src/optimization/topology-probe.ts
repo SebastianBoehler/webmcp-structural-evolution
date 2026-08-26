@@ -29,6 +29,18 @@ export async function runTopologyProbe(
     const topology: TopologyMetrics = {
       solver: "sparse-simp-lattice-wasm",
       ...result.metrics,
+      ...(input.assembly ? {
+        assemblyMassKg: input.assembly.assemblyMassKg,
+        planarCenterOfMassOffsetM: Math.hypot(
+          input.assembly.centerOfMassM[0],
+          input.assembly.centerOfMassM[1],
+        ),
+        estimatedFrameMassKg: result.density.reduce((sum, density) => sum + density, 0)
+          * input.assembly.grid.cellSizeM[0]
+          * input.assembly.grid.cellSizeM[1]
+          * input.assembly.grid.cellSizeM[2]
+          * 1_240,
+      } : {}),
     };
     return {
       status: "verified",
@@ -37,6 +49,7 @@ export async function runTopologyProbe(
       relativeL2: 0,
       tolerance: 0,
       topology,
+      analysis: { displacement: result.displacement, stress: result.stress },
       ...(input.topologyGrid ? { grid: input.topologyGrid } : {}),
     };
   } catch (error) {

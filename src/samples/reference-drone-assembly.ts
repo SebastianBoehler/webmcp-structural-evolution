@@ -22,10 +22,10 @@ type ComponentVolumeField = "collisionVolumes" | "protectedVolumes";
 type ComponentVolume = ComponentDefinition[ComponentVolumeField][number];
 
 const motorCenters = [
-  ["motor-east", 0.105, 0],
-  ["motor-north", 0, 0.105],
-  ["motor-west", -0.105, 0],
-  ["motor-south", 0, -0.105],
+  ["motor-east", 0.105, 0, 0],
+  ["motor-north", 0, 0.105, Math.PI / 2],
+  ["motor-west", -0.105, 0, Math.PI],
+  ["motor-south", 0, -0.105, -Math.PI / 2],
 ] as const;
 export const REFERENCE_MOTOR_MOUNT_PLATE = Object.freeze({
   radius: 0.0175,
@@ -45,22 +45,25 @@ const requirement = (instanceId: string, componentId: string, position: readonly
 });
 
 const requirements = [
-  ...motorCenters.map(([id, x, y]) => requirement(id, "motor-2207", [x, y, 0.003])),
-  ...motorCenters.map(([id, x, y]) => requirement(`${id}-propeller`, "propeller-5x4.3x3", [
+  ...motorCenters.map(([id, x, y, yaw]) => requirement(id, "motor-2207", [x, y, 0.003], yaw)),
+  ...motorCenters.map(([id, x, y, yaw]) => requirement(`${id}-propeller`, "propeller-5x4.3x3", [
     x + coordinate(propellerSeat.position.x),
     y + coordinate(propellerSeat.position.y),
     0.003 + coordinate(propellerSeat.position.z),
-  ])),
-  ...motorCenters.flatMap(([id, x, y]) => motorComponent.mountInterfaces.map((motorMount, index) =>
+  ], yaw)),
+  ...motorCenters.flatMap(([id, x, y, yaw]) => motorComponent.mountInterfaces.map((motorMount, index) =>
     requirement(`${id}-fastener-${index + 1}`, "fastener-m3x8", [
-      x + coordinate(motorMount.position.x),
-      y + coordinate(motorMount.position.y),
+      x + Math.cos(yaw) * coordinate(motorMount.position.x) - Math.sin(yaw) * coordinate(motorMount.position.y),
+      y + Math.sin(yaw) * coordinate(motorMount.position.x) + Math.cos(yaw) * coordinate(motorMount.position.y),
       0.003 + REFERENCE_MOTOR_MOUNT_PLATE.centerFromMotorAnchor[2] - REFERENCE_MOTOR_MOUNT_PLATE.height / 2,
-    ]))),
+    ], yaw))),
   requirement("fc-esc-stack", "fc-esc-stack-30x30", [0, 0, 0.015]),
-  requirement("battery", "battery-6s-1550", [0, 0, -0.032]),
-  requirement("wiring-east-west", "motor-wiring-corridor", [0, 0, 0.005]),
-  requirement("wiring-north-south", "motor-wiring-corridor", [0, 0, 0.005], Math.PI / 2),
+  requirement("battery", "battery-6s-1550", [-0.001524, -0.001524, -0.032]),
+  requirement("fpv-camera", "fpv-camera", [0.043, 0.043, 0.003], Math.PI / 4),
+  requirement("wiring-east", "motor-wiring-corridor", [0.057, 0, 0.008]),
+  requirement("wiring-north", "motor-wiring-corridor", [0, 0.057, 0.008], Math.PI / 2),
+  requirement("wiring-west", "motor-wiring-corridor", [-0.057, 0, 0.008], Math.PI),
+  requirement("wiring-south", "motor-wiring-corridor", [0, -0.057, 0.008], -Math.PI / 2),
   requirement("body-interface", "body-interface", [0, 0, 0]),
 ] as const;
 

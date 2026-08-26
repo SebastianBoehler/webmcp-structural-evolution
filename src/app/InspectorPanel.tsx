@@ -133,7 +133,7 @@ export function InspectorPanel({
       {isRegion && (
         <dl className="property-list">
           <div><dt>Resolution</dt><dd>{Object.values(topologyGrid?.dimensions ?? context.grid.dimensions).join(" × ")} voxels</dd></div>
-          <div><dt>Objective</dt><dd>Minimum compliance · 35% volume</dd></div>
+          <div><dt>Objective</dt><dd>Minimum compliance · 26% volume · 16 spatial guides</dd></div>
           <div><dt>Status</dt><dd>{layoutState === "verified" ? "Evidence current" : "Layout changed"}</dd></div>
         </dl>
       )}

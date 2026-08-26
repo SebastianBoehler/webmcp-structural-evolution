@@ -91,6 +91,9 @@ const defaultEnvironment: FieldViewerEnvironment = {
   createRenderer: (canvas) => {
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, canvas });
     renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
     return renderer;
   },
   createControls: (camera, canvas) => new OrbitControls(camera, canvas),
@@ -243,6 +246,7 @@ export function mountFieldRenderer(
         attach,
       },
       prepared.densityField,
+      prepared.analysisField,
     );
     transformGizmo = installTransformGizmo({
       canvas,
