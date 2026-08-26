@@ -6,7 +6,6 @@ import {
   componentGeometryEnvelope,
   fastenerRenderContract,
   motorRenderContract,
-  stackRenderContract,
 } from "./reference-drone-render-contract";
 
 const component = (id: string) => {
@@ -67,30 +66,23 @@ describe("reference drone render contract", () => {
     });
   });
 
-  it("centers the avionics display, collision, and envelope on one exact anchor", () => {
-    const stack = component("fc-esc-stack-30x30");
-    const contract = stackRenderContract(stack);
-    const collision = stack.collisionVolumes[0];
+  it("uses the exact release STEP bounds for both open-hardware avionics boards", () => {
+    const flightController = component("flight-controller-30x30");
+    const esc = component("esc-30x30");
 
-    expect(contract.localBounds).toEqual({
-      minimum: [-0.0228, -0.022, -0.0099],
-      maximum: [0.0228, 0.022, 0.0099],
+    expect(componentGeometryEnvelope(flightController)).toEqual({
+      minimum: [-0.018971151, -0.018971151, -0.00269],
+      maximum: [0.018971151, 0.018971151, 0.00269],
     });
-    expect(stack.anchor.position).toEqual({
-      x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" },
+    expect(componentGeometryEnvelope(esc)).toEqual({
+      minimum: [-0.02081353, -0.0212524995, -0.003165],
+      maximum: [0.02081353, 0.0212524995, 0.003165],
     });
-    expect(collision).toMatchObject({
-      center: stack.anchor.position,
-      size: { z: { value: 0.0198, unit: "m" } },
-    });
-    expect(componentGeometryEnvelope(stack)).toEqual(contract.localBounds);
-    expect(Math.min(
-      contract.flightController.center[2] - contract.flightController.size[2] / 2,
-      contract.esc.center[2] - contract.esc.size[2] / 2,
-    )).toBeCloseTo(contract.localBounds.minimum[2], 12);
-    expect(Math.max(
-      contract.flightController.center[2] + contract.flightController.size[2] / 2,
-      contract.esc.center[2] + contract.esc.size[2] / 2,
-    )).toBeCloseTo(contract.localBounds.maximum[2], 12);
+    for (const board of [flightController, esc]) {
+      expect(board.anchor.position).toEqual({
+        x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" },
+      });
+      expect(board.collisionVolumes[0]).toMatchObject({ center: board.anchor.position });
+    }
   });
 });

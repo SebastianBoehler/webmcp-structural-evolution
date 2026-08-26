@@ -24,11 +24,6 @@ export interface FastenerRenderContract {
   readonly socketCenterZ: number;
   readonly localBounds: RenderBounds;
 }
-export interface StackRenderContract {
-  readonly flightController: BoxFeature;
-  readonly esc: BoxFeature;
-  readonly localBounds: RenderBounds;
-}
 export interface PropellerRenderContract {
   readonly radius: number;
   readonly hubRadius: number;
@@ -92,14 +87,6 @@ export function fastenerRenderContract(component: ComponentDefinition): Fastener
     socketWidth: metres(socket.size.x),
     socketDepth: metres(socket.size.z),
     socketCenterZ: metres(socket.center.z),
-    localBounds: componentGeometryEnvelope(component),
-  };
-}
-
-export function stackRenderContract(component: ComponentDefinition): StackRenderContract {
-  return {
-    flightController: boxRenderContract(component, "flight-controller-board"),
-    esc: boxRenderContract(component, "esc-board"),
     localBounds: componentGeometryEnvelope(component),
   };
 }

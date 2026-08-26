@@ -198,6 +198,23 @@ function fpvCamera() {
   return group;
 }
 
+function fastener() {
+  const group = new THREE.Group();
+  group.name = "Accu_SSCF_M3_8_DIN912_spec_model";
+  const zinc = material(0x737b83, 0.94, 0.18);
+  mesh(group, cylinder(0.00124, 0.008, 48), zinc, [0, 0, 0.004], [Math.PI / 2, 0, 0]);
+  const turns = 16;
+  const thread = new THREE.CatmullRomCurve3(Array.from({ length: turns * 16 + 1 }, (_, index) => {
+    const progress = index / (turns * 16);
+    const angle = progress * turns * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle) * 0.00142, Math.sin(angle) * 0.00142, progress * 0.008);
+  }));
+  mesh(group, new THREE.TubeGeometry(thread, turns * 16, 0.00011, 6, false), zinc);
+  mesh(group, cylinder(0.00284, 0.003, 64), zinc, [0, 0, -0.0015], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.00125, 0.0013, 6), black, [0, 0, -0.00235], [Math.PI / 2, 0, 0]);
+  return group;
+}
+
 async function save(name, scene) {
   scene.traverse((object) => {
     if (object.isMesh) {
@@ -218,4 +235,5 @@ await Promise.all([
   save("tattu-rline-v5-1550-6s.glb", battery()),
   save("motor-to-esc-3x20awg.glb", motorHarness()),
   save("runcam-phoenix-2.glb", fpvCamera()),
+  save("accu-m3x8-din912.glb", fastener()),
 ]);

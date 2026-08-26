@@ -99,11 +99,15 @@ export function InspectorPanel({
   const imported = imports.find((candidate) => candidate.id === selectedId);
   const instance = assembly?.components.find(({ instanceId }) => instanceId === selectedId);
   const definition = catalog.find(({ revision }) => revision === instance?.componentRevision);
+  const massUncertainty = definition?.provenance.uncertainty.find(({ property }) => property === "mass");
   const canonicalDetails = definition ? {
     category: definition.category.replaceAll("-", " "), manufacturer: definition.manufacturer,
-    partNumber: definition.partNumber, mass: `${definition.mass.value * 1_000} g`,
+    partNumber: definition.partNumber,
+    mass: `${definition.mass.value * 1_000} g${massUncertainty ? " engineering budget" : ""}`,
     source: definition.provenance.sources[0]?.reference,
     fit: `${definition.mountInterfaces.length + definition.interfaces.length} declared interfaces`,
+    fidelity: definition.provenance.mode === "sourced-asset" ? "Exact licensed release CAD" : "Official-specification model",
+    caveat: definition.provenance.uncertainty.map(({ statement }) => statement).join(" "),
   } : undefined;
   const details = canonicalDetails ?? knownDetails(part);
   const selectedConflicts = conflicts.filter(({ instanceIds }) => instanceIds?.includes(selectedId));
@@ -126,6 +130,7 @@ export function InspectorPanel({
           <div><dt>Maker</dt><dd>{details?.manufacturer ?? imported?.manufacturer}</dd></div>
           <div><dt>Part</dt><dd>{details?.partNumber ?? imported?.partNumber}</dd></div>
           <div><dt>Mass</dt><dd>{details?.mass ?? `${imported?.massG} g`}</dd></div>
+          {canonicalDetails && <div><dt>Geometry</dt><dd>{canonicalDetails.fidelity}</dd></div>}
           <div><dt>Interface</dt><dd>{details?.fit ?? `${imported?.sizeMm.join(" × ")} mm`}</dd></div>
           {part?.movable && <div><dt>Position</dt><dd>{part.center.slice(0, 2).map(Math.round).join(", ")} mm</dd></div>}
         </dl>
@@ -138,6 +143,7 @@ export function InspectorPanel({
         </dl>
       )}
       {isConstraint && <p className="inspector-note">This safety zone follows its motor and remains excluded from generated structures.</p>}
+      {canonicalDetails?.caveat && <p className="inspector-note">{canonicalDetails.caveat}</p>}
       {part?.movable && <p className="inspector-note">Drag this component in the viewport. Its rotor and protected volume move with it.</p>}
       {part?.movable && <PositionEditor part={part} onMove={onMovePart} />}
       {selectedConflicts.length > 0 && <section className="inspector-note" aria-label="Selection conflicts">

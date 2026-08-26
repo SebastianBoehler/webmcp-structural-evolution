@@ -2,6 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 import type { FoundationContextSnapshot } from "../domain/foundation-context";
+import { referenceDroneAssembly } from "../samples/reference-drone-assembly";
+import { REFERENCE_DRONE_CATALOG } from "../samples/reference-drone-catalog";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import { InspectorPanel } from "./InspectorPanel";
 
@@ -56,4 +58,35 @@ it("supports exact world-coordinate placement in millimetres", () => {
 
   expect(move).toHaveBeenCalledWith("motor-east", [112, -8, 3]);
   expect(screen.getByText(/world coordinates.*millimetres/i)).toBeVisible();
+});
+
+it("distinguishes exact release CAD from an unpublished mass budget", () => {
+  const flightController: AssemblyVisualPart = {
+    id: "flight-controller",
+    selectionId: "flight-controller",
+    label: "OpenFC-Lite-30x30-rev3.3",
+    appearance: "component",
+    kind: "model",
+    center: [0, 0, 20],
+    assetUrl: "/reference-cad/opendrone-openfc-lite-rev3.3.glb",
+    assetUnits: "mm",
+    size: [37.942302, 37.942302, 5.38],
+  };
+  render(<InspectorPanel
+    selectedId="flight-controller"
+    context={context}
+    parts={[flightController]}
+    imports={[]}
+    assembly={referenceDroneAssembly}
+    catalog={REFERENCE_DRONE_CATALOG}
+    layoutState="verified"
+    open
+    onClose={() => undefined}
+    onLockCableClearance={() => undefined}
+    onMovePart={() => undefined}
+  />);
+
+  expect(screen.getByText("Exact licensed release CAD")).toBeVisible();
+  expect(screen.getByText("17 g engineering budget")).toBeVisible();
+  expect(screen.getByText(/does not publish assembled mass/i)).toBeVisible();
 });

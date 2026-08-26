@@ -7,7 +7,6 @@ import {
   fastenerRenderContract,
   motorRenderContract,
   propellerRenderContract,
-  stackRenderContract,
   type AxialFeature,
   type RenderBounds,
   type SiVector,
@@ -91,11 +90,9 @@ function componentParts(
     const display = propellerRenderContract(definition);
     visible = [{ ...shared, kind: "propeller", radius: display.radius * 1_000, hubRadius: display.hubRadius * 1_000, hubHeight: display.hubHeight * 1_000, bladeCount: display.bladeCount, movable: true }];
   } else if (definition.category === "avionics") {
-    const display = stackRenderContract(definition);
-    visible = [
-      { ...shared, id: `${instance.instanceId}-flight-controller`, kind: "flight-controller", center: add(center, renderPoint(display.flightController.center)), size: renderPoint(display.flightController.size), movable: true },
-      { ...shared, id: `${instance.instanceId}-esc`, kind: "flight-controller", center: add(center, renderPoint(display.esc.center)), size: renderPoint(display.esc.size), movable: true },
-    ];
+    const envelope = definition.envelope;
+    if (envelope.kind !== "box") throw new Error(`Avionics ${definition.id} requires a box envelope`);
+    visible = [{ ...shared, kind: "flight-controller", center: add(center, localCenter(envelope.center)), size: point(envelope.size), movable: true }];
   } else {
     const envelope = definition.envelope;
     visible = [envelope.kind === "box"

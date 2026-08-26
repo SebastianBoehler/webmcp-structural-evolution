@@ -10,7 +10,6 @@ import {
   fastenerRenderContract,
   motorRenderContract,
   propellerRenderContract,
-  stackRenderContract,
   type AxialFeature,
   type RenderBounds,
   type SiVector,
@@ -51,14 +50,16 @@ const add = (left: Point3, right: Point3): Point3 => left.map((value, axis) => v
 const motorComponent = referenceComponent("motor-2207");
 const propellerComponent = referenceComponent("propeller-5x4.3x3");
 const fastenerComponent = referenceComponent("fastener-m3x8");
-const stackComponent = referenceComponent("fc-esc-stack-30x30");
+const flightControllerComponent = referenceComponent("flight-controller-30x30");
+const escComponent = referenceComponent("esc-30x30");
 const batteryComponent = referenceComponent("battery-6s-1550");
 const wiringComponent = referenceComponent("motor-wiring-corridor");
 const bodyComponent = referenceComponent("body-interface");
 const propellerDisplay = propellerRenderContract(propellerComponent);
 const motorDisplay = motorRenderContract(motorComponent);
 const fastenerDisplay = fastenerRenderContract(fastenerComponent);
-const stackDisplay = stackRenderContract(stackComponent);
+const flightControllerDisplay = boxRenderContract(flightControllerComponent, "openfc-lite-rev3.3-envelope");
+const escDisplay = boxRenderContract(escComponent, "openesc-30x30-rev3.3-envelope");
 const batteryDisplay = boxRenderContract(batteryComponent, "battery-package");
 const wiringDisplay = boxRenderContract(wiringComponent, "wiring-corridor");
 const bodyDisplay = boxRenderContract(bodyComponent, "body-interface-plate");
@@ -69,7 +70,8 @@ const motorLabels: Readonly<Record<string, string>> = Object.freeze({
 export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze(referenceAssemblyInstancesFor("motor-2207")
   .map(({ instanceId, transform }) => ({ id: instanceId, label: motorLabels[instanceId]!, anchor: lengthPoint(transform.position), movable: true })));
 export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze({
-  "flight-controller": instancePoint("fc-esc-stack"),
+  "flight-controller": instancePoint("flight-controller"),
+  esc: instancePoint("esc"),
   battery: instancePoint("battery"),
   "fpv-camera": instancePoint("fpv-camera"),
 });
@@ -124,13 +126,15 @@ function boxConstraint(id: string, label: string, center: Point3, component: Com
 }
 
 function equipmentParts(equipment: Readonly<Record<string, Point3>>): readonly AssemblyVisualPart[] {
-  const stackCenter = equipment["flight-controller"]!;
+  const flightControllerCenter = equipment["flight-controller"]!;
+  const escCenter = equipment.esc!;
   const batteryCenter = equipment.battery!;
   const cameraCenter = equipment["fpv-camera"]!;
   return [
-    { id: "flight-controller", selectionId: "flight-controller", label: "SpeedyBee F405 V4 flight controller", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.flightController.center)), size: viewerPoint(stackDisplay.flightController.size), movable: true, dragGroup: "flight-controller" },
-    { id: "flight-controller-esc", selectionId: "flight-controller", label: "SpeedyBee BLS 55A 4-in-1 ESC", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.esc.center)), size: viewerPoint(stackDisplay.esc.size), movable: true, dragGroup: "flight-controller" },
-    boxConstraint("fc-esc-stack", "Avionics stack protected volume", stackCenter, stackComponent, "flight-controller"),
+    { id: "flight-controller", selectionId: "flight-controller", label: "OpenFC-Lite rev3.3 flight controller", appearance: "component", kind: "flight-controller", center: add(flightControllerCenter, viewerPoint(flightControllerDisplay.center)), size: viewerPoint(flightControllerDisplay.size), movable: true, dragGroup: "flight-controller" },
+    boxConstraint("flight-controller", "OpenFC-Lite protected volume", flightControllerCenter, flightControllerComponent, "flight-controller"),
+    { id: "esc", selectionId: "esc", label: "OpenESC-30x30 rev3.3", appearance: "component", kind: "flight-controller", center: add(escCenter, viewerPoint(escDisplay.center)), size: viewerPoint(escDisplay.size), movable: true, dragGroup: "esc" },
+    boxConstraint("esc", "OpenESC-30x30 protected volume", escCenter, escComponent, "esc"),
     { id: "battery", selectionId: "battery", label: "Tattu R-Line V5 1550mAh 6S battery", appearance: "component", kind: "box", center: batteryCenter, size: viewerPoint(batteryDisplay.size), movable: true, dragGroup: "battery" },
     boxConstraint("battery", "Battery protected volume", batteryCenter, batteryComponent, "battery"),
     { id: "fpv-camera", selectionId: "fpv-camera", label: "RunCam Phoenix 2 FPV camera", appearance: "component", kind: "box", center: cameraCenter, size: [31, 20, 19] },

@@ -60,11 +60,11 @@ describe("drone assembly workspace", () => {
     });
     expect(parts.find(({ id }) => id === "flight-controller")).toMatchObject({
       kind: "flight-controller",
-      size: [41.6, 39.4, 7.8],
+      size: [37.942302, 37.942302, 5.38],
     });
-    expect(parts.find(({ id }) => id === "flight-controller-esc")).toMatchObject({
+    expect(parts.find(({ id }) => id === "esc")).toMatchObject({
       kind: "flight-controller",
-      size: [45.6, 44, 8],
+      size: [41.62706, 42.504999, 6.33],
     });
     expect(parts.find(({ id }) => id === "battery")).toMatchObject({ size: [78, 37, 52] });
     expect(parts.filter(({ id }) => id.includes("-fastener-"))).toHaveLength(16);
@@ -104,7 +104,8 @@ describe("drone assembly workspace", () => {
       kind: volume.kind,
       center: [volume.center.x.value, volume.center.y.value, volume.center.z.value].map((value) => value * 1_000),
       ...(volume.kind === "box" ? {
-        size: [volume.size.x.value, volume.size.y.value, volume.size.z.value].map((value) => value * 1_000),
+        size: [volume.size.x.value, volume.size.y.value, volume.size.z.value]
+          .map((value) => Math.round(value * 1e12) / 1e9),
         yaw: volume.orientation.yaw.value,
       } : {
         radius: volume.radius.value * 1_000,

@@ -46,10 +46,12 @@ export const FASTENER_GRAPH: ParametricGraph = { nodes: [
   { kind: "subtraction", id: "m3x8-with-drive", left: "m3x8-solid", right: "socket-recess" },
 ] };
 
-export const STACK_GRAPH: ParametricGraph = { nodes: [
-  box("flight-controller-board", [0, 0, 0.006], [0.0416, 0.0394, 0.0078]),
-  box("esc-board", [0, 0, -0.0059], [0.0456, 0.044, 0.008]),
-  { kind: "union", id: "fc-esc-stack-display", left: "flight-controller-board", right: "esc-board" },
+export const OPEN_FC_GRAPH: ParametricGraph = { nodes: [
+  box("openfc-lite-rev3.3-envelope", [0, 0, 0], [0.037942302, 0.037942302, 0.00538]),
+] };
+
+export const OPEN_ESC_GRAPH: ParametricGraph = { nodes: [
+  box("openesc-30x30-rev3.3-envelope", [0, 0, 0], [0.04162706, 0.042504999, 0.00633]),
 ] };
 
 export const BATTERY_GRAPH: ParametricGraph = { nodes: [

@@ -5,11 +5,12 @@ import { referenceAssemblyInstancesFor } from "./reference-drone-assembly";
 import { REFERENCE_DRONE_CATALOG, referenceComponent } from "./reference-drone-catalog";
 
 const EXPECTED_SOURCES = {
-  "motor-2207": ["manufacturer-datasheet", "manufacturer-product-page"],
-  "fc-esc-stack-30x30": ["manufacturer-product-page"],
+  "motor-2207": ["manufacturer-datasheet", "manufacturer-product-page", "engineering-drawing"],
+  "flight-controller-30x30": ["engineering-drawing", "manufacturer-product-page"],
+  "esc-30x30": ["engineering-drawing", "manufacturer-product-page"],
   "battery-6s-1550": ["manufacturer-product-page"],
   "fastener-m3x8": ["supplier-specification"],
-  "motor-wiring-corridor": ["manufacturer-datasheet", "manufacturer-product-page"],
+  "motor-wiring-corridor": ["manufacturer-datasheet", "manufacturer-product-page", "engineering-drawing"],
   "propeller-5x4.3x3": ["manufacturer-product-page"],
   "fpv-camera": ["manufacturer-datasheet"],
   "body-interface": ["engineering-drawing"],
@@ -32,11 +33,19 @@ describe("reference drone catalog", () => {
       component.id,
       component.provenance.sources.map(({ classification }) => classification),
     ]))).toEqual(EXPECTED_SOURCES);
+    expect(REFERENCE_DRONE_CATALOG.every(({ provenance }) => provenance.sources.every(
+      ({ accessedOn, sourceTimestamp }) => accessedOn === "2026-08-26" && sourceTimestamp.length > 0,
+    ))).toBe(true);
+    const openHardware = REFERENCE_DRONE_CATALOG.filter(({ id }) =>
+      id === "flight-controller-30x30" || id === "esc-30x30");
+    expect(openHardware.every(({ provenance }) =>
+      provenance.mode === "sourced-asset"
+      && provenance.licence.status === "redistributable"
+      && provenance.sources.every(({ redistribution }) => redistribution === "redistributable"))).toBe(true);
+    expect(REFERENCE_DRONE_CATALOG.filter((component) => !openHardware.includes(component)).every(({ provenance }) =>
+      provenance.licence.status === "facts-only")).toBe(true);
     expect(REFERENCE_DRONE_CATALOG.every(({ provenance }) =>
-      provenance.sources.every(({ accessedOn, sourceTimestamp, redistribution }) =>
-        accessedOn === "2026-08-26" && sourceTimestamp.length > 0 && redistribution === "facts-only"))).toBe(true);
-    expect(REFERENCE_DRONE_CATALOG.every(({ provenance }) =>
-      provenance.licence.status === "facts-only" && provenance.uncertainty.length > 0 && provenance.sourceObservations.length > 0)).toBe(true);
+      provenance.uncertainty.length > 0 && provenance.sourceObservations.length > 0)).toBe(true);
   });
 
   it("requires one bounded parametric display graph for every reference component", () => {
@@ -70,7 +79,8 @@ describe("reference drone catalog", () => {
     expect(referenceAssemblyInstancesFor("propeller-5x4.3x3")).toHaveLength(4);
     expect(referenceAssemblyInstancesFor("fastener-m3x8")).toHaveLength(16);
     expect(referenceAssemblyInstancesFor("motor-wiring-corridor")).toHaveLength(4);
-    expect(referenceAssemblyInstancesFor("fc-esc-stack-30x30")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("flight-controller-30x30")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("esc-30x30")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("battery-6s-1550")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("fpv-camera")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("body-interface")).toHaveLength(1);

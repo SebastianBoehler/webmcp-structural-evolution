@@ -11,7 +11,7 @@ import { REFERENCE_DRONE_CATALOG } from "./reference-drone-catalog";
 describe("canonical reference drone assembly", () => {
   it("content-addresses every component and exact assembly instance", () => {
     expect(REFERENCE_DRONE_CATALOG.map(({ category }) => category).sort()).toEqual([
-      "avionics", "avionics", "battery", "body-interface", "fastener", "motor", "propeller", "wiring",
+      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "motor", "propeller", "wiring",
     ]);
     expect(referenceDroneAssembly.revision).toMatch(/^[0-9a-f]{64}$/);
     expect(referenceDroneAssembly.components.every((instance) =>
