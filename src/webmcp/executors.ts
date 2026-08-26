@@ -17,6 +17,7 @@ import { serializeToolFacts, TOOL_OUTPUT_LIMIT } from "./tool-output";
 export interface FoundationServices {
   inspectContext(input: InspectContextInput): Promise<InspectContextFacts>;
   runProbe(input: RunFoundationProbeInput): Promise<FoundationBranch>;
+  cancelProbe(): Promise<FoundationBranch>;
   compareProbes(input: CompareFoundationProbesInput): Promise<ProbeComparisonFacts>;
   canCompare(): boolean;
   recordRejectedCall(action: string, affectedRevision: string | null, error: string): Promise<void>;

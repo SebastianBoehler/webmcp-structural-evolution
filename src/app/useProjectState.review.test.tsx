@@ -117,3 +117,82 @@ test("typed-array callback methods never receive authoritative evidence", async 
   if (republished.result?.status !== "verified") throw new Error("Expected verified branch");
   expect(republished.result.output[0]).toBe(0.25);
 });
+
+test("keeps failed evidence immutable while a later exact retry succeeds", async () => {
+  const compute = vi.fn(async () => compute.mock.calls.length === 1
+    ? {
+        status: "failed" as const, code: "device-error" as const,
+        message: "temporary adapter reset", elapsedMs: 4,
+      }
+    : verified(0.6));
+  const { result } = renderHook(() => useProjectState(availableOptions(compute)));
+
+  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  const failedRevision = result.current.state.stagedBranches[0]!.branchRevision;
+  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+
+  expect(result.current.state.stagedBranches).toHaveLength(2);
+  expect(result.current.state.stagedBranches[0]).toMatchObject({
+    branchRevision: failedRevision, status: "failed", measurement: { message: "temporary adapter reset" },
+  });
+  expect(result.current.state.stagedBranches[1]).toMatchObject({ status: "verified" });
+  expect(result.current.state.stagedBranches[1]!.branchRevision).not.toBe(failedRevision);
+});
+
+test("normalizes lock ids and makes a repeated equivalent intervention a no-op", async () => {
+  const { result } = renderHook(() => useProjectState(availableOptions()));
+  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  const intervention = {
+    selection: { id: "cable-path", label: "Cable path" },
+    locks: ["body-mount", "cable-clearance", "cable-clearance"],
+  };
+
+  await act(async () => { await result.current.experimentRail.intervene(intervention); });
+  const contextRevision = result.current.state.contextRevision;
+  expect(result.current.state.locks).toEqual(["body-mount", "cable-clearance"]);
+
+  await act(async () => { await result.current.experimentRail.intervene(intervention); });
+  expect(result.current.state.contextRevision).toBe(contextRevision);
+  expect(result.current.state.locks).toEqual(["body-mount", "cable-clearance"]);
+});
+
+test("post-intervention inspection stays within the tool output budget", async () => {
+  const compute = vi.fn(async () => ({
+    ...verified(0.5),
+    elapsedMs: 25.439999997615814 + compute.mock.calls.length,
+    relativeL2: compute.mock.calls.length === 1
+      ? 3.7204763714271394e-8
+      : 2.8865247969633856e-8,
+  }));
+  const { result } = renderHook(() => useProjectState({
+    ...availableOptions(compute),
+    selection: { id: "motor-side-arm-span", label: "Motor-side arm span" },
+    locks: ["body-fixed-region"],
+    capability: { status: "available", message: "WebGPU adapter and device acquisition succeeded." },
+  }));
+  await act(async () => {
+    await result.current.services.runProbe({
+      parentRevision: revisionA, variant: "baseline",
+      hypothesis: "Establish the deterministic reference field",
+      prediction: "Verification should pass with zero L2 mismatch",
+    });
+    await result.current.services.runProbe({
+      parentRevision: revisionA, variant: "edge-biased",
+      hypothesis: "Exercise the edge-biased input distribution",
+      prediction: "Verification should pass within the timing budget",
+    });
+    await result.current.experimentRail.intervene({
+      selection: { id: "cable-clearance", label: "Cable clearance corridor" },
+      locks: ["body-fixed-region", "cable-clearance"],
+    });
+  });
+
+  const response = await inspectDesignContext({ scope: "current" }, result.current.services);
+  expect(response.isError).not.toBe(true);
+  const text = response.content[0]?.text;
+  if (!text) throw new Error("Expected inspection text");
+  expect(text.length).toBeLessThanOrEqual(1500);
+  expect(JSON.parse(text)).toMatchObject({
+    stale: true, stagedBranchCount: 2, omittedBranchCount: 1, stagedBranches: [{}],
+  });
+});

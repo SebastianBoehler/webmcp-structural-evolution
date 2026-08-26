@@ -58,6 +58,37 @@ test("intervention during compute keeps the completed branch stale and unpromota
   await expect(result.current.experimentRail.promoteBranch(branch.branchRevision)).rejects.toThrow(/stale/i);
 });
 
+test("cancellation stays final when a signal-ignoring runner resolves late", async () => {
+  let resolveProbe!: (result: ProbeResult) => void;
+  let observedSignal: AbortSignal | undefined;
+  const compute = vi.fn((_input: ProbeInput, signal?: AbortSignal) => {
+    observedSignal = signal;
+    return new Promise<ProbeResult>((resolve) => { resolveProbe = resolve; });
+  });
+  const { result } = renderHook(() => useProjectState(options(compute)));
+
+  let running!: Promise<unknown>;
+  act(() => { running = result.current.services.runProbe(baseInput); });
+  await waitFor(() => expect(result.current.state.stagedBranches[0]?.status).toBe("running"));
+  await act(async () => { await result.current.services.cancelProbe(); });
+
+  expect(observedSignal?.aborted).toBe(true);
+  expect(result.current.state.operationStatus).toBe("idle");
+  expect(result.current.state.stagedBranches[0]).toMatchObject({ status: "canceled", stale: false });
+  expect(result.current.state.receipts.at(-1)).toMatchObject({
+    action: "cancel_foundation_probe", outcome: { status: "canceled" },
+  });
+
+  await act(async () => {
+    resolveProbe(verified());
+    await running;
+  });
+  const canceled = result.current.state.stagedBranches[0]!;
+  expect(canceled.status).toBe("canceled");
+  expect(result.current.state.acceptedBranchRevision).toBe(revisionA);
+  await expect(result.current.experimentRail.promoteBranch(canceled.branchRevision)).rejects.toThrow(/verified/i);
+});
+
 test("intervention that completes during promotion is never overwritten", async () => {
   const compute = vi.fn(async () => verified());
   const { result } = renderHook(() => useProjectState(options(compute)));

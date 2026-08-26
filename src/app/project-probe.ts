@@ -39,6 +39,7 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
       tolerance: result.tolerance,
     };
   }
+  if (result.status === "canceled") return { ...result };
   return {
     status: "failed",
     code: result.code,
@@ -68,7 +69,9 @@ export async function measuredProbe(result: ProbeResult): Promise<ProbeMeasureme
   return {
     status: result.status,
     elapsedMs: result.elapsedMs,
-    ...(result.status !== "failed" ? { relativeL2: result.relativeL2 } : {}),
+    ...(result.status === "verified" || result.status === "mismatch"
+      ? { relativeL2: result.relativeL2 }
+      : {}),
     resultDigest,
     ...(result.status !== "verified" ? { code: result.code, message: result.message } : {}),
   };

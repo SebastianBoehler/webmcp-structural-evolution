@@ -116,3 +116,17 @@ export async function detectWebGpu(): Promise<GpuCapability> {
   destroyDevice(acquisition.device);
   return { status: "available", message: "WebGPU adapter and device acquisition succeeded." };
 }
+
+let capabilityFlight: Promise<GpuCapability> | undefined;
+
+export function detectWebGpuSingleFlight(): Promise<GpuCapability> {
+  if (!capabilityFlight) {
+    const flight = detectWebGpu();
+    capabilityFlight = flight;
+    const settle = () => {
+      if (capabilityFlight === flight) capabilityFlight = undefined;
+    };
+    void flight.then(settle, settle);
+  }
+  return capabilityFlight;
+}

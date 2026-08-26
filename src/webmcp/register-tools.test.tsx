@@ -39,6 +39,7 @@ function services(state: FoundationProjectState): FoundationServices {
     runProbe: vi.fn(),
     compareProbes: vi.fn(),
     canCompare: vi.fn(() => false),
+    cancelProbe: vi.fn(async () => { throw new Error("not running"); }),
     recordRejectedCall: vi.fn(async () => undefined),
   };
 }
@@ -97,6 +98,7 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
   const verified = (suffix: string) => ({
     parentRevision: revisionA,
     branchRevision: suffix.repeat(64),
+    attempt: 1,
     variant: "baseline" as const,
     hypothesis: `Probe ${suffix}`,
     prediction: "Verification stays within the probe budget",

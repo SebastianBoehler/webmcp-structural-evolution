@@ -23,6 +23,7 @@ export const ActionReceiptSchema = z
     outcome: z.discriminatedUnion("status", [
       z.object({ status: z.literal("succeeded"), result: JsonValueSchema }).strict(),
       z.object({ status: z.literal("failed"), error: z.string().min(1) }).strict(),
+      z.object({ status: z.literal("canceled"), reason: z.string().min(1) }).strict(),
     ]),
     duration: z.object({ value: z.number().finite().nonnegative(), unit: z.literal("ms") }).strict(),
     createdAt: z.iso.datetime({ offset: true }),

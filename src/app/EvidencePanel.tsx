@@ -8,7 +8,7 @@ export interface EvidencePanelProps {
 
 export function EvidencePanel({ state, comparison, initialAcceptedRevision }: EvidencePanelProps) {
   const latest = state.stagedBranches.at(-1);
-  const latestVerified = [...state.stagedBranches].reverse().find(
+  const historicalVerified = [...state.stagedBranches].slice(0, -1).reverse().find(
     (branch) => branch.status === "verified" && branch.measurement,
   );
   const stale = state.stagedBranches.some((branch) => branch.stale);
@@ -30,16 +30,19 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
 
         <article className="evidence-card evidence-card--measured">
           <p className="evidence-card__label">Measured evidence</p>
-          {latestVerified?.measurement
+          {latest?.status === "verified" && latest.measurement
             ? <>
                 <p>Verified against the Wasm oracle.</p>
                 <small>
-                  {latestVerified.measurement.elapsedMs.toFixed(2)} ms · relative L2 {latestVerified.measurement.relativeL2 ?? "n/a"}
+                  {latest.measurement.elapsedMs.toFixed(2)} ms · relative L2 {latest.measurement.relativeL2 ?? "n/a"}
                 </small>
               </>
-            : latest && (latest.status === "failed" || latest.status === "mismatch")
+            : latest && latest.measurement
               ? <p role="alert">{latest.measurement?.message ?? `${latest.status} probe result`}</p>
               : <p>No measured result is available.</p>}
+          {historicalVerified && latest?.status !== "verified" && (
+            <small>Historical verification: {historicalVerified.variant} · {historicalVerified.measurement?.elapsedMs.toFixed(2)} ms</small>
+          )}
         </article>
 
         <article className={`evidence-card ${stale ? "evidence-card--stale" : ""}`}>

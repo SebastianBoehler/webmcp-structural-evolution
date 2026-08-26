@@ -12,6 +12,7 @@ import {
   deviceLossGuard,
   errorMessage,
   type ProbeFailureCode,
+  ProbeCanceledError,
   ProbeStageError,
   withErrorScopes,
 } from "./probe-runtime";
@@ -36,6 +37,12 @@ export type ProbeResult =
       readonly message: string;
     } & ProbeMetrics)
   | {
+      readonly status: "canceled";
+      readonly code: "canceled";
+      readonly message: string;
+      readonly elapsedMs: number;
+    }
+  | {
       readonly status: "failed";
       readonly code: ProbeFailureCode;
       readonly message: string;
@@ -46,8 +53,11 @@ function elapsedSince(startedAt: number): number {
   return performance.now() - startedAt;
 }
 
-export async function runComputeProbe(input: ProbeInput): Promise<ProbeResult> {
+export async function runComputeProbe(input: ProbeInput, signal?: AbortSignal): Promise<ProbeResult> {
   const startedAt = performance.now();
+  if (signal?.aborted) {
+    return { status: "canceled", code: "canceled", message: "Foundation probe canceled by the user.", elapsedMs: 0 };
+  }
   try {
     validateProbeInput(input);
   } catch (error) {
@@ -65,7 +75,7 @@ export async function runComputeProbe(input: ProbeInput): Promise<ProbeResult> {
   }
 
   const { device } = acquisition;
-  const guard = deviceLossGuard(device);
+  const guard = deviceLossGuard(device, signal);
   let inputBuffer: GPUBuffer | undefined;
   let outputBuffer: GPUBuffer | undefined;
   let paramsBuffer: GPUBuffer | undefined;
@@ -73,6 +83,7 @@ export async function runComputeProbe(input: ProbeInput): Promise<ProbeResult> {
   let readbackMapped = false;
 
   try {
+    guard.check();
     const byteSize = input.values.byteLength;
     if (byteSize > device.limits.maxBufferSize || byteSize > device.limits.maxStorageBufferBindingSize) {
       throw new ProbeStageError(
@@ -202,6 +213,14 @@ export async function runComputeProbe(input: ProbeInput): Promise<ProbeResult> {
     }
     return { status: "verified", output: readback, ...metrics };
   } catch (error) {
+    if (error instanceof ProbeCanceledError || signal?.aborted) {
+      return {
+        status: "canceled",
+        code: "canceled",
+        message: "Foundation probe canceled by the user.",
+        elapsedMs: elapsedSince(startedAt),
+      };
+    }
     const failure =
       error instanceof ProbeStageError
         ? error

@@ -5,6 +5,7 @@ import { hasComparableBranches } from "./comparability";
 
 const branch = (branchRevision: string, parentRevision: string): FoundationBranch => ({
   branchRevision,
+  attempt: 1,
   parentRevision,
   variant: "baseline",
   hypothesis: "Exercise baseline field behavior",

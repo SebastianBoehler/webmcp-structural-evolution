@@ -21,11 +21,18 @@ export class ProbeStageError extends Error {
   }
 }
 
+export class ProbeCanceledError extends Error {
+  constructor() {
+    super("Foundation probe canceled by the user.");
+    this.name = "ProbeCanceledError";
+  }
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function deviceLossGuard(device: GPUDevice) {
+export function deviceLossGuard(device: GPUDevice, signal?: AbortSignal) {
   let lost: GPUDeviceLostInfo | undefined;
   const loss = device.lost.then((info) => {
     lost = info;
@@ -36,17 +43,23 @@ export function deviceLossGuard(device: GPUDevice) {
       "device-lost",
       `WebGPU device was lost (${info.reason}): ${info.message || "no detail provided"}`,
     );
+  const canceled = new Promise<never>((_, reject) => {
+    if (signal?.aborted) reject(new ProbeCanceledError());
+    else signal?.addEventListener("abort", () => reject(new ProbeCanceledError()), { once: true });
+  });
 
   return {
     async race<T>(operation: Promise<T>): Promise<T> {
       const outcome = await Promise.race([
         operation.then((value) => ({ kind: "value" as const, value })),
         loss.then((info) => ({ kind: "lost" as const, info })),
+        canceled,
       ]);
       if (outcome.kind === "lost") throw failure(outcome.info);
       return outcome.value;
     },
     check() {
+      if (signal?.aborted) throw new ProbeCanceledError();
       if (lost) throw failure(lost);
     },
   };
@@ -80,7 +93,7 @@ export async function withErrorScopes<T>(
     thrown ??= error;
   }
 
-  if (thrown instanceof ProbeStageError) throw thrown;
+  if (thrown instanceof ProbeStageError || thrown instanceof ProbeCanceledError) throw thrown;
   if (thrown) throw new ProbeStageError(code, `${label}: ${errorMessage(thrown)}`);
   if (scopedError) throw new ProbeStageError(code, `${label}: ${scopedError.message}`);
   return value as T;

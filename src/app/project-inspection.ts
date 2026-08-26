@@ -4,6 +4,7 @@ import type {
   FoundationProjectState,
   InspectContextFacts,
 } from "../webmcp/schemas";
+import { toolFactsFit } from "../webmcp/tool-output";
 
 const MAX_INSPECT_BRANCHES = 2;
 
@@ -15,8 +16,10 @@ function inspectableBranches(branches: readonly FoundationBranch[]): readonly Fo
   return [...distinct.values()].slice(-MAX_INSPECT_BRANCHES);
 }
 
-export function inspectProjectFacts(state: FoundationProjectState): InspectContextFacts {
-  const selected = inspectableBranches(state.stagedBranches);
+function buildFacts(
+  state: FoundationProjectState,
+  selected: readonly FoundationBranch[],
+): InspectContextFacts {
   return {
     contextRevision: state.contextRevision,
     selection: state.selection,
@@ -47,4 +50,14 @@ export function inspectProjectFacts(state: FoundationProjectState): InspectConte
       ...(hasComparableBranches(state.stagedBranches) ? ["compare_foundation_probes"] : []),
     ],
   };
+}
+
+export function inspectProjectFacts(state: FoundationProjectState): InspectContextFacts {
+  let selected = inspectableBranches(state.stagedBranches);
+  let facts = buildFacts(state, selected);
+  while (selected.length > 0 && !toolFactsFit(facts)) {
+    selected = selected.slice(1);
+    facts = buildFacts(state, selected);
+  }
+  return facts;
 }

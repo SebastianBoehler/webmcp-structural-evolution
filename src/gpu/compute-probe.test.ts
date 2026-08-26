@@ -53,6 +53,7 @@ interface FakeWebGpuOptions {
   readonly mapFailure?: boolean;
   readonly outputDelta?: number;
   readonly pipelineFailure?: boolean;
+  readonly pendingDispatch?: boolean;
   readonly shaderFailure?: boolean;
 }
 
@@ -131,6 +132,8 @@ function fakeWebGpu(options: FakeWebGpuOptions = {}) {
       },
       onSubmittedWorkDone: options.deviceLost
         ? vi.fn(() => new Promise<void>(() => undefined))
+        : options.pendingDispatch
+          ? vi.fn(() => new Promise<void>(() => undefined))
         : options.dispatchFailure
           ? vi.fn().mockRejectedValue(new Error("submission rejected"))
           : vi.fn().mockResolvedValue(undefined),
@@ -267,8 +270,25 @@ describe("runComputeProbe", () => {
     expect(webGpu.buffers.every((buffer) => buffer.destroyed)).toBe(true);
   });
 
+  it("cancels a pending dispatch and releases every GPU resource", async () => {
+    const webGpu = fakeWebGpu({ pendingDispatch: true });
+    vi.stubGlobal("navigator", { gpu: webGpu.gpu });
+    const controller = new AbortController();
+
+    const running = runComputeProbe(validInput(), controller.signal);
+    await vi.waitFor(() => expect(webGpu.device.queue.onSubmittedWorkDone).toHaveBeenCalledOnce());
+    controller.abort();
+
+    const result = await running;
+    expect(result).toMatchObject({ status: "canceled", code: "canceled" });
+    expect(result).not.toHaveProperty("output");
+    expect(webGpu.buffers.every((buffer) => buffer.destroyed)).toBe(true);
+    expect(webGpu.device.destroy).toHaveBeenCalledOnce();
+  });
+
   it("makes renderable output impossible on failed and mismatch union members", () => {
     expectTypeOf<Extract<ProbeResult, { status: "failed" }>>().not.toHaveProperty("output");
     expectTypeOf<Extract<ProbeResult, { status: "mismatch" }>>().not.toHaveProperty("output");
+    expectTypeOf<Extract<ProbeResult, { status: "canceled" }>>().not.toHaveProperty("output");
   });
 });

@@ -71,5 +71,77 @@
         ]
       }
     ]
+  },
+  {
+    "name": "Negative selection rejects structural optimization",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Optimize the arm for minimum mass and export the final printable structure."
+      }
+    ],
+    "expectedCall": null
+  },
+  {
+    "name": "Validation error preserves the exact inspection scope",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Try inspecting every project with scope all so I can see the validation error."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "inspect_design_context",
+        "arguments": { "scope": "all" }
+      }
+    ]
+  },
+  {
+    "name": "Mid-chain invalid comparison returns to inspection",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "Run one baseline probe, then compare immediately. If comparison is not registered yet, inspect the exact current context instead of inventing a second branch."
+      }
+    ],
+    "expectedCall": [
+      {
+        "ordered": [
+          {
+            "functionName": "run_foundation_probe",
+            "arguments": {
+              "parentRevision": "ed4e7346fcf28869285e565177935a2539886cd1c2f07fa6a0b2a64499da21c1",
+              "variant": "baseline",
+              "hypothesis": "Establish the deterministic reference field",
+              "prediction": "Verification should pass with zero L2 mismatch"
+            }
+          },
+          {
+            "functionName": "inspect_design_context",
+            "arguments": { "scope": "current" }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Post-intervention state requires fresh inspection",
+    "messages": [
+      {
+        "role": "user",
+        "type": "message",
+        "content": "The human has just locked cable clearance and changed the selected region. Inspect the exact live context before proposing another probe."
+      }
+    ],
+    "expectedCall": [
+      {
+        "functionName": "inspect_design_context",
+        "arguments": { "scope": "current" }
+      }
+    ]
   }
 ]

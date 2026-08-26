@@ -16,6 +16,7 @@ import {
 import { toolFactsFit } from "../webmcp/tool-output";
 import { hasComparableBranches } from "../webmcp/comparability";
 import { inspectProjectFacts } from "./project-inspection";
+import { createExperimentRail } from "./project-experiment-rail";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
 import type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 import {
@@ -37,7 +38,11 @@ export function useProjectState(options: ProjectStateOptions): {
   const computeRef = useRef(options.compute ?? runComputeProbe);
   computeRef.current = options.compute ?? runComputeProbe;
   const sequenceRef = useRef(0);
-  const operationRef = useRef<symbol | null>(null);
+  const operationRef = useRef<{
+    readonly token: symbol;
+    readonly controller: AbortController;
+    branchRevision?: string;
+  } | null>(null);
   const interventionGenerationRef = useRef(0);
   const verifiedOutputsRef = useRef(new Map<string, Float32Array>());
 
@@ -109,18 +114,31 @@ export function useProjectState(options: ProjectStateOptions): {
         return reject("A foundation probe is already running");
       }
       if (parsed.parentRevision !== current.contextRevision) return reject("Parent revision is not the exact current context");
-      const operation = Symbol("foundation-probe");
+      const sameIntent = current.stagedBranches.filter((branch) =>
+        branch.parentRevision === parsed.parentRevision &&
+        branch.variant === parsed.variant &&
+        branch.hypothesis === parsed.hypothesis &&
+        branch.prediction === parsed.prediction);
+      if (sameIntent.some((branch) => branch.status === "running" || branch.status === "verified")) {
+        return reject("This exact foundation probe branch is already staged");
+      }
+      const operation: { token: symbol; controller: AbortController; branchRevision?: string } = {
+        token: Symbol("foundation-probe"),
+        controller: new AbortController(),
+      };
       operationRef.current = operation;
-      commit({ ...current, operationStatus: "running" });
       const release = () => {
         if (operationRef.current !== operation) return;
         operationRef.current = null;
         const latest = stateRef.current!;
         if (latest.operationStatus !== "idle") commit({ ...latest, operationStatus: "idle" });
       };
+      const attempt = sameIntent.length + 1;
       let branchRevision: string;
       try {
-        branchRevision = await revisionId({ kind: "foundation-probe-branch", ...parsed });
+        branchRevision = await revisionId(attempt === 1
+          ? { kind: "foundation-probe-branch", ...parsed }
+          : { kind: "foundation-probe-branch", ...parsed, attempt });
       } catch (error) {
         release();
         return reject(error instanceof Error ? error.message : String(error));
@@ -135,12 +153,13 @@ export function useProjectState(options: ProjectStateOptions): {
         return reject("This exact foundation probe branch is already staged", branchRevision);
       }
       const staged: FoundationBranch = freezeValue({
-        ...parsed, branchRevision, stale: false, status: "running",
+        ...parsed, branchRevision, attempt, stale: false, status: "running",
       });
+      operation.branchRevision = branchRevision;
       commit({ ...latest, operationStatus: "running", stagedBranches: [...latest.stagedBranches, staged] });
       let result: ProbeResult;
       try {
-        result = await computeRef.current(buildProbeInput(parsed.variant));
+        result = await computeRef.current(buildProbeInput(parsed.variant), operation.controller.signal);
       } catch (error) {
         result = {
           status: "failed",
@@ -152,6 +171,9 @@ export function useProjectState(options: ProjectStateOptions): {
       const storedResult = storeProbeResult(result);
       const measured = await measuredProbe(storedResult);
       latest = stateRef.current!;
+      if (operationRef.current !== operation) {
+        return latest.stagedBranches.find((branch) => branch.branchRevision === branchRevision) ?? staged;
+      }
       const latestBranch = latest.stagedBranches.find((branch) =>
         branch.branchRevision === branchRevision);
       if (!latestBranch) {
@@ -174,10 +196,47 @@ export function useProjectState(options: ProjectStateOptions): {
       });
       const outcome: ActionReceipt["outcome"] = storedResult.status === "verified"
         ? { status: "succeeded", result: { branchRevision, measurement: measured as unknown as JsonValue } }
-        : { status: "failed", error: measured.message ?? `${storedResult.status} probe result` };
+        : storedResult.status === "canceled"
+          ? { status: "canceled", reason: measured.message ?? "Foundation probe canceled" }
+          : { status: "failed", error: measured.message ?? `${storedResult.status} probe result` };
       await addReceipt("run_foundation_probe", parsed, branchRevision, outcome, startedAt);
       return stateRef.current!.stagedBranches.find((branch) =>
         branch.branchRevision === branchRevision) ?? finished;
+    },
+    async cancelProbe() {
+      const startedAt = performance.now();
+      const operation = operationRef.current;
+      if (!operation?.branchRevision) throw new Error("No foundation probe is running");
+      operationRef.current = null;
+      operation.controller.abort();
+      const current = stateRef.current!;
+      const branch = current.stagedBranches.find((item) => item.branchRevision === operation.branchRevision);
+      if (!branch || branch.status !== "running") throw new Error("No foundation probe is running");
+      const canceledResult: ProbeResult = {
+        status: "canceled", code: "canceled", message: "Foundation probe canceled by the user.",
+        elapsedMs: performance.now() - startedAt,
+      };
+      const measurement = await measuredProbe(canceledResult);
+      const latest = stateRef.current!;
+      const latestBranch = latest.stagedBranches.find((item) => item.branchRevision === branch.branchRevision);
+      if (!latestBranch || latestBranch.status !== "running") throw new Error("The running probe branch changed during cancellation");
+      const canceled: FoundationBranch = freezeValue({
+        ...latestBranch,
+        status: "canceled",
+        result: canceledResult,
+        measurement,
+      });
+      commit({
+        ...latest,
+        operationStatus: "idle",
+        stagedBranches: latest.stagedBranches.map((item) =>
+          item.branchRevision === canceled.branchRevision ? canceled : item),
+      });
+      await addReceipt("cancel_foundation_probe", { branchRevision: canceled.branchRevision }, canceled.branchRevision, {
+        status: "canceled", reason: canceledResult.message,
+      }, startedAt);
+      return stateRef.current!.stagedBranches.find((item) =>
+        item.branchRevision === canceled.branchRevision) ?? canceled;
     },
     async compareProbes(input) {
       const startedAt = performance.now();
@@ -223,75 +282,11 @@ export function useProjectState(options: ProjectStateOptions): {
     },
   }), []);
 
-  const experimentRail = useMemo<ExperimentRailApi>(() => ({
-    async intervene(input) {
-      const startedAt = performance.now();
-      const generation = ++interventionGenerationRef.current;
-      let contextRevision: string;
-      while (true) {
-        const base = stateRef.current!;
-        contextRevision = await revisionId({
-          acceptedBranchRevision: base.acceptedBranchRevision,
-          selection: input.selection,
-          locks: [...input.locks],
-        });
-        const latest = stateRef.current!;
-        if (generation !== interventionGenerationRef.current) {
-          const error = "Human intervention was superseded by a newer intervention";
-          await addReceipt("human_intervention", input as unknown as JsonValue, latest.contextRevision, {
-            status: "failed", error,
-          }, startedAt);
-          throw new Error(error);
-        }
-        if (latest.acceptedBranchRevision !== base.acceptedBranchRevision) continue;
-        commit({
-          ...latest,
-          contextRevision,
-          selection: { ...input.selection },
-          locks: [...input.locks],
-          stagedBranches: latest.stagedBranches.map((branch) => ({ ...branch, stale: true })),
-        });
-        break;
-      }
-      await addReceipt("human_intervention", input as unknown as JsonValue, contextRevision, {
-        status: "succeeded", result: { contextRevision },
-      }, startedAt);
-    },
-    async promoteBranch(branchRevision) {
-      const startedAt = performance.now();
-      const current = stateRef.current!;
-      const branch = current.stagedBranches.find((item) => item.branchRevision === branchRevision);
-      if (!branch || branch.status !== "verified" || branch.stale) {
-        await addReceipt("promote_branch", { branchRevision }, branchRevision, {
-          status: "failed", error: "Only an exact verified non-stale branch can be promoted",
-        }, startedAt);
-        throw new Error("Only an exact verified non-stale branch can be promoted");
-      }
-      const expectedContextRevision = current.contextRevision;
-      const contextRevision = await revisionId({
-        acceptedBranchRevision: branchRevision,
-        selection: current.selection,
-        locks: current.locks,
-      });
-      const latest = stateRef.current!;
-      const latestBranch = latest.stagedBranches.find((item) => item.branchRevision === branchRevision);
-      if (
-        latest.contextRevision !== expectedContextRevision ||
-        !latestBranch ||
-        latestBranch.status !== "verified" ||
-        latestBranch.stale
-      ) {
-        const error = "Project context changed before branch promotion completed";
-        await addReceipt("promote_branch", { branchRevision }, branchRevision, {
-          status: "failed", error,
-        }, startedAt);
-        throw new Error(error);
-      }
-      commit({ ...latest, acceptedBranchRevision: branchRevision, contextRevision });
-      await addReceipt("promote_branch", { branchRevision }, branchRevision, {
-        status: "succeeded", result: { acceptedBranchRevision: branchRevision },
-      }, startedAt);
-    },
+  const experimentRail = useMemo<ExperimentRailApi>(() => createExperimentRail({
+    stateRef: stateRef as { current: FoundationProjectState },
+    generationRef: interventionGenerationRef,
+    commit,
+    addReceipt,
   }), []);
 
   return { state, services, experimentRail };

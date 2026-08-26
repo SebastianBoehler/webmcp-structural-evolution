@@ -11,6 +11,7 @@ Verdict: **partially passed**. The real in-app browser passed the WebGPU/Wasm an
 - Default viewport: 1280 × 720 CSS pixels at DPR 2.
 - Browser console: no warnings or errors after the complete human journey.
 - The page reported WebGPU device acquisition success. The browser-control evaluation sandbox masks privileged globals, so the page's shipped capability detector and measured probe are the authoritative observations.
+- During the Important-finding rerun, the browser runtime returned `Browser is not available: iab`; discovery showed only a connected Chrome extension. The earlier in-app measurements below remain the last target-browser evidence, and no refreshed in-app pass is claimed.
 
 ## WebGPU and Wasm
 
@@ -48,7 +49,13 @@ These checks used local Chrome with `--enable-features=WebMCP` through GoogleChr
 | Mid-chain failure | compare was unavailable after only one verified branch: `no tool named "compare_foundation_probes" was found` |
 | Cancellation | protocol invocation returned `status: "Canceled"` |
 
-The cancellation result confirms the browser protocol outcome. `use-webmcp-tool` 0.2 does not pass an invocation abort signal into the page callback, so this run did not establish GPU-kernel interruption or branch rollback after protocol cancellation. No promotion occurred and no substitute result was introduced.
+The protocol result confirms only the browser protocol outcome. `use-webmcp-tool` 0.2 still does not pass an invocation abort signal into the page callback, so protocol cancellation is not claimed to interrupt a GPU kernel.
+
+Human cancellation is now a separate first-class application path. The project service owns an `AbortController`, passes its signal through the compute boundary, commits a canceled branch and receipt, and ignores any late runner result. A supplemental real Chrome run observed the visible cancel control, canceled copy, retry action, and no verified copy. The compute regression cancels a pending dispatch and verifies buffer/device cleanup; the state regression uses a deliberately signal-ignoring runner and verifies that its late verified result cannot commit or promote.
+
+After two verified probes, a supplemental Chrome state check observed all three tools before human intervention. Clicking `Lock cable clearance` changed registration to exactly `inspect_design_context` and `run_foundation_probe`; compare disappeared. The subsequent inspect succeeded with `stale: true`, two total branches, one newest stale branch included, and `omittedBranchCount: 1`, keeping the result inside the 1,500-character contract.
+
+Closing supplemental headless Chrome pages and changing dynamic registrations caused the Vite development client to log unhandled `AbortError: signal is aborted without reason` rejections from `use-webmcp-tool/useWebMCP.js:173`. The deterministic smoke and state checks still completed with their recorded results, but this third-party hook-cleanup warning is not hidden or counted as a clean supplemental-console pass.
 
 ## Official WebMCP evals
 
@@ -56,10 +63,13 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 
 - The published `webmcp-evals` package available during this run did not yet include the documented `smoke` command (`unknown command 'smoke'`).
 - The current GoogleChromeLabs source runner (`webmcp-evals` 0.0.3 at the commit above) ran deterministic smoke mode on local Chrome.
-- Result: **5/5 required steps passed across 3 cases**: two exact context inspections and the ordered baseline → edge-biased → compare chain.
+- The expanded dataset contains seven schema-valid cases: direct and ambiguous inspection, ordered success, negative no-tool selection, validation error, state-invalid mid-chain recovery, and post-intervention re-inspection.
+- The current smoke runner requires at least one successful required call per case and treats an intentional tool error as a smoke error. Running the complete file therefore stops on the required `expectedCall: null` case; this is a runner limitation, not a no-tool pass.
+- The five deterministic smoke-executable cases passed **8/8 required steps**: two inspections, baseline → edge-biased → compare, baseline → inspection when compare is not state-valid, and fresh inspection selection after an intervention prompt.
+- The isolated validation-error case called `inspect_design_context({scope:"all"})` and produced the expected `Invalid input: expected "current"`; the runner correctly reported that deliberate error as 0/1 rather than a pass.
 - Measured smoke probes were verified at relative L2 `3.7204763714271394e-8` and `2.8865247969633856e-8`.
 - A configured Anthropic backend existed, so one probabilistic browser-eval run was attempted with `anthropic:claude-sonnet-4-5`. It completed with **0/3** because the provider returned `Your credit balance is too low to access the Anthropic API`; no model-selection claim is made.
-- Direct, ambiguous, and negative-selection behavior therefore has no probabilistic pass in this run. The deterministic smoke invokes authored calls directly and is not evidence of model selection quality.
+- Direct, ambiguous, negative, validation, mid-chain, and post-intervention selection behavior has no probabilistic pass in this run. The deterministic smoke invokes authored calls directly and is not evidence of model selection quality.
 - No Google, OpenAI, or live Ollama backend was configured.
 
 ## Human journey and access checks
@@ -67,6 +77,10 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 - Human promotion moved only the exact verified non-stale baseline into the accepted lineage.
 - Two later sibling alternatives shared the exact current context revision and rendered in situ. No route/path comparison UI was introduced.
 - Locking `cable-clearance` changed the semantic selection and locks, marked all prior branches stale, cleared the active comparison, and disabled every promotion button.
+- Lock IDs are normalized in shared state. Reapplying an equivalent intervention preserves the same context revision; the journey relabels the applied action `Cable clearance locked` and disables it.
+- Failed, mismatched, and canceled attempts remain immutable rows. A retry receives a distinct attempt revision, while a verified identical branch remains non-repeatable.
+- The newest measurement owns the primary evidence card. A preceding verification is shown only as explicitly labelled historical evidence, and a direct verified-then-mismatch regression confirms the mismatch cannot be promoted.
+- The journey regression actively selects an anchored alternative and operates peel and audition modes rather than only checking that their controls exist.
 - Semantic DOM retained the exact fixture revision, selection and voxel bounds, modes, parent/branch identities, local deltas, measurements, receipts, and stale state outside the canvas.
 - At 390 × 844, the main region measured `clientWidth === scrollWidth === 375`; both semantic tables and all three mode radios remained present.
 - Native keyboard traversal was confirmed in supplemental Chrome: primary action → intervention → comparison radio group → scrollable semantic table → protocol details. The in-app automation surface did not move focus when issuing Tab, so keyboard traversal was not independently confirmed there.
@@ -81,6 +95,8 @@ PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/depende
 PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm check
 PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm dev --host 127.0.0.1
 node dist/bin/webmcp-evals.js smoke -u http://127.0.0.1:5174 -e docs/testing/webmcp-foundation-evals.json --chrome-channel chrome -v
+node dist/bin/webmcp-evals.js smoke -u http://127.0.0.1:5174 -e <(jq '[.[] | select(.expectedCall != null and (.name | startswith("Validation error") | not))]' docs/testing/webmcp-foundation-evals.json) --chrome-channel chrome -v
+node dist/bin/webmcp-evals.js smoke -u http://127.0.0.1:5174 -e <(jq '[.[] | select(.name | startswith("Validation error"))]' docs/testing/webmcp-foundation-evals.json) --chrome-channel chrome -v
 node dist/bin/webmcp-evals.js -b vercel -m anthropic:claude-sonnet-4-5 -r 1 --max-steps 5 --reporter console json -o /tmp/webmcp-foundation-evals browser -u http://127.0.0.1:5174 -e docs/testing/webmcp-foundation-evals.json --chrome-channel chrome
 git diff --check
 ```

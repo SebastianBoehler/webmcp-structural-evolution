@@ -2,7 +2,7 @@ import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
 import type { FoundationProjectState, SemanticSelection } from "../webmcp/schemas";
 
-type ProbeRunner = (input: ProbeInput) => Promise<ProbeResult>;
+type ProbeRunner = (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
 
 export interface ProjectStateOptions {
   readonly contextRevision: string;

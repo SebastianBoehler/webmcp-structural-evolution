@@ -1,6 +1,6 @@
 import { Component, useEffect, useState, type ErrorInfo, type JSX, type ReactNode } from "react";
 
-import { detectWebGpu, type GpuCapability } from "../gpu/capabilities";
+import { detectWebGpuSingleFlight, type GpuCapability } from "../gpu/capabilities";
 import { FoundationJourney } from "./FoundationJourney";
 
 type ErrorBoundaryProps = { children: ReactNode };
@@ -33,7 +33,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void detectWebGpu().then((result) => {
+    void detectWebGpuSingleFlight().then((result) => {
       if (active) setCapability(result);
     });
     return () => { active = false; };

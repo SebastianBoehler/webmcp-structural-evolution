@@ -93,14 +93,26 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const currentVerified = alternatives.filter(
     (branch) => branch.parentRevision === state.contextRevision && !branch.stale && branch.status === "verified",
   );
+  const currentBranches = state.stagedBranches.filter(
+    (branch) => branch.parentRevision === state.contextRevision && !branch.stale,
+  );
+  const latestVariant = (variant: ProbeVariant) => [...currentBranches].reverse().find(
+    (branch) => branch.variant === variant,
+  );
+  const canRetry = (variant: ProbeVariant) => {
+    const status = latestVariant(variant)?.status;
+    return !status || status === "failed" || status === "mismatch" || status === "canceled";
+  };
   const nextVariant = !accepted
-    ? state.stagedBranches.some((branch) => branch.variant === "baseline") ? undefined : "baseline"
-    : !currentVerified.some((branch) => branch.variant === "edge-biased") ? "edge-biased"
-      : !currentVerified.some((branch) => branch.variant === "center-biased") ? "center-biased" : undefined;
+    ? canRetry("baseline") ? "baseline" : undefined
+    : canRetry("edge-biased") ? "edge-biased"
+      : latestVariant("edge-biased")?.status === "verified" && canRetry("center-biased")
+        ? "center-biased" : undefined;
+  const retrying = nextVariant !== undefined && latestVariant(nextVariant) !== undefined;
   const primaryLabel = capability.status !== "available" ? "Run foundation probe"
-    : nextVariant === "baseline" ? "Run baseline verification"
-    : nextVariant === "edge-biased" ? "Run edge-biased alternative"
-      : nextVariant === "center-biased" ? "Run center-biased alternative"
+    : nextVariant === "baseline" ? `${retrying ? "Retry" : "Run"} baseline verification`
+    : nextVariant === "edge-biased" ? `${retrying ? "Retry" : "Run"} edge-biased alternative`
+      : nextVariant === "center-biased" ? `${retrying ? "Retry" : "Run"} center-biased alternative`
         : accepted ? "Alternatives ready to compare" : "Baseline verified—promote below";
 
   const runVariant = async (variant: ProbeVariant) => {
@@ -117,6 +129,14 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
       const [left, right] = currentVerified;
       if (!left || !right) throw new Error("Two exact verified non-stale alternatives are required");
       setComparison(await services.compareProbes({ leftRevision: left.branchRevision, rightRevision: right.branchRevision }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const cancel = async () => {
+    setError(undefined);
+    try {
+      await services.cancelProbe();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -152,12 +172,19 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         <div className={`capability-badge capability-badge--${capability.status}`} role="status">
           <strong>WebGPU {capability.status}</strong><span>{capability.message}</span>
         </div>
-        <button
-          className="primary-action"
-          type="button"
-          disabled={!nextVariant || capability.status !== "available" || state.operationStatus === "running"}
-          onClick={() => nextVariant && void runVariant(nextVariant)}
-        >{state.operationStatus === "running" ? "Probe running…" : primaryLabel}</button>
+        <div className="probe-actions">
+          <button
+            className="primary-action"
+            type="button"
+            disabled={!nextVariant || capability.status !== "available" || state.operationStatus === "running"}
+            onClick={() => nextVariant && void runVariant(nextVariant)}
+          >{state.operationStatus === "running" ? "Probe running…" : primaryLabel}</button>
+          {state.operationStatus === "running" && (
+            <button className="cancel-action" type="button" onClick={() => void cancel()}>
+              Cancel running probe
+            </button>
+          )}
+        </div>
         {error && <p className="inline-error" role="alert">{error}</p>}
       </header>
 
@@ -178,7 +205,11 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             <div><dt>Interfaces</dt><dd>{fixture.assembly.preservedMounts.length} preserved mounts · {fixture.assembly.obstacleVolumes.length} keep-outs</dd></div>
             <div><dt>Inventory</dt><dd>{inventoryEvaluation.status}; {inventoryEvaluation.shortages.length} exact shortfall</dd></div>
           </dl>
-          <button type="button" onClick={() => void intervene()}>Lock cable clearance</button>
+          <button
+            type="button"
+            disabled={state.locks.includes("cable-clearance")}
+            onClick={() => void intervene()}
+          >{state.locks.includes("cable-clearance") ? "Cable clearance locked" : "Lock cable clearance"}</button>
         </article>
 
         <div className="viewer-shell">

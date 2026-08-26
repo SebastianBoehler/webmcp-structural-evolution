@@ -53,6 +53,7 @@ export interface ProbeMeasurement {
 
 export interface FoundationBranch extends RunFoundationProbeInput {
   readonly branchRevision: string;
+  readonly attempt: number;
   readonly stale: boolean;
   readonly status: "staged" | "running" | ProbeResult["status"];
   readonly measurement?: ProbeMeasurement;

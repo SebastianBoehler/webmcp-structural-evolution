@@ -35,6 +35,7 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
     runProbe: vi.fn(async () => ({
       parentRevision: revisionA,
       branchRevision: revisionB,
+      attempt: 1,
       hypothesis: "Exercise the edge-biased field",
       prediction: "Verification stays within the probe budget",
       variant: "edge-biased" as const,
@@ -61,6 +62,7 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
       nextActions: ["inspect_design_context"],
     })),
     canCompare: vi.fn(() => false),
+    cancelProbe: vi.fn(async () => { throw new Error("not running"); }),
     recordRejectedCall: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -87,6 +89,7 @@ test("run validates bounded intent and delegates only the deterministic variant"
   const runProbe = vi.fn(async (input) => ({
     ...input,
     branchRevision: revisionB,
+    attempt: 1,
     stale: false,
     status: "verified" as const,
     measurement: {
@@ -138,6 +141,7 @@ test("stale verified completion does not advertise unavailable comparison", asyn
     runProbe: vi.fn(async () => ({
       parentRevision: revisionA,
       branchRevision: revisionB,
+      attempt: 1,
       hypothesis: "Check the shipped probe",
       prediction: "Verification stays within the probe budget",
       variant: "baseline" as const,

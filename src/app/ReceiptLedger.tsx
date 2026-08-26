@@ -23,9 +23,9 @@ export function ReceiptLedger({ receipts }: ReceiptLedgerProps) {
             <p><strong>{receipt.action}</strong> · {receipt.createdAt}</p>
             <p>Affected revision: {receipt.affectedRevision ?? "none"}</p>
             <p>Validated input: <code>{boundedJson(receipt.validatedInputs)}</code></p>
-            {receipt.outcome.status === "failed"
-              ? <p role="alert">Failed: {receipt.outcome.error}</p>
-              : <>
+            {receipt.outcome.status === "failed" ? <p role="alert">Failed: {receipt.outcome.error}</p>
+              : receipt.outcome.status === "canceled" ? <p>Canceled: {receipt.outcome.reason}</p>
+                : <>
                   <p>Succeeded in {receipt.duration.value.toFixed(2)} ms</p>
                   <p>Result: <code>{boundedJson(receipt.outcome.result)}</code></p>
                 </>}

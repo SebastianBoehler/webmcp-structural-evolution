@@ -69,6 +69,8 @@ button {
 button:hover:not(:disabled) { border-color: var(--cyan); background: #1c3943; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
 .primary-action { width: 100%; justify-self: stretch; border-color: var(--cyan); background: #12373a; font-weight: 750; }
+.probe-actions { display: grid; gap: 0.5rem; }
+.cancel-action { width: 100%; border-color: var(--red); background: #3a2022; }
 .inline-error { grid-column: 2; color: #ffd0cc; }
 
 .journey-strip {

@@ -38,7 +38,7 @@ export function createInitialProjectState(options: {
     contextRevision: options.contextRevision,
     acceptedBranchRevision: options.acceptedBranchRevision,
     selection: { ...options.selection },
-    locks: [...options.locks],
+    locks: [...new Set(options.locks)],
     stagedBranches: [],
     capability: options.capability,
     operationStatus: "idle",
