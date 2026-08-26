@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
+import { runFoundationProbe } from "../webmcp/executors";
 import { foundationToolDefinitions } from "../webmcp/register-tools";
 import { useProjectState } from "./useProjectState";
 
@@ -21,7 +22,7 @@ const verified = (value = 0.5): ProbeResult => ({
   tolerance: 0.000005,
 });
 
-function options(compute: (input: ProbeInput) => Promise<ProbeResult>) {
+function options(compute: (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>) {
   return {
     contextRevision: revisionA,
     acceptedBranchRevision: revisionA,
@@ -86,6 +87,47 @@ test("cancellation stays final when a signal-ignoring runner resolves late", asy
   const canceled = result.current.state.stagedBranches[0]!;
   expect(canceled.status).toBe("canceled");
   expect(result.current.state.acceptedBranchRevision).toBe(revisionA);
+  await expect(result.current.experimentRail.promoteBranch(canceled.branchRevision)).rejects.toThrow(/verified/i);
+});
+
+test("an immediately aborting runner awaits canceled state and reports both terminal receipts", async () => {
+  const compute = vi.fn((_input: ProbeInput, signal?: AbortSignal) => new Promise<ProbeResult>((resolve) => {
+    signal?.addEventListener("abort", () => resolve({
+      status: "canceled", code: "canceled", message: "aborted immediately", elapsedMs: 1,
+    }), { once: true });
+  }));
+  const { result } = renderHook(() => useProjectState(options(compute)));
+
+  let invocation!: ReturnType<typeof runFoundationProbe>;
+  act(() => { invocation = runFoundationProbe(baseInput, result.current.services); });
+  await waitFor(() => expect(result.current.state.stagedBranches[0]?.status).toBe("running"));
+  let cancellation!: Promise<unknown>;
+  act(() => { cancellation = result.current.services.cancelProbe(); });
+
+  let response!: Awaited<ReturnType<typeof runFoundationProbe>>;
+  await act(async () => {
+    response = await invocation;
+    await cancellation;
+  });
+  const output = JSON.parse(response.content[0]?.text ?? "{}") as {
+    status?: string; proposalRevision?: string; attempt?: number;
+  };
+  const canceled = result.current.state.stagedBranches[0]!;
+
+  expect(response.isError).toBe(true);
+  expect(output).toMatchObject({
+    status: "canceled", proposalRevision: canceled.proposalRevision, attempt: 1,
+  });
+  expect(canceled.status).toBe("canceled");
+  expect(result.current.state.receipts.slice(-2).map(({ action, outcome }) => ({
+    action, status: outcome.status,
+  }))).toEqual([
+    { action: "run_foundation_probe", status: "canceled" },
+    { action: "cancel_foundation_probe", status: "canceled" },
+  ]);
+  expect(result.current.state.receipts.at(-2)?.validatedInputs).toMatchObject({
+    proposalRevision: canceled.proposalRevision, attempt: 1,
+  });
   await expect(result.current.experimentRail.promoteBranch(canceled.branchRevision)).rejects.toThrow(/verified/i);
 });
 

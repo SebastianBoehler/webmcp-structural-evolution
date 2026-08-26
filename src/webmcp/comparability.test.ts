@@ -5,6 +5,7 @@ import { hasComparableBranches } from "./comparability";
 
 const branch = (branchRevision: string, parentRevision: string): FoundationBranch => ({
   branchRevision,
+  proposalRevision: branchRevision,
   attempt: 1,
   parentRevision,
   variant: "baseline",

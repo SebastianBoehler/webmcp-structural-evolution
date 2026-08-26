@@ -72,8 +72,11 @@ test("bounded inspect succeeds with many branches and records the same outcome",
 
   expect(response.isError).not.toBe(true);
   expect(text.length).toBeLessThanOrEqual(1500);
-  expect(facts).toMatchObject({ stagedBranchCount: 3, omittedBranchCount: 1 });
-  expect(facts.stagedBranches).toHaveLength(2);
+  expect(facts).toMatchObject({ stagedBranchCount: 3, omittedBranchCount: 2 });
+  expect(facts.stagedBranches).toHaveLength(1);
+  expect(facts.stagedBranches[0]).toMatchObject({
+    proposalRevision: expect.stringMatching(/^[0-9a-f]{64}$/), attempt: 1,
+  });
   expect(result.current.state.receipts.at(-1)?.outcome.status).toBe("succeeded");
 });
 
@@ -129,6 +132,7 @@ test("keeps failed evidence immutable while a later exact retry succeeds", async
 
   await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
   const failedRevision = result.current.state.stagedBranches[0]!.branchRevision;
+  const proposalRevision = result.current.state.stagedBranches[0]!.proposalRevision;
   await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
 
   expect(result.current.state.stagedBranches).toHaveLength(2);
@@ -137,6 +141,17 @@ test("keeps failed evidence immutable while a later exact retry succeeds", async
   });
   expect(result.current.state.stagedBranches[1]).toMatchObject({ status: "verified" });
   expect(result.current.state.stagedBranches[1]!.branchRevision).not.toBe(failedRevision);
+  expect(result.current.state.stagedBranches.map((branch) => ({
+    proposalRevision: branch.proposalRevision, attempt: branch.attempt,
+  }))).toEqual([
+    { proposalRevision, attempt: 1 },
+    { proposalRevision, attempt: 2 },
+  ]);
+  expect(result.current.state.receipts.filter((receipt) => receipt.action === "run_foundation_probe")
+    .map((receipt) => receipt.validatedInputs)).toEqual([
+    expect.objectContaining({ proposalRevision, attempt: 1 }),
+    expect.objectContaining({ proposalRevision, attempt: 2 }),
+  ]);
 });
 
 test("normalizes lock ids and makes a repeated equivalent intervention a no-op", async () => {
@@ -144,10 +159,12 @@ test("normalizes lock ids and makes a repeated equivalent intervention a no-op",
   await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
   const intervention = {
     selection: { id: "cable-path", label: "Cable path" },
-    locks: ["body-mount", "cable-clearance", "cable-clearance"],
+    locks: ["cable-clearance", "body-mount", "cable-clearance"],
   };
 
-  await act(async () => { await result.current.experimentRail.intervene(intervention); });
+  await act(async () => { await result.current.experimentRail.intervene({
+    ...intervention, locks: ["body-mount", "cable-clearance"],
+  }); });
   const contextRevision = result.current.state.contextRevision;
   expect(result.current.state.locks).toEqual(["body-mount", "cable-clearance"]);
 

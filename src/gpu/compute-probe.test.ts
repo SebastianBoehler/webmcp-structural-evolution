@@ -1,13 +1,9 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-
 import { runComputeProbe, type ProbeResult } from "./compute-probe";
-
 const wasm = vi.hoisted(() => ({
   relativeL2: vi.fn<(expected: Float32Array, actual: Float32Array) => Promise<number>>(),
 }));
-
 vi.mock("../reference", () => ({ relativeL2: wasm.relativeL2 }));
-
 const BUFFER_USAGE = {
   MAP_READ: 1,
   COPY_SRC: 2,
@@ -15,27 +11,22 @@ const BUFFER_USAGE = {
   UNIFORM: 8,
   STORAGE: 16,
 } as const;
-
 class FakeBuffer {
   readonly data: ArrayBuffer;
   destroyed = false;
   mapped = false;
-
   constructor(
     readonly size: number,
     private readonly rejectMap: boolean,
   ) {
     this.data = new ArrayBuffer(size);
   }
-
   destroy() {
     this.destroyed = true;
   }
-
   getMappedRange() {
     return this.data;
   }
-
   async mapAsync() {
     if (this.rejectMap) throw new Error("readback mapping rejected");
     this.mapped = true;
@@ -284,6 +275,20 @@ describe("runComputeProbe", () => {
     expect(result).not.toHaveProperty("output");
     expect(webGpu.buffers.every((buffer) => buffer.destroyed)).toBe(true);
     expect(webGpu.device.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("returns canceled when aborted during WebGPU acquisition", async () => {
+    let finishAcquisition!: (adapter: null) => void;
+    const requestAdapter = vi.fn(() => new Promise<null>((resolve) => { finishAcquisition = resolve; }));
+    vi.stubGlobal("navigator", { gpu: { requestAdapter } });
+    const controller = new AbortController();
+
+    const running = runComputeProbe(validInput(), controller.signal);
+    await vi.waitFor(() => expect(requestAdapter).toHaveBeenCalledOnce());
+    controller.abort();
+    finishAcquisition(null);
+
+    await expect(running).resolves.toMatchObject({ status: "canceled", code: "canceled" });
   });
 
   it("makes renderable output impossible on failed and mismatch union members", () => {

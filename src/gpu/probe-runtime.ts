@@ -43,9 +43,9 @@ export function deviceLossGuard(device: GPUDevice, signal?: AbortSignal) {
       "device-lost",
       `WebGPU device was lost (${info.reason}): ${info.message || "no detail provided"}`,
     );
-  const canceled = new Promise<never>((_, reject) => {
-    if (signal?.aborted) reject(new ProbeCanceledError());
-    else signal?.addEventListener("abort", () => reject(new ProbeCanceledError()), { once: true });
+  const canceled = new Promise<"canceled">((resolve) => {
+    if (signal?.aborted) resolve("canceled");
+    else signal?.addEventListener("abort", () => resolve("canceled"), { once: true });
   });
 
   return {
@@ -53,9 +53,10 @@ export function deviceLossGuard(device: GPUDevice, signal?: AbortSignal) {
       const outcome = await Promise.race([
         operation.then((value) => ({ kind: "value" as const, value })),
         loss.then((info) => ({ kind: "lost" as const, info })),
-        canceled,
+        canceled.then(() => ({ kind: "canceled" as const })),
       ]);
       if (outcome.kind === "lost") throw failure(outcome.info);
+      if (outcome.kind === "canceled") throw new ProbeCanceledError();
       return outcome.value;
     },
     check() {

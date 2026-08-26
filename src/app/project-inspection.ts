@@ -27,7 +27,9 @@ function buildFacts(
     acceptedBranchRevision: state.acceptedBranchRevision,
     stagedBranches: selected.map((branch) => ({
       parentRevision: branch.parentRevision,
+      proposalRevision: branch.proposalRevision,
       branchRevision: branch.branchRevision,
+      attempt: branch.attempt,
       hypothesis: branch.hypothesis,
       prediction: branch.prediction,
       status: branch.status,

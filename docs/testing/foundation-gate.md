@@ -53,6 +53,8 @@ The protocol result confirms only the browser protocol outcome. `use-webmcp-tool
 
 Human cancellation is now a separate first-class application path. The project service owns an `AbortController`, passes its signal through the compute boundary, commits a canceled branch and receipt, and ignores any late runner result. A supplemental real Chrome run observed the visible cancel control, canceled copy, retry action, and no verified copy. The compute regression cancels a pending dispatch and verifies buffer/device cleanup; the state regression uses a deliberately signal-ignoring runner and verifies that its late verified result cannot commit or promote.
 
+The final review rerun added an immediate-abort race in which the signal-aware runner resolves canceled synchronously from the abort event. The original `run_foundation_probe` promise now waits for the terminal canceled commit, returns `isError: true` with `status: "canceled"`, and records both the original run cancellation and the human cancel action. This was verified deterministically, not re-observed through the unavailable in-app browser. Protocol cancellation is still not claimed to interrupt the GPU kernel.
+
 After two verified probes, a supplemental Chrome state check observed all three tools before human intervention. Clicking `Lock cable clearance` changed registration to exactly `inspect_design_context` and `run_foundation_probe`; compare disappeared. The subsequent inspect succeeded with `stale: true`, two total branches, one newest stale branch included, and `omittedBranchCount: 1`, keeping the result inside the 1,500-character contract.
 
 Closing supplemental headless Chrome pages and changing dynamic registrations caused the Vite development client to log unhandled `AbortError: signal is aborted without reason` rejections from `use-webmcp-tool/useWebMCP.js:173`. The deterministic smoke and state checks still completed with their recorded results, but this third-party hook-cleanup warning is not hidden or counted as a clean supplemental-console pass.
@@ -67,7 +69,7 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 - The current smoke runner requires at least one successful required call per case and treats an intentional tool error as a smoke error. Running the complete file therefore stops on the required `expectedCall: null` case; this is a runner limitation, not a no-tool pass.
 - The five deterministic smoke-executable cases passed **8/8 required steps**: two inspections, baseline → edge-biased → compare, baseline → inspection when compare is not state-valid, and fresh inspection selection after an intervention prompt.
 - The isolated validation-error case called `inspect_design_context({scope:"all"})` and produced the expected `Invalid input: expected "current"`; the runner correctly reported that deliberate error as 0/1 rather than a pass.
-- Measured smoke probes were verified at relative L2 `3.7204763714271394e-8` and `2.8865247969633856e-8`.
+- The final deterministic rerun passed the same **8/8 required steps** after proposal/attempt identity was added. The baseline was 24.625 ms at relative L2 `3.7204763714271394e-8`; edge-biased was 10.080000042915344 ms at `2.8865247969633856e-8`. Their exact attempt revisions were `4612c20b9a1725fd9739d0046eb09c9e748d312c1434be2709ae31046e7f0fd1` and `0ce79a6d3c82e30cef3df63633b68d0806cee684bf5ef4f6a958e05319cf73d7`.
 - A configured Anthropic backend existed, so one probabilistic browser-eval run was attempted with `anthropic:claude-sonnet-4-5`. It completed with **0/3** because the provider returned `Your credit balance is too low to access the Anthropic API`; no model-selection claim is made.
 - Direct, ambiguous, negative, validation, mid-chain, and post-intervention selection behavior has no probabilistic pass in this run. The deterministic smoke invokes authored calls directly and is not evidence of model selection quality.
 - No Google, OpenAI, or live Ollama backend was configured.
@@ -77,8 +79,8 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 - Human promotion moved only the exact verified non-stale baseline into the accepted lineage.
 - Two later sibling alternatives shared the exact current context revision and rendered in situ. No route/path comparison UI was introduced.
 - Locking `cable-clearance` changed the semantic selection and locks, marked all prior branches stale, cleared the active comparison, and disabled every promotion button.
-- Lock IDs are normalized in shared state. Reapplying an equivalent intervention preserves the same context revision; the journey relabels the applied action `Cable clearance locked` and disables it.
-- Failed, mismatched, and canceled attempts remain immutable rows. A retry receives a distinct attempt revision, while a verified identical branch remains non-repeatable.
+- Lock IDs are deduplicated and canonically sorted in shared state before equality, storage, and revision hashing. Reapplying an equivalent permuted intervention preserves the same context revision; the journey relabels the applied action `Cable clearance locked` and disables it.
+- Failed, mismatched, and canceled attempts remain immutable rows. Identical retry intent retains one stable proposal revision while each execution has an explicit attempt number and distinct branch revision; all three identities are visible in the rail, inspection facts, tool output, and run receipts. A verified identical proposal remains non-repeatable.
 - The newest measurement owns the primary evidence card. A preceding verification is shown only as explicitly labelled historical evidence, and a direct verified-then-mismatch regression confirms the mismatch cannot be promoted.
 - The journey regression actively selects an anchored alternative and operates peel and audition modes rather than only checking that their controls exist.
 - Semantic DOM retained the exact fixture revision, selection and voxel bounds, modes, parent/branch identities, local deltas, measurements, receipts, and stale state outside the canvas.
@@ -100,3 +102,5 @@ node dist/bin/webmcp-evals.js smoke -u http://127.0.0.1:5174 -e <(jq '[.[] | sel
 node dist/bin/webmcp-evals.js -b vercel -m anthropic:claude-sonnet-4-5 -r 1 --max-steps 5 --reporter console json -o /tmp/webmcp-foundation-evals browser -u http://127.0.0.1:5174 -e docs/testing/webmcp-foundation-evals.json --chrome-channel chrome
 git diff --check
 ```
+
+The final deterministic rerun used the source runner at GoogleChromeLabs/webmcp-tools commit `9626f8d568a223d8143790640c07f7800c733103`. The complete seven-case file still stops before navigation on the intentional `expectedCall: null` case, and the isolated validation-error case still reports the expected tool error as 0/1. No probabilistic rerun was made because the only previously configured backend had already returned insufficient credit.

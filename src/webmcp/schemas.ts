@@ -52,6 +52,7 @@ export interface ProbeMeasurement {
 }
 
 export interface FoundationBranch extends RunFoundationProbeInput {
+  readonly proposalRevision: string;
   readonly branchRevision: string;
   readonly attempt: number;
   readonly stale: boolean;
@@ -84,7 +85,7 @@ export interface InspectContextFacts {
   readonly locks: readonly string[];
   readonly acceptedBranchRevision: string;
   readonly stagedBranches: readonly Pick<FoundationBranch,
-    "parentRevision" | "branchRevision" | "hypothesis" | "prediction" | "status" | "stale" | "measurement"
+    "parentRevision" | "proposalRevision" | "branchRevision" | "attempt" | "hypothesis" | "prediction" | "status" | "stale" | "measurement"
   >[];
   readonly stagedBranchCount: number;
   readonly omittedBranchCount: number;

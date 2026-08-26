@@ -53,11 +53,18 @@ function elapsedSince(startedAt: number): number {
   return performance.now() - startedAt;
 }
 
+function canceled(startedAt: number): ProbeResult {
+  return {
+    status: "canceled",
+    code: "canceled",
+    message: "Foundation probe canceled by the user.",
+    elapsedMs: elapsedSince(startedAt),
+  };
+}
+
 export async function runComputeProbe(input: ProbeInput, signal?: AbortSignal): Promise<ProbeResult> {
   const startedAt = performance.now();
-  if (signal?.aborted) {
-    return { status: "canceled", code: "canceled", message: "Foundation probe canceled by the user.", elapsedMs: 0 };
-  }
+  if (signal?.aborted) return canceled(startedAt);
   try {
     validateProbeInput(input);
   } catch (error) {
@@ -70,6 +77,10 @@ export async function runComputeProbe(input: ProbeInput, signal?: AbortSignal): 
   }
 
   const acquisition = await acquireWebGpu();
+  if (signal?.aborted) {
+    if (acquisition.status === "available") acquisition.device.destroy();
+    return canceled(startedAt);
+  }
   if (acquisition.status !== "available") {
     return { ...acquisition, status: "failed", elapsedMs: elapsedSince(startedAt) };
   }
@@ -214,12 +225,7 @@ export async function runComputeProbe(input: ProbeInput, signal?: AbortSignal): 
     return { status: "verified", output: readback, ...metrics };
   } catch (error) {
     if (error instanceof ProbeCanceledError || signal?.aborted) {
-      return {
-        status: "canceled",
-        code: "canceled",
-        message: "Foundation probe canceled by the user.",
-        elapsedMs: elapsedSince(startedAt),
-      };
+      return canceled(startedAt);
     }
     const failure =
       error instanceof ProbeStageError

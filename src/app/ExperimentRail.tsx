@@ -26,13 +26,17 @@ export function ExperimentRail({ state, api }: ExperimentRailProps) {
       <table aria-label="Experiment branches">
         <thead>
           <tr>
-            <th>Branch</th><th>Parent</th><th>Prediction</th><th>Measurement</th><th>Status</th><th>Human action</th>
+            <th>Execution</th><th>Parent</th><th>Prediction</th><th>Measurement</th><th>Status</th><th>Human action</th>
           </tr>
         </thead>
         <tbody>
           {state.stagedBranches.map((branch) => (
             <tr key={branch.branchRevision}>
-              <td>{branch.branchRevision}</td>
+              <td>
+                <span>Attempt {branch.attempt}</span><br />
+                <span>Proposal {branch.proposalRevision}</span><br />
+                <span>Branch {branch.branchRevision}</span>
+              </td>
               <td>{branch.parentRevision}</td>
               <td><strong>{branch.hypothesis}</strong><br />{branch.prediction}</td>
               <td>{branch.measurement

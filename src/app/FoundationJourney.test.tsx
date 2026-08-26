@@ -100,6 +100,7 @@ test("recovers from baseline and alternative failures without erasing their evid
   await screen.findByText("adapter reset during baseline");
   fireEvent.click(screen.getByRole("button", { name: /retry baseline verification/i }));
   await screen.findByText(/verified against the wasm oracle/i);
+  expect(screen.getByText("Attempt 2")).toBeVisible();
   expect(screen.getAllByText(/adapter reset during baseline/i)).not.toHaveLength(0);
 
   fireEvent.click(screen.getAllByRole("button", { name: /promote branch/i }).at(-1)!);

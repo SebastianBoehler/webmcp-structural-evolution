@@ -55,7 +55,7 @@ const probeCopy: Record<ProbeVariant, { hypothesis: string; prediction: string }
 
 export interface FoundationJourneyProps {
   readonly capability: GpuCapability;
-  readonly compute?: (input: ProbeInput) => Promise<ProbeResult>;
+  readonly compute?: (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
   readonly viewerEnvironment?: FieldViewerEnvironment;
 }
 

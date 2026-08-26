@@ -38,7 +38,7 @@ export function createInitialProjectState(options: {
     contextRevision: options.contextRevision,
     acceptedBranchRevision: options.acceptedBranchRevision,
     selection: { ...options.selection },
-    locks: [...new Set(options.locks)],
+    locks: canonicalLockIds(options.locks),
     stagedBranches: [],
     capability: options.capability,
     operationStatus: "idle",
@@ -67,3 +67,7 @@ export function publishProjectState(
 }
 
 export { freezeValue };
+
+export function canonicalLockIds(locks: readonly string[]): string[] {
+  return [...new Set(locks)].sort();
+}

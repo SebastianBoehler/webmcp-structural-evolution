@@ -88,7 +88,9 @@ export async function runFoundationProbe(
     const branch = await services.runProbe(parsed);
     const facts = {
       parentRevision: branch.parentRevision,
+      proposalRevision: branch.proposalRevision,
       branchRevision: branch.branchRevision,
+      attempt: branch.attempt,
       variant: branch.variant,
       hypothesis: branch.hypothesis,
       prediction: branch.prediction,
@@ -99,7 +101,7 @@ export async function runFoundationProbe(
         ? ["inspect_design_context", "compare_foundation_probes"]
         : ["inspect_design_context"],
     };
-    return toolResponse(facts, branch.status === "failed" || branch.status === "mismatch");
+    return toolResponse(facts, branch.status !== "verified");
   } catch (error) {
     return toolResponse({ error: errorText(error) }, true);
   }

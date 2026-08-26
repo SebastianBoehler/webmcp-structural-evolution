@@ -3,6 +3,7 @@ import type { ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
 import type { FoundationProjectState } from "../webmcp/schemas";
 import type { ExperimentRailApi } from "./project-state-types";
+import { canonicalLockIds } from "./project-state-copy";
 
 interface MutableRef<T> {
   current: T;
@@ -31,7 +32,7 @@ export function createExperimentRail({
     async intervene(input) {
       const startedAt = performance.now();
       const generation = ++generationRef.current;
-      const locks = [...new Set(input.locks)];
+      const locks = canonicalLockIds(input.locks);
       const normalizedInput = { selection: input.selection, locks };
       let contextRevision: string;
       while (true) {

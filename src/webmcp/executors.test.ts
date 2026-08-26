@@ -34,6 +34,7 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
     })),
     runProbe: vi.fn(async () => ({
       parentRevision: revisionA,
+      proposalRevision: revisionB,
       branchRevision: revisionB,
       attempt: 1,
       hypothesis: "Exercise the edge-biased field",
@@ -88,6 +89,7 @@ test("inspect validates exact scope and returns context facts without provenance
 test("run validates bounded intent and delegates only the deterministic variant", async () => {
   const runProbe = vi.fn(async (input) => ({
     ...input,
+    proposalRevision: revisionB,
     branchRevision: revisionB,
     attempt: 1,
     stale: false,
@@ -113,6 +115,8 @@ test("run validates bounded intent and delegates only the deterministic variant"
   expect(runProbe).toHaveBeenCalledWith(input);
   expect(facts).toMatchObject({
     parentRevision: revisionA,
+    proposalRevision: revisionB,
+    attempt: 1,
     hypothesis: input.hypothesis,
     prediction: input.prediction,
     measurement: { status: "verified", elapsedMs: 9, relativeL2: 0 },
@@ -136,10 +140,34 @@ test("run advertises comparison only when the latest state has an exact comparab
   ]);
 });
 
+test.each(["canceled", "running"] as const)(
+  "run returns %s as an explicit non-success tool outcome",
+  async (status) => {
+    const base = await services().runProbe({
+      parentRevision: revisionA,
+      variant: "baseline",
+      hypothesis: "Check the shipped probe",
+      prediction: "Verification stays within the probe budget",
+    });
+    const shared = services({ runProbe: vi.fn(async () => ({ ...base, status })) });
+
+    const response = await runFoundationProbe({
+      parentRevision: revisionA,
+      variant: "baseline",
+      hypothesis: "Check the shipped probe",
+      prediction: "Verification stays within the probe budget",
+    }, shared);
+
+    expect(response.isError).toBe(true);
+    expect(responseJson(response)).toMatchObject({ status, proposalRevision: revisionB, attempt: 1 });
+  },
+);
+
 test("stale verified completion does not advertise unavailable comparison", async () => {
   const shared = services({
     runProbe: vi.fn(async () => ({
       parentRevision: revisionA,
+      proposalRevision: revisionB,
       branchRevision: revisionB,
       attempt: 1,
       hypothesis: "Check the shipped probe",

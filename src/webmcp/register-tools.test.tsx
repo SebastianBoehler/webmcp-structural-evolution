@@ -97,6 +97,7 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
 
   const verified = (suffix: string) => ({
     parentRevision: revisionA,
+    proposalRevision: suffix.repeat(64),
     branchRevision: suffix.repeat(64),
     attempt: 1,
     variant: "baseline" as const,

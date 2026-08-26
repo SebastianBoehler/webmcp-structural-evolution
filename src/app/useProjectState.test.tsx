@@ -40,7 +40,8 @@ test("stages an exact immutable branch and stores prediction before measured out
   await waitFor(() => expect(result.current.state.stagedBranches).toHaveLength(1));
   expect(result.current.state.stagedBranches[0]).toMatchObject({
     parentRevision: revisionA,
-    branchRevision: "cd59a9190cb189df21607c85b23a77ee1ae336d8274654d523b75c2fba626334",
+    proposalRevision: "9d15bfaf91cbb3d982a0dc8bd758587aa97c30a7c0fa8ef05a45f058d17adcf4",
+    branchRevision: "b93dead1458c6adf73075d3ac833d5033ee2d7d07b5f271fa5f22089d4667732",
     prediction: runInput.prediction,
     status: "running",
   });
@@ -62,7 +63,7 @@ test("stages an exact immutable branch and stores prediction before measured out
   });
   expect(result.current.state.receipts.at(-1)).toMatchObject({
     action: "run_foundation_probe",
-    affectedRevision: "cd59a9190cb189df21607c85b23a77ee1ae336d8274654d523b75c2fba626334",
+    affectedRevision: "b93dead1458c6adf73075d3ac833d5033ee2d7d07b5f271fa5f22089d4667732",
     outcome: { status: "succeeded" },
   });
 });
@@ -102,6 +103,8 @@ test("human intervention marks staged branches stale and only the rail can promo
     </>,
   );
   expect(screen.getByRole("table", { name: /experiment branches/i })).toBeVisible();
+  expect(screen.getByText("Attempt 1")).toBeVisible();
+  expect(screen.getByText(new RegExp(`Proposal ${result.current.state.stagedBranches[0]!.proposalRevision}`))).toBeVisible();
   expect(screen.getByRole("button", { name: /promote/i })).toBeDisabled();
   expect(screen.getByRole("log", { name: /action receipts/i })).toBeVisible();
   expect(screen.getByText(/stale/i)).toBeVisible();
