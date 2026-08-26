@@ -46,7 +46,7 @@ export type AssemblyVisualPart = Readonly<{
       assetUnits: "mm" | "m";
       size: Vector3Tuple;
     }>
-  | Readonly<{ kind: "mesh"; mesh: CadMesh; size: Vector3Tuple }>
+  | Readonly<{ kind: "mesh"; mesh: CadMesh }>
 );
 
 export interface CameraEnvelope {
@@ -221,7 +221,8 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
   if (!part.id.trim() || !part.selectionId.trim() || !part.label.trim()) {
     throw new RangeError(`${label} requires an id, selection id, and label`);
   }
-  const extents = part.kind === "box" || part.kind === "model" || part.kind === "mesh" || part.kind === "flight-controller"
+  const extents = part.kind === "mesh" ? part.mesh.sizeMm
+    : part.kind === "box" || part.kind === "model" || part.kind === "flight-controller"
     ? part.size
     : part.kind === "guard"
       ? [part.radius + part.tubeRadius, part.radius + part.tubeRadius, part.tubeRadius]
