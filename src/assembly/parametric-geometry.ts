@@ -26,10 +26,7 @@ function rotation(value: Orientation): THREE.Matrix4 {
 function references(node: GraphNode): readonly string[] {
   switch (node.kind) {
     case "transform":
-    case "extrude":
-    case "revolve":
-    case "fillet":
-    case "named-interface": return [node.kind === "transform" || node.kind === "fillet" || node.kind === "named-interface" ? node.source : node.profile];
+    case "named-interface": return [node.source];
     case "union":
     case "intersection":
     case "subtraction": return [node.left, node.right];
@@ -67,15 +64,6 @@ function validateGraph(graph: ParametricGraph): string {
   const roots = graph.nodes.filter((node) => node.kind !== "named-interface" && !geometryConsumers.has(node.id));
   if (roots.length !== 1) throw new RangeError("Parametric graph must have exactly one solid root");
   return roots[0]!.id;
-}
-
-function unsupportedNode(node: GraphNode): void {
-  if (node.kind === "extrude" || node.kind === "revolve") {
-    throw new Error(`Parametric ${node.kind} node ${node.id} requires a planar profile, which this graph schema cannot express`);
-  }
-  if (node.kind === "fillet") {
-    throw new Error(`Parametric fillet node ${node.id} is not supported by the bounded browser CSG evaluator`);
-  }
 }
 
 function brushFromGeometry(Brush: CsgRuntime["Brush"], geometry: THREE.BufferGeometry): CsgBrush {
@@ -118,7 +106,6 @@ function evaluateGraph(graph: ParametricGraph, root: string, runtime: CsgRuntime
     const cached = results.get(id);
     if (cached) return cached;
     const node = nodes.get(id)!;
-    unsupportedNode(node);
     let result: CsgBrush;
     if (node.kind === "box" || node.kind === "cylinder") result = primitive(node, runtime.Brush);
     else if (node.kind === "transform") result = transform(evaluate(node.source), node.transform, runtime.Brush);
@@ -174,7 +161,6 @@ export async function compileParametricGeometry(graph: ParametricGraph): Promise
   const parsed = ParametricGraphSchema.parse(graph) as ParametricGraph;
   if (parsed.nodes.length > MAX_OPERATIONS) throw new RangeError(`Parametric graph exceeds ${MAX_OPERATIONS} operations`);
   const root = validateGraph(parsed);
-  parsed.nodes.forEach(unsupportedNode);
   const runtime = await import("three-bvh-csg") as CsgRuntime;
   return cadMeshFromBufferGeometry(evaluateGraph(parsed, root, runtime).geometry);
 }

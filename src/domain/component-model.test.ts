@@ -12,18 +12,46 @@ const orientation = {
   yaw: degrees(0),
 };
 
+const provenance = {
+  mode: "modeled-from-specification",
+  licence: {
+    status: "facts-only",
+    reference: "https://example.com/terms",
+  },
+  uncertainty: [{ property: "body envelope", statement: "Published dimensions, tolerance not stated." }],
+  sources: [{
+    id: "manufacturer-sheet",
+    classification: "manufacturer-datasheet",
+    title: "Motor dimensional sheet",
+    reference: "https://example.com/motor.pdf",
+    sourceTimestamp: "2026-07-01",
+    accessedOn: "2026-08-26",
+    redistribution: "facts-only",
+  }],
+  sourceObservations: [{
+    property: "body diameter",
+    value: 30,
+    unit: "mm",
+    sourceId: "manufacturer-sheet",
+  }],
+};
+
 const validComponent = {
   id: "motor-2207",
   category: "motor",
   geometryCoordinates: "component-local",
   manufacturer: "Sunderlabs",
   partNumber: "MOTOR-2207",
-  provenance: { kind: "manufacturer-datasheet", reference: "datasheet" },
+  provenance,
   mass: { value: 0.038, unit: "kg" },
   centerOfMass: origin,
   envelope: { kind: "box", id: "envelope", center: origin, size: { x: metre(0.03), y: metre(0.03), z: metre(0.02) } },
+  anchor: { id: "mount-plane", coordinates: "component-local", position: origin },
+  massAccounting: "standalone",
+  optimizationRole: "fixed-component",
+  collisionVolumes: [{ kind: "box", id: "collision", center: origin, size: { x: metre(0.03), y: metre(0.03), z: metre(0.02) } }],
+  protectedVolumes: [],
   mountInterfaces: [],
-  keepOutVolumes: [],
   loadContributions: [],
   allowedOrientations: [orientation],
   geometry: {
@@ -76,5 +104,24 @@ describe("component definitions", () => {
     expect(component.mass).toEqual({ value: 0.038, unit: "kg" });
     expect(component.centerOfMass.x).toEqual({ value: 0.01, unit: "m" });
     expect(component.allowedOrientations[0]?.roll).toEqual({ value: Math.PI, unit: "rad" });
+    expect(component.provenance.sourceObservations[0]).toEqual({
+      property: "body diameter",
+      value: 30,
+      unit: "mm",
+      sourceId: "manufacturer-sheet",
+    });
+  });
+
+  it.each(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface"] as const)(
+    "accepts the required reference category: %s",
+    async (category) => {
+      await expect(defineComponent({ ...validComponent, id: category, category })).resolves.toMatchObject({ category });
+    },
+  );
+
+  it("rejects a component without a usable display representation", async () => {
+    const { geometry: _geometry, ...withoutGeometry } = validComponent;
+
+    await expect(defineComponent(withoutGeometry)).rejects.toThrow(/geometry/i);
   });
 });

@@ -20,6 +20,7 @@ viewer's established millimetre boundary.
 | `fastener-m3x8` | Accu SSCF-M3-8-12.9-Z | M3 × 8 mm full thread; Ø5.68 mm head; 3 mm head height; 2.5 mm socket; 1.3 mm drive depth; 0.5 mm pitch; DIN 912 | 0.80 g, derived from published 80 g per 100 units | Published head tolerances are +0/−0.36 mm diameter and +0/−0.14 mm height. Threads use their nominal cylindrical collision envelope and the square recess is an intentionally bounded display approximation of the hex socket. | [Supplier product specification](https://www.accu.co.uk/metric-cap-head-screws/386767-SSCF-M3-8-12-9-Z). The page does not provide an available CAD download or an explicit redistribution grant. No Accu CAD or imagery is included. |
 | `propeller-5x4.3x3` | HQProp HQ5X4.3X3V2S-PC | 5-inch diameter, 4.3-inch pitch, 3 blades, Ø12.8 × 6.5 mm hub, Ø5 mm shaft | 3.8 g | No product tolerances or blade airfoil coordinates are published. The visible blade planform is illustrative. Collision uses the full swept disc; the protected disc radius is 66 mm, adding 2.5 mm radial clearance to the exact 63.5 mm nominal radius. | [Manufacturer product/specification page](https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html). The page is copyright HQProp and gives no explicit CAD redistribution grant. No HQProp CAD or imagery is included. |
 | `motor-wiring-corridor` | Reference 3×20AWG motor-lead routing corridor rev 1 | Two orthogonal 184 × 6 × 6 mm protected routes connect the motor and central-stack regions; motor source specifies three 20AWG, 150 mm leads | 0 kg with accounting role `none`; this derived clearance constraint is not a physical BOM component | The 6 mm corridor section and assembly route are conservative design assumptions, not manufacturer dimensions. No independent harness mass is claimed. | Derived-constraint inputs are the [Hobbywing motor lead specification](https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf) and [SpeedyBee stack connection specification](https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/). No external asset is included. |
+| `body-interface` | Sunderlabs FRAME-INTERFACE-01 | 28 × 38 × 6 mm plate, two M3 interfaces at 24 mm spacing, and one 14 × 12 × 12 mm cable keep-out | 18 g | The local reference drawing is exact for this foundation fixture and is not presented as a production frame specification. | Local engineering drawing `sunderlabs:foundation-interface:rev-1`; specification facts only. |
 
 ## Geometry and optimization boundary
 
@@ -33,17 +34,21 @@ viewer's established millimetre boundary.
   subtractions. The viewer uses the same catalog dimensions to render four
   multi-piece motors; it does not maintain a second product fixture.
 - The avionics view is two separate detailed boards at the published FC and ESC
-  sizes. Their four Ø4 mm mounting interfaces are preserved on the published
-  30.5 mm square pattern.
-- Sixteen M3×8 motor screws are physical fixed-component instances. Their graph
-  records shank, head, and recessed drive semantics.
+  sizes. Their centers are shifted by the exact 0.1 mm needed to place the
+  combined 19.8 mm stack bounds symmetrically around the same anchor used by
+  collision and envelope geometry. Their four Ø4 mm mounting interfaces are
+  preserved on the published 30.5 mm square pattern.
+- Sixteen M3×8 motor screws are physical fixed-component instances. Their
+  under-head anchors sit on the underside of each 6 mm generated plate, their
+  8 mm shanks pass through the plate, and the recessed drive opens through the
+  exposed head face. Compiled and viewer geometry read the same graph.
 - Battery, motor, avionics, and fastener collision records are immutable
   component geometry. Their keep-outs are obstacles to generated frame
   material.
 - Each propeller is a visible three-blade component alongside a distinct filled
-  66 mm radius × 8.5 mm protected swept volume. Both catalog and assembly mark
-  every propeller instance `protected`; neither blades nor rotor envelopes are
-  optimized frame structure.
+  66 mm radius × 8.5 mm protected swept volume. The exact component revision
+  supplies the `protected` role to every assembly instance; neither blades nor
+  rotor envelopes are optimized frame structure.
 - Wiring corridors are visibly rendered as translucent constraint boxes. They
   are protected geometry and are never counted or rendered as generated
   structure; their zero mass and `none` accounting role reflect that the

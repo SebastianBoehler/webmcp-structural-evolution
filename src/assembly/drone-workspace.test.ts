@@ -1,8 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { referenceDroneAssembly } from "../samples/reference-drone-assembly";
 
 const step = vi.hoisted(() => ({ decode: vi.fn() }));
+const packages = vi.hoisted(() => ({ parse: vi.fn() }));
 vi.mock("./step-import", () => ({ decodeStepFile: step.decode }));
+vi.mock("./component-package", () => ({ parseComponentPackage: packages.parse }));
 
 import { droneAssemblyVisuals, INITIAL_MOTORS } from "./drone-workspace";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
@@ -25,11 +28,17 @@ describe("drone assembly workspace", () => {
     });
     expect(parts.find(({ id }) => id === "motor-east-fastener-1")).toMatchObject({
       kind: "fastener",
-      center: [110.657, 5.657, 3],
+      center: [110.657, 5.657, -3],
       shank: { centerZ: 4, height: 8 },
       head: { centerZ: -1.5, height: 3 },
       localBounds: { minimum: [-2.84, -2.84, -3], maximum: [2.84, 2.84, 8] },
     });
+    const mount = parts.find(({ id }) => id === "motor-east-mount");
+    const fastener = parts.find(({ id }) => id === "motor-east-fastener-1");
+    if (mount?.kind !== "motor-mount" || fastener?.kind !== "fastener") throw new Error("mating geometry missing");
+    expect(fastener.center[2]).toBe(mount.center[2] - mount.height / 2);
+    expect(fastener.center[2] + fastener.shank.height).toBeGreaterThan(mount.center[2] + mount.height / 2);
+    expect(fastener.center[2] + fastener.head.centerZ + fastener.head.height / 2).toBe(fastener.center[2]);
     expect(parts.find(({ id }) => id === "motor-east-propeller-swept-volume")).toMatchObject({
       appearance: "constraint",
       kind: "protected-disc",
@@ -66,6 +75,33 @@ describe("drone assembly workspace", () => {
     ])).toEqual(Array.from({ length: 9 }, () => [13, 14]));
     expect(view.result.current.layoutState).toBe("changed");
     expect(view.result.current.layoutVersion).toBe(2);
+  });
+
+  it("renders the exact solver-facing protected world volumes", () => {
+    const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
+    const viewerVolumes = parts.filter((part) =>
+      part.appearance === "constraint" && part.kind !== "guard").map((part) => ({
+      id: part.id,
+      kind: part.kind === "protected-disc" ? "cylinder" : part.kind,
+      center: part.center,
+      ...(part.kind === "box" ? { size: part.size, yaw: part.rotation?.[2] ?? 0 }
+        : part.kind === "protected-disc" ? { radius: part.radius, height: part.height, yaw: 0 } : {}),
+    })).sort((left, right) => left.id.localeCompare(right.id));
+    const solverVolumes = referenceDroneAssembly.obstacleVolumes.map((volume) => ({
+      id: volume.id,
+      kind: volume.kind,
+      center: [volume.center.x.value, volume.center.y.value, volume.center.z.value].map((value) => value * 1_000),
+      ...(volume.kind === "box" ? {
+        size: [volume.size.x.value, volume.size.y.value, volume.size.z.value].map((value) => value * 1_000),
+        yaw: volume.orientation.yaw.value,
+      } : {
+        radius: volume.radius.value * 1_000,
+        height: volume.height.value * 1_000,
+        yaw: volume.orientation.yaw.value,
+      }),
+    })).sort((left, right) => left.id.localeCompare(right.id));
+
+    expect(viewerVolumes).toEqual(solverVolumes);
   });
 
   it("treats a propeller as a visible handle for its whole motor group", () => {
@@ -106,5 +142,40 @@ describe("drone assembly workspace", () => {
     act(() => view.result.current.movePart("motor-east", [112, 0, 12], 1));
 
     expect(() => view.result.current.movePart("motor-east", [120, 0, 12], 1)).toThrow(/layout is stale/i);
+  });
+
+  it("routes a trusted local ZIP through package verification before staging its display asset", async () => {
+    packages.parse.mockResolvedValueOnce({
+      manifest: {
+        component: {
+          id: "verified-motor",
+          category: "motor",
+          manufacturer: "Verified",
+          partNumber: "MOTOR-1",
+          mass: { value: 0.04, unit: "kg" },
+          envelope: {
+            kind: "box",
+            center: { x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" } },
+            size: { x: { value: 0.03, unit: "m" }, y: { value: 0.03, unit: "m" }, z: { value: 0.02, unit: "m" } },
+          },
+          geometry: { kind: "asset", assetId: "a".repeat(64), mediaType: "model/gltf-binary", units: "m" },
+          provenance: { sources: [{ reference: "https://example.com/motor" }] },
+        },
+        assets: [{ path: "assets/motor.glb", digest: "a".repeat(64), mediaType: "model/gltf-binary", units: "m", role: "display" }],
+      },
+      assets: { "assets/motor.glb": new Uint8Array([1, 2, 3]) },
+    });
+    const file = new File(["zip"], "motor.zip", { type: "application/zip" });
+    const view = renderHook(() => useAssemblyWorkspace());
+
+    await act(async () => { await view.result.current.importFile(file); });
+
+    expect(packages.parse).toHaveBeenCalledWith(file);
+    expect(view.result.current.imports[0]).toMatchObject({
+      name: "MOTOR-1",
+      sizeMm: [30, 30, 20],
+      validation: "package-digest-verified",
+    });
+    expect(view.result.current.parts.find(({ id }) => id === view.result.current.imports[0]?.id)?.kind).toBe("model");
   });
 });

@@ -6,6 +6,7 @@ import {
   componentGeometryEnvelope,
   fastenerRenderContract,
   motorRenderContract,
+  stackRenderContract,
 } from "./reference-drone-render-contract";
 
 const component = (id: string) => {
@@ -55,12 +56,41 @@ describe("reference drone render contract", () => {
 
     expect(contract).toMatchObject({
       shank: { radius: 0.0015, height: 0.008, centerZ: 0.004 },
-      head: { radius: 0.00284 },
+      head: { radius: 0.00284, height: 0.003, centerZ: -0.0015 },
+      socketDepth: 0.0013,
+      socketCenterZ: -0.00235,
       localBounds: { minimum: [-0.00284, -0.00284, -0.003], maximum: [0.00284, 0.00284, 0.008] },
     });
     if (fastener.geometry.kind !== "parametric") throw new Error("fastener graph missing");
     await expect(compileParametricGeometry(fastener.geometry.graph)).resolves.toMatchObject({
       sizeMm: [5.68, 5.68, 11],
     });
+  });
+
+  it("centers the avionics display, collision, and envelope on one exact anchor", () => {
+    const stack = component("fc-esc-stack-30x30");
+    const contract = stackRenderContract(stack);
+    const collision = stack.collisionVolumes[0];
+
+    expect(contract.localBounds).toEqual({
+      minimum: [-0.0228, -0.022, -0.0099],
+      maximum: [0.0228, 0.022, 0.0099],
+    });
+    expect(stack.anchor.position).toEqual({
+      x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" },
+    });
+    expect(collision).toMatchObject({
+      center: stack.anchor.position,
+      size: { z: { value: 0.0198, unit: "m" } },
+    });
+    expect(componentGeometryEnvelope(stack)).toEqual(contract.localBounds);
+    expect(Math.min(
+      contract.flightController.center[2] - contract.flightController.size[2] / 2,
+      contract.esc.center[2] - contract.esc.size[2] / 2,
+    )).toBeCloseTo(contract.localBounds.minimum[2], 12);
+    expect(Math.max(
+      contract.flightController.center[2] + contract.flightController.size[2] / 2,
+      contract.esc.center[2] + contract.esc.size[2] / 2,
+    )).toBeCloseTo(contract.localBounds.maximum[2], 12);
   });
 });

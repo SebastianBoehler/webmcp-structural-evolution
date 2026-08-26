@@ -1,21 +1,24 @@
-import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import type { ComponentDefinition } from "../domain/component-model";
 import {
-  REFERENCE_DRONE_CATALOG,
-  referenceDroneAssembly,
-  type ReferenceDroneComponent,
-  type ReferenceGeometry,
-  type SiVector,
-} from "../samples/reference-drone-catalog";
+  referenceAssemblyInstance,
+  referenceAssemblyInstancesFor,
+  REFERENCE_MOTOR_MOUNT_PLATE,
+} from "../samples/reference-drone-assembly";
+import { referenceComponent } from "../samples/reference-drone-catalog";
 import {
+  boxRenderContract,
   fastenerRenderContract,
   motorRenderContract,
+  propellerRenderContract,
+  stackRenderContract,
   type AxialFeature,
   type RenderBounds,
+  type SiVector,
 } from "../samples/reference-drone-render-contract";
+import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { ImportedComponent } from "./component-import";
 
 export type Point3 = readonly [number, number, number];
-
 export interface MotorPlacement {
   readonly id: string;
   readonly label: string;
@@ -25,210 +28,121 @@ export interface MotorPlacement {
 
 const millimetres = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000;
 const viewerPoint = (value: SiVector): Point3 => value.map(millimetres) as unknown as Point3;
+const lengthPoint = (value: ComponentDefinition["centerOfMass"]): Point3 => viewerPoint([
+  value.x.value, value.y.value, value.z.value,
+]);
+const instancePoint = (id: string): Point3 => lengthPoint(referenceAssemblyInstance(id).transform.position);
 const viewerFeature = (feature: AxialFeature) => ({
-  radius: millimetres(feature.radius),
-  height: millimetres(feature.height),
-  centerZ: millimetres(feature.centerZ),
+  radius: millimetres(feature.radius), height: millimetres(feature.height), centerZ: millimetres(feature.centerZ),
 });
 const viewerBounds = (bounds: RenderBounds) => ({
-  minimum: viewerPoint(bounds.minimum),
-  maximum: viewerPoint(bounds.maximum),
+  minimum: viewerPoint(bounds.minimum), maximum: viewerPoint(bounds.maximum),
 });
-const catalogComponent = (id: string): ReferenceDroneComponent => {
-  const component = REFERENCE_DRONE_CATALOG.find((candidate) => candidate.id === id);
-  if (!component) throw new Error(`Reference drone component missing: ${id}`);
-  return component;
-};
-const componentGeometry = <Kind extends ReferenceGeometry["kind"]>(
-  component: ReferenceDroneComponent,
-  kind: Kind,
-): Extract<ReferenceGeometry, { kind: Kind }> => {
-  if (component.geometry.kind !== kind) throw new Error(`Reference ${component.id} geometry must be ${kind}`);
-  return component.geometry as Extract<ReferenceGeometry, { kind: Kind }>;
-};
-const assemblyInstance = (id: string) => {
-  const instance = referenceDroneAssembly.instances.find((candidate) => candidate.id === id);
-  if (!instance) throw new Error(`Reference drone instance missing: ${id}`);
-  return instance;
-};
-const motorComponent = catalogComponent("motor-2207");
-const propellerComponent = catalogComponent("propeller-5x4.3x3");
-const fastenerComponent = catalogComponent("fastener-m3x8");
-const stackComponent = catalogComponent("fc-esc-stack-30x30");
-const batteryComponent = catalogComponent("battery-6s-1550");
-const wiringComponent = catalogComponent("motor-wiring-corridor");
-const propellerGeometry = componentGeometry(propellerComponent, "swept-rotor");
-const stackGeometry = componentGeometry(stackComponent, "stack");
-const batteryGeometry = componentGeometry(batteryComponent, "box");
-const wiringGeometry = componentGeometry(wiringComponent, "corridor");
+const offset = (left: Point3, right: Point3): Point3 => left.map((value, axis) => value - right[axis]!) as unknown as Point3;
+const add = (left: Point3, right: Point3): Point3 => left.map((value, axis) => value + right[axis]!) as unknown as Point3;
+
+const motorComponent = referenceComponent("motor-2207");
+const propellerComponent = referenceComponent("propeller-5x4.3x3");
+const fastenerComponent = referenceComponent("fastener-m3x8");
+const stackComponent = referenceComponent("fc-esc-stack-30x30");
+const batteryComponent = referenceComponent("battery-6s-1550");
+const wiringComponent = referenceComponent("motor-wiring-corridor");
+const bodyComponent = referenceComponent("body-interface");
+const propellerDisplay = propellerRenderContract(propellerComponent);
 const motorDisplay = motorRenderContract(motorComponent);
 const fastenerDisplay = fastenerRenderContract(fastenerComponent);
+const stackDisplay = stackRenderContract(stackComponent);
+const batteryDisplay = boxRenderContract(batteryComponent, "battery-package");
+const wiringDisplay = boxRenderContract(wiringComponent, "wiring-corridor");
+const bodyDisplay = boxRenderContract(bodyComponent, "body-interface-plate");
 
 const motorLabels: Readonly<Record<string, string>> = Object.freeze({
   "motor-east": "East motor", "motor-north": "North motor", "motor-west": "West motor", "motor-south": "South motor",
 });
-export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze(referenceDroneAssembly.instances
-  .filter(({ componentId }) => componentId === motorComponent.id)
-  .map(({ id, position }) => ({ id, label: motorLabels[id]!, anchor: viewerPoint(position), movable: true })));
-
+export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze(referenceAssemblyInstancesFor("motor-2207")
+  .map(({ instanceId, transform }) => ({ id: instanceId, label: motorLabels[instanceId]!, anchor: lengthPoint(transform.position), movable: true })));
 export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze({
-  "flight-controller": viewerPoint(assemblyInstance("fc-esc-stack").position),
-  battery: viewerPoint(assemblyInstance("battery").position),
+  "flight-controller": instancePoint("fc-esc-stack"),
+  battery: instancePoint("battery"),
 });
 
+function protectedCylinder(component: ComponentDefinition) {
+  const volume = component.protectedVolumes[0];
+  if (volume?.kind !== "cylinder") throw new Error(`Reference ${component.id} requires a protected cylinder`);
+  return volume;
+}
+
+function protectedBox(component: ComponentDefinition) {
+  const volume = component.protectedVolumes[0];
+  if (volume?.kind !== "box") throw new Error(`Reference ${component.id} requires a protected box`);
+  return volume;
+}
+
 function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
-  const [x, y, z] = motor.anchor;
   const dragGroup = motor.id;
-  const propeller = propellerGeometry;
-  const originalMotor = assemblyInstance(motor.id);
-  const propellerInstance = assemblyInstance(`${motor.id}-propeller`);
-  const propellerOffset = viewerPoint(propellerInstance.position.map(
-    (value, axis) => value - originalMotor.position[axis]!,
-  ) as unknown as SiVector);
-  const protectedRotor = propellerComponent.protectedEnvelopes[0]!;
-  if (protectedRotor.kind !== "swept-disc" || protectedRotor.radius === undefined || protectedRotor.height === undefined) {
-    throw new Error("Reference propeller protected swept volume is invalid");
-  }
-  const motorFasteners = referenceDroneAssembly.instances.filter(({ id }) => id.startsWith(`${motor.id}-fastener-`));
+  const originalMotor = instancePoint(motor.id);
+  const propellerId = `${motor.id}-propeller`;
+  const propellerCenter = add(motor.anchor, offset(instancePoint(propellerId), originalMotor));
+  const swept = protectedCylinder(propellerComponent);
+  const motorFasteners = referenceAssemblyInstancesFor("fastener-m3x8")
+    .filter(({ instanceId }) => instanceId.startsWith(`${motor.id}-fastener-`));
   return [
-    {
-      id: `${motor.id}-mount`,
-      selectionId: "arm-design-region",
-      label: `${motor.label} load-bearing plate`,
-      appearance: "generated",
-      kind: "motor-mount",
-      center: [x, y, z - 3],
-      radius: 17.5,
-      height: 6,
-      boltCircle: Math.hypot(millimetres(motorDisplay.mountHoles[0]!.centerX), millimetres(motorDisplay.mountHoles[0]!.centerY)),
-      boltRadius: millimetres(fastenerDisplay.shank.radius),
-      dragGroup,
-    },
-    {
-      id: motor.id,
-      selectionId: motor.id,
-      label: motor.label,
+    { id: `${motor.id}-mount`, selectionId: "arm-design-region", label: `${motor.label} load-bearing plate`, appearance: "generated", kind: "motor-mount", center: add(motor.anchor, viewerPoint(REFERENCE_MOTOR_MOUNT_PLATE.centerFromMotorAnchor)), radius: millimetres(REFERENCE_MOTOR_MOUNT_PLATE.radius), height: millimetres(REFERENCE_MOTOR_MOUNT_PLATE.height), boltCircle: Math.hypot(millimetres(motorDisplay.mountHoles[0]!.centerX), millimetres(motorDisplay.mountHoles[0]!.centerY)), boltRadius: millimetres(fastenerDisplay.shank.radius), dragGroup },
+    { id: motor.id, selectionId: motor.id, label: motor.label, appearance: "component", kind: "motor", center: motor.anchor, base: viewerFeature(motorDisplay.base), stator: viewerFeature(motorDisplay.stator), bell: viewerFeature(motorDisplay.bell), shaft: viewerFeature(motorDisplay.shaft), mountHoles: motorDisplay.mountHoles.map((hole) => ({ ...viewerFeature(hole), centerX: millimetres(hole.centerX), centerY: millimetres(hole.centerY) })), localBounds: viewerBounds(motorDisplay.localBounds), movable: motor.movable, dragGroup },
+    { id: propellerId, selectionId: propellerId, label: `${motor.label} propeller`, appearance: "component", kind: "propeller", center: propellerCenter, radius: millimetres(propellerDisplay.radius), hubRadius: millimetres(propellerDisplay.hubRadius), hubHeight: millimetres(propellerDisplay.hubHeight), bladeCount: propellerDisplay.bladeCount, movable: motor.movable, dragGroup },
+    { id: `${propellerId}-${swept.id}`, selectionId: `${propellerId}-${swept.id}`, label: `${motor.label} filled protected rotor swept volume`, appearance: "constraint", kind: "protected-disc", center: propellerCenter, radius: millimetres(swept.radius.value), height: millimetres(swept.height.value), dragGroup },
+    { id: `${motor.id}-guard`, selectionId: `${motor.id}-guard`, label: `${motor.label} rotor safety zone`, appearance: "constraint", kind: "guard", center: propellerCenter, radius: millimetres(swept.radius.value), tubeRadius: 1.15, dragGroup },
+    ...motorFasteners.map((instance, index): AssemblyVisualPart => ({
+      id: instance.instanceId,
+      selectionId: instance.instanceId,
+      label: `${motor.label} M3x8 fastener ${index + 1}`,
       appearance: "component",
-      kind: "motor",
-      center: motor.anchor,
-      base: viewerFeature(motorDisplay.base),
-      stator: viewerFeature(motorDisplay.stator),
-      bell: viewerFeature(motorDisplay.bell),
-      shaft: viewerFeature(motorDisplay.shaft),
-      mountHoles: motorDisplay.mountHoles.map((hole) => ({
-        ...viewerFeature(hole), centerX: millimetres(hole.centerX), centerY: millimetres(hole.centerY),
-      })),
-      localBounds: viewerBounds(motorDisplay.localBounds),
-      movable: motor.movable,
+      kind: "fastener",
+      center: add(motor.anchor, offset(lengthPoint(instance.transform.position), originalMotor)),
+      shank: viewerFeature(fastenerDisplay.shank),
+      head: viewerFeature(fastenerDisplay.head),
+      socketWidth: millimetres(fastenerDisplay.socketWidth),
+      socketDepth: millimetres(fastenerDisplay.socketDepth),
+      socketCenterZ: millimetres(fastenerDisplay.socketCenterZ),
+      localBounds: viewerBounds(fastenerDisplay.localBounds),
       dragGroup,
-    },
-    {
-      id: `${motor.id}-propeller`,
-      selectionId: `${motor.id}-propeller`,
-      label: `${motor.label} propeller`,
-      appearance: "component",
-      kind: "propeller",
-      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
-      radius: millimetres(propeller.radius),
-      hubRadius: millimetres(propeller.hubRadius),
-      hubHeight: millimetres(propeller.hubHeight),
-      bladeCount: propeller.bladeCount,
-      movable: motor.movable,
-      dragGroup,
-    },
-    {
-      id: `${motor.id}-propeller-swept-volume`,
-      selectionId: `${motor.id}-propeller-swept-volume`,
-      label: `${motor.label} filled protected rotor swept volume`,
-      appearance: "constraint",
-      kind: "protected-disc",
-      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
-      radius: millimetres(protectedRotor.radius),
-      height: millimetres(protectedRotor.height),
-      dragGroup,
-    },
-    {
-      id: `${motor.id}-guard`,
-      selectionId: `${motor.id}-guard`,
-      label: `${motor.label} rotor safety zone`,
-      appearance: "constraint",
-      kind: "guard",
-      center: [x + propellerOffset[0], y + propellerOffset[1], z + propellerOffset[2]],
-      radius: millimetres(protectedRotor.radius),
-      tubeRadius: 1.15,
-      dragGroup,
-    },
-    ...motorFasteners.map((instance, index): AssemblyVisualPart => {
-      const offset = viewerPoint(instance.position.map(
-        (value, axis) => value - originalMotor.position[axis]!,
-      ) as unknown as SiVector);
-      return {
-        id: instance.id,
-        selectionId: instance.id,
-        label: `${motor.label} M3x8 fastener ${index + 1}`,
-        appearance: "component",
-        kind: "fastener",
-        center: [x + offset[0], y + offset[1], z + offset[2]],
-        shank: viewerFeature(fastenerDisplay.shank),
-        head: viewerFeature(fastenerDisplay.head),
-        socketWidth: millimetres(fastenerDisplay.socketWidth),
-        socketDepth: millimetres(fastenerDisplay.socketDepth),
-        localBounds: viewerBounds(fastenerDisplay.localBounds),
-        dragGroup,
-      };
-    }),
+    })),
   ];
 }
 
-function equipmentParts(equipmentPositions: Readonly<Record<string, Point3>>): readonly AssemblyVisualPart[] {
-  const stackCenter = equipmentPositions["flight-controller"]!;
-  const [x, y, z] = stackCenter;
-  const [flightController, esc] = stackGeometry.boards;
-  const gap = millimetres(stackGeometry.boardGap);
-  const protectedStack = stackComponent.protectedEnvelopes[0]!;
-  const batteryCenter = equipmentPositions.battery!;
-  const protectedBattery = batteryComponent.protectedEnvelopes[0]!;
+function boxConstraint(id: string, label: string, center: Point3, component: ComponentDefinition, dragGroup?: string): AssemblyVisualPart {
+  const volume = protectedBox(component);
+  return { id: `${id}-${volume.id}`, selectionId: `${id}-${volume.id}`, label, appearance: "constraint", kind: "box", center: add(center, lengthPoint(volume.center)), size: lengthPoint(volume.size), dragGroup };
+}
+
+function equipmentParts(equipment: Readonly<Record<string, Point3>>): readonly AssemblyVisualPart[] {
+  const stackCenter = equipment["flight-controller"]!;
+  const batteryCenter = equipment.battery!;
   return [
-    { id: "flight-controller", selectionId: "flight-controller", label: "SpeedyBee F405 V4 flight controller", appearance: "component", kind: "flight-controller", center: [x, y, z + gap / 2 + millimetres(flightController!.size[2]) / 2], size: viewerPoint(flightController!.size), movable: true, dragGroup: "flight-controller" },
-    { id: "flight-controller-esc", selectionId: "flight-controller", label: "SpeedyBee BLS 55A 4-in-1 ESC", appearance: "component", kind: "flight-controller", center: [x, y, z - gap / 2 - millimetres(esc!.size[2]) / 2], size: viewerPoint(esc!.size), movable: true, dragGroup: "flight-controller" },
-    { id: "flight-controller-keepout", selectionId: "flight-controller-keepout", label: "Avionics stack protected volume", appearance: "constraint", kind: "box", center: stackCenter, size: viewerPoint(protectedStack.size!), dragGroup: "flight-controller" },
-    { id: "battery", selectionId: "battery", label: "Tattu R-Line V5 1550mAh 6S battery", appearance: "component", kind: "box", center: batteryCenter, size: viewerPoint(batteryGeometry.size), movable: true, dragGroup: "battery" },
-    { id: "battery-keepout", selectionId: "battery-keepout", label: "Battery protected volume", appearance: "constraint", kind: "box", center: batteryCenter, size: viewerPoint(protectedBattery.size!), dragGroup: "battery" },
+    { id: "flight-controller", selectionId: "flight-controller", label: "SpeedyBee F405 V4 flight controller", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.flightController.center)), size: viewerPoint(stackDisplay.flightController.size), movable: true, dragGroup: "flight-controller" },
+    { id: "flight-controller-esc", selectionId: "flight-controller", label: "SpeedyBee BLS 55A 4-in-1 ESC", appearance: "component", kind: "flight-controller", center: add(stackCenter, viewerPoint(stackDisplay.esc.center)), size: viewerPoint(stackDisplay.esc.size), movable: true, dragGroup: "flight-controller" },
+    boxConstraint("fc-esc-stack", "Avionics stack protected volume", stackCenter, stackComponent, "flight-controller"),
+    { id: "battery", selectionId: "battery", label: "Tattu R-Line V5 1550mAh 6S battery", appearance: "component", kind: "box", center: batteryCenter, size: viewerPoint(batteryDisplay.size), movable: true, dragGroup: "battery" },
+    boxConstraint("battery", "Battery protected volume", batteryCenter, batteryComponent, "battery"),
   ];
 }
 
-function wiringParts(): readonly AssemblyVisualPart[] {
-  return referenceDroneAssembly.instances.filter(({ componentId }) => componentId === wiringComponent.id)
-    .map((instance): AssemblyVisualPart => ({
-      id: instance.id,
-      selectionId: instance.id,
-      label: "Protected 20AWG motor wiring corridor",
-      appearance: "constraint",
-      kind: "box",
-      center: viewerPoint(instance.position),
-      rotation: [0, 0, instance.yaw],
-      size: viewerPoint(wiringGeometry.size),
-    }));
+function staticConstraintParts(): readonly AssemblyVisualPart[] {
+  const wiring = referenceAssemblyInstancesFor("motor-wiring-corridor").map((instance): AssemblyVisualPart => ({
+    id: `${instance.instanceId}-keepout`, selectionId: `${instance.instanceId}-keepout`, label: "Protected 20AWG motor wiring corridor", appearance: "constraint", kind: "box", center: lengthPoint(instance.transform.position), rotation: [0, 0, instance.transform.orientation.yaw.value], size: viewerPoint(wiringDisplay.size),
+  }));
+  const bodyCenter = instancePoint("body-interface");
+  return [
+    { id: "body-interface", selectionId: "body-interface", label: "Frame body interface", appearance: "component", kind: "box", center: add(bodyCenter, viewerPoint(bodyDisplay.center)), size: viewerPoint(bodyDisplay.size) },
+    boxConstraint("body-interface", "Body cable clearance", bodyCenter, bodyComponent),
+    ...wiring,
+  ];
 }
 
 function importedPart(component: ImportedComponent, index: number, center?: Point3): AssemblyVisualPart {
-  const shared = {
-    id: component.id,
-    selectionId: component.id,
-    label: component.name,
-    appearance: "component" as const,
-    center: center ?? [index * 38 - 19, 0, 22] as Point3,
-    movable: true,
-    dragGroup: component.id,
-    size: component.sizeMm,
-  };
+  const shared = { id: component.id, selectionId: component.id, label: component.name, appearance: "component" as const, center: center ?? [index * 38 - 19, 0, 22] as Point3, movable: true, dragGroup: component.id, size: component.sizeMm };
   if (component.mesh) return { ...shared, kind: "mesh", mesh: component.mesh };
-  return {
-    ...shared,
-    kind: "model",
-    assetUrl: component.assetUrl,
-    assetUnits: component.assetUnits,
-  };
+  return { ...shared, kind: "model", assetUrl: component.assetUrl, assetUnits: component.assetUnits };
 }
 
 export function droneAssemblyVisuals(
@@ -238,17 +152,9 @@ export function droneAssemblyVisuals(
   equipmentPositions: Readonly<Record<string, Point3>> = INITIAL_EQUIPMENT,
 ): readonly AssemblyVisualPart[] {
   return Object.freeze([
-    {
-      id: "arm-design-region",
-      selectionId: "arm-design-region",
-      label: "Full frame design space",
-      appearance: "design-region",
-      kind: "box",
-      center: [0, 0, 0],
-      size: [240, 240, 24],
-    },
+    { id: "arm-design-region", selectionId: "arm-design-region", label: "Full frame design space", appearance: "design-region", kind: "box", center: [0, 0, 0], size: [240, 240, 24] },
     ...equipmentParts(equipmentPositions),
-    ...wiringParts(),
+    ...staticConstraintParts(),
     ...motors.flatMap(motorGroup),
     ...imports.map((component, index) => importedPart(component, index, importPositions[component.id])),
   ]);

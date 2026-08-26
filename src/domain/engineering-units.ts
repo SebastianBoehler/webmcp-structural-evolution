@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const finite = z.number().finite();
 const positive = finite.positive();
+const nonnegative = finite.nonnegative();
 const unitValue = <Unit extends string>(unit: Unit, value = finite) =>
   z.object({ value, unit: z.literal(unit) }).strict();
 
@@ -12,8 +13,8 @@ export const PositiveLengthSchema = z.discriminatedUnion("unit", [
   unitValue("m", positive),
 ]);
 export const MassSchema = z.discriminatedUnion("unit", [
-  unitValue("g", positive),
-  unitValue("kg", positive),
+  unitValue("g", nonnegative),
+  unitValue("kg", nonnegative),
 ]);
 export const AngleSchema = z.discriminatedUnion("unit", [unitValue("deg"), unitValue("rad")]);
 export const ForceSchema = unitValue("N");
@@ -34,12 +35,19 @@ export const ForceVectorSchema = z.object({ x: ForceSchema, y: ForceSchema, z: F
 export const OrientationSchema = z.object({ roll: AngleSchema, pitch: AngleSchema, yaw: AngleSchema }).strict();
 export const TransformSchema = z.object({ position: LengthVectorSchema, orientation: OrientationSchema }).strict();
 
+const zeroOrientation = {
+  roll: { value: 0, unit: "rad" as const },
+  pitch: { value: 0, unit: "rad" as const },
+  yaw: { value: 0, unit: "rad" as const },
+};
+
 export const VolumeSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("box"),
     id: z.string().min(1),
     center: LengthVectorSchema,
     size: PositiveLengthVectorSchema,
+    orientation: OrientationSchema.default(zeroOrientation),
   }).strict(),
   z.object({
     kind: z.literal("cylinder"),
@@ -106,7 +114,7 @@ export const normalizeTransform = (value: z.infer<typeof TransformSchema>) => ({
   orientation: normalizeOrientation(value.orientation),
 });
 export const normalizeVolume = (value: z.infer<typeof VolumeSchema>) => value.kind === "box"
-  ? { ...value, center: normalizeLengthVector(value.center), size: normalizePositiveLengthVector(value.size) }
+  ? { ...value, center: normalizeLengthVector(value.center), size: normalizePositiveLengthVector(value.size), orientation: normalizeOrientation(value.orientation) }
   : {
       ...value,
       center: normalizeLengthVector(value.center),

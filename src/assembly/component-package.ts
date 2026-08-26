@@ -8,8 +8,9 @@ import {
   defineComponent,
   type ComponentDefinition,
 } from "../domain/component-model";
+import { canonicalJson } from "../domain/canonical-json";
 import { LengthUnitSchema } from "../domain/engineering-units";
-import type { DeepReadonly } from "../domain/snapshots";
+import { RevisionSchema, type DeepReadonly } from "../domain/snapshots";
 
 export const MAX_PACKAGE_BYTES = 50 * 1024 * 1024;
 const MAX_ENTRY_COUNT = 16;
@@ -25,11 +26,16 @@ export const ComponentPackageAssetSchema = z.object({
   role: AssetRoleSchema,
 }).strict();
 
-export const ComponentPackageManifestSchema = z.object({
-  version: z.literal(1),
+const ComponentPackageManifestEnvelopeSchema = z.object({
+  version: z.number().int().positive(),
   component: ComponentDefinitionSchema,
   assets: z.array(ComponentPackageAssetSchema).max(MAX_ENTRY_COUNT - 1),
-}).strict().superRefine((manifest, context) => {
+  manifestDigest: DigestSchema,
+}).strict();
+
+export const ComponentPackageManifestSchema = ComponentPackageManifestEnvelopeSchema.safeExtend({
+  version: z.literal(1),
+}).superRefine((manifest, context) => {
   const paths = new Set<string>();
   for (const [index, asset] of manifest.assets.entries()) {
     if (!entryPath.test(asset.path) || asset.path === componentManifestPath) {
@@ -41,10 +47,12 @@ export const ComponentPackageManifestSchema = z.object({
     paths.add(asset.path);
   }
   const geometry = manifest.component.geometry;
-  if (geometry?.kind === "asset") {
+  if (geometry.kind === "asset") {
     const geometryAsset = manifest.assets.find(({ digest }) => digest === geometry.assetId);
     if (!geometryAsset || geometryAsset.mediaType !== geometry.mediaType || geometryAsset.units !== geometry.units) {
       context.addIssue({ code: "custom", message: "Component geometry must reference a declared asset with matching type and units", path: ["component", "geometry"] });
+    } else if (geometryAsset.role !== "display") {
+      context.addIssue({ code: "custom", message: "Component geometry asset must be declared as the display representation", path: ["assets"] });
     }
   }
 });
@@ -72,13 +80,37 @@ export async function digestAsset(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+const ManifestDigestInputSchema = z.object({
+  version: z.number().int().positive(),
+  componentRevision: RevisionSchema,
+  assets: z.array(ComponentPackageAssetSchema),
+}).strict();
+
+export async function digestComponentPackageManifest(value: unknown): Promise<string> {
+  const input = ManifestDigestInputSchema.parse(value);
+  return digestAsset(new TextEncoder().encode(canonicalJson({
+    version: input.version,
+    componentRevision: input.componentRevision,
+    assets: input.assets,
+  })));
+}
+
 export async function parseComponentPackage(file: File): Promise<ParsedComponentPackage> {
   if (file.size > MAX_PACKAGE_BYTES) throw new RangeError("Component package exceeds 50 MB");
   const entries = unzip(new Uint8Array(await file.arrayBuffer()));
   assertSafeEntries(entries);
   const manifestBytes = entries[componentManifestPath];
   if (!manifestBytes) throw new Error("Component package is missing component.json");
-  const manifest = ComponentPackageManifestSchema.parse(parseManifest(manifestBytes));
+  const envelope = ComponentPackageManifestEnvelopeSchema.parse(parseManifest(manifestBytes));
+  const expectedManifestDigest = await digestComponentPackageManifest({
+    version: envelope.version,
+    componentRevision: envelope.component.revision,
+    assets: envelope.assets,
+  });
+  if (expectedManifestDigest !== envelope.manifestDigest) {
+    throw new Error("Component package manifest digest does not match canonical content");
+  }
+  const manifest = ComponentPackageManifestSchema.parse(envelope);
   const canonicalManifest = await canonicalizeManifest(manifest);
   const assets = await verifyDeclaredDigests(entries, canonicalManifest.assets);
   return Object.freeze({ manifest: Object.freeze(canonicalManifest), assets: Object.freeze(assets) });

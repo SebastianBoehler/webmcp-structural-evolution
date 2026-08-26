@@ -41,7 +41,7 @@ function fastenerPieces(part: Extract<AssemblyVisualPart, { kind: "fastener" }>)
   return [
     { id: "fastener-shank", geometry: cylinder(part.shank.radius, part.shank.height), color: 0x7b828b, metalness: 0.92, position: [0, 0, part.shank.centerZ] },
     { id: "fastener-head", geometry: cylinder(part.head.radius, part.head.height), color: 0x59616b, metalness: 0.92, position: [0, 0, part.head.centerZ] },
-    { id: "fastener-socket", geometry: new THREE.BoxGeometry(part.socketWidth, part.socketWidth, part.socketDepth), color: 0x161a1f, position: [0, 0, -part.head.height + part.socketDepth / 2] },
+    { id: "fastener-socket", geometry: new THREE.BoxGeometry(part.socketWidth, part.socketWidth, part.socketDepth), color: 0x161a1f, position: [0, 0, part.socketCenterZ] },
   ];
 }
 

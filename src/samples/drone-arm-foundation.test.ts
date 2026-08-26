@@ -16,7 +16,7 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
 
   it("reports the exact M3 fastener stock shortfall", () => {
     const fastenerRevision = DRONE_ARM_FOUNDATION_STUDY.components.find(
-      (component) => component.id === "m3-fastener",
+      (component) => component.id === "fastener-m3x8",
     )?.revision;
 
     expect(
@@ -39,7 +39,7 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
 
   it("does not label an unresolved assembly buildable", () => {
     const fastenerRevision = DRONE_ARM_FOUNDATION_STUDY.components.find(
-      (component) => component.id === "m3-fastener",
+      (component) => component.id === "fastener-m3x8",
     )?.revision;
     const motorRevision = DRONE_ARM_FOUNDATION_STUDY.components.find(
       (component) => component.id === "motor-2207",
@@ -66,11 +66,15 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
     const bodyInterface = DRONE_ARM_FOUNDATION_STUDY.components.find(
       (component) => component.id === "body-interface",
     );
+    const propeller = DRONE_ARM_FOUNDATION_STUDY.components.find(
+      (component) => component.id === "propeller-5x4.3x3",
+    );
 
     expect(motor?.mountInterfaces).toHaveLength(4);
-    expect(motor?.keepOutVolumes).toHaveLength(1);
+    expect(motor?.protectedVolumes).toHaveLength(0);
+    expect(propeller?.protectedVolumes).toHaveLength(1);
     expect(bodyInterface?.mountInterfaces).toHaveLength(2);
-    expect(bodyInterface?.keepOutVolumes).toHaveLength(1);
+    expect(bodyInterface?.protectedVolumes).toHaveLength(1);
     expect(DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts).toHaveLength(6);
     expect(DRONE_ARM_FOUNDATION_STUDY.assembly.obstacleVolumes).toHaveLength(2);
   });
@@ -80,11 +84,11 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
       (component) => component.id === "motor-2207",
     );
     const motorMountX = DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts
-      .filter((mount) => mount.id.startsWith("motor-mount-"))
+      .filter((mount) => mount.id.includes("-motor-mount-"))
       .map((mount) => mount.position.x.value)
       .sort((left, right) => left - right);
     const propellerKeepOut = DRONE_ARM_FOUNDATION_STUDY.assembly.obstacleVolumes.find(
-      (volume) => volume.id === "propeller-keep-out",
+      (volume) => volume.id === "motor-east-propeller-swept-volume",
     );
     const loadRegion = DRONE_ARM_FOUNDATION_STUDY.study.loadCases[0].forces[0].region;
 
@@ -99,5 +103,6 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
     ]);
     expect(propellerKeepOut?.center.x).toEqual({ value: 0.105, unit: "m" });
     expect(loadRegion.center.x).toEqual({ value: 0.105, unit: "m" });
+    expect(loadRegion.center.z).toEqual({ value: 0.003, unit: "m" });
   });
 });

@@ -43,7 +43,7 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByText(/webgpu available/i)).toBeVisible();
   expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-  expect(screen.getByText(/import step, stp, glb, or gltf/i)).toBeVisible();
+  expect(screen.getByText(/drop a trusted local zip package, step, stp, glb, or gltf/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();
   expect(screen.getByText(/25 × 25 × 5/)).toBeVisible();

@@ -26,7 +26,7 @@ export interface ImportedComponent extends ComponentImport {
   readonly id: string;
   readonly assetUrl: string;
   readonly stagedBy: "agent" | "human";
-  readonly validation: "unverified-visual" | "manufacturer-dimensions";
+  readonly validation: "unverified-visual" | "manufacturer-dimensions" | "package-digest-verified";
   readonly mesh?: CadMesh;
 }
 

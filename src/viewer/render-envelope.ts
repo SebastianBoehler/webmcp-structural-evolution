@@ -51,6 +51,7 @@ export type AssemblyVisualPart = Readonly<{
       head: AxialVisualFeature;
       socketWidth: number;
       socketDepth: number;
+      socketCenterZ: number;
       localBounds: LocalVisualBounds;
     }>
   | Readonly<{ kind: "flight-controller"; size: Vector3Tuple }>

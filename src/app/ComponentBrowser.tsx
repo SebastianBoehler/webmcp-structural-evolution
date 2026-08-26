@@ -13,11 +13,20 @@ export interface ComponentBrowserProps {
 
 export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFile, onClose }: ComponentBrowserProps) {
   const [query, setQuery] = useState("");
+  const [importError, setImportError] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
   const components = useMemo(() => parts.filter((part) =>
     part.appearance === "component" &&
     !part.id.startsWith("reference-arm") &&
     `${part.label} ${part.kind}`.toLowerCase().includes(query.toLowerCase())), [parts, query]);
+  const importLocalFile = async (file: File) => {
+    setImportError(undefined);
+    try {
+      await onImportFile(file);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Component import failed");
+    }
+  };
 
   return (
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
@@ -61,19 +70,30 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
             </button>
         ))}
       </nav>
-      <div className="inventory-summary">
+      <div
+        className="inventory-summary"
+        data-testid="component-import-dropzone"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const file = event.dataTransfer.files[0];
+          if (file) void importLocalFile(file);
+        }}
+      >
         <span>Component library</span>
         <strong>{components.length} placed</strong>
-        <p>Import STEP, STP, GLB, or glTF. CAD geometry stays local; engineering metadata remains unverified.</p>
+        <p>Drop a trusted local ZIP package, STEP, STP, GLB, or glTF. Files stay local; package integrity is verified before use.</p>
+        {importError ? <p role="alert">{importError}</p> : null}
         <button type="button" onClick={() => inputRef.current?.click()}>Import component file</button>
         <input
           ref={inputRef}
           className="visually-hidden"
           type="file"
-          accept=".step,.stp,.glb,.gltf,model/gltf-binary,model/gltf+json"
+          aria-label="Choose local component file"
+          accept=".zip,.step,.stp,.glb,.gltf,application/zip,model/gltf-binary,model/gltf+json"
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) void onImportFile(file);
+            if (file) void importLocalFile(file);
             event.target.value = "";
           }}
         />
