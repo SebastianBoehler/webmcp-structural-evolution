@@ -1,14 +1,13 @@
 import { z } from "zod";
 
-import {
-  AssemblySpecSchema,
-  defineLegacyAssembly,
-  type AssemblySpec,
-} from "./assembly-model";
-import { defineLegacyComponent } from "./component-model";
+import { AssemblySpecSchema, type AssemblySpec } from "./assembly-model";
 import {
   DensitySchema,
   ForceVectorSchema,
+  normalizeDensity,
+  normalizePositiveLength,
+  normalizePressure,
+  normalizeVolume,
   PositiveLengthSchema,
   PressureSchema,
   VolumeSchema,
@@ -24,11 +23,6 @@ export * from "./assembly-model";
 export * from "./component-model";
 export * from "./engineering-units";
 export { freezeSnapshot, type DeepReadonly } from "./snapshots";
-
-// Old design imports retain their source-unit snapshots; new callers import the
-// SI-normalizing constructors from the focused domain modules.
-export const defineComponent = defineLegacyComponent;
-export const defineAssembly = defineLegacyAssembly;
 
 const finite = z.number().finite();
 const unitValue = <Unit extends string>(unit: Unit, value = finite) =>
@@ -81,7 +75,31 @@ export const StudySpecSchema = StudySpecContentSchema.extend({ revision: Revisio
 export type InventoryItem = DeepReadonly<z.infer<typeof InventoryItemSchema>>;
 export type StudySpec = DeepReadonly<z.infer<typeof StudySpecSchema>>;
 export const defineStudy = async (value: unknown): Promise<StudySpec> =>
-  defineRevisionedSnapshot(StudySpecContentSchema, value);
+  defineRevisionedSnapshot(StudySpecContentSchema, value, (study) => ({
+    ...study,
+    designRegion: normalizeVolume(study.designRegion),
+    material: {
+      ...study.material,
+      youngsModulus: normalizePressure(study.material.youngsModulus),
+      density: normalizeDensity(study.material.density),
+    },
+    manufacturing: {
+      ...study.manufacturing,
+      minimumFeature: normalizePositiveLength(study.manufacturing.minimumFeature),
+    },
+    loadCases: study.loadCases.map((loadCase) => ({
+      ...loadCase,
+      fixedRegions: loadCase.fixedRegions.map(normalizeVolume),
+      forces: loadCase.forces.map((force) => ({
+        ...force,
+        region: normalizeVolume(force.region),
+      })),
+    })),
+    hardLimits: {
+      ...study.hardLimits,
+      maximumDisplacement: normalizePositiveLength(study.hardLimits.maximumDisplacement),
+    },
+  }));
 export const defineInventory = (value: unknown): readonly InventoryItem[] =>
   freezeSnapshot(InventorySchema.parse(value));
 

@@ -45,6 +45,4 @@ export const defineAssemblyDraft = async (value: unknown): Promise<AssemblyDraft
     obstacleVolumes: draft.obstacleVolumes.map(normalizeVolume),
     accessVolumes: draft.accessVolumes.map(normalizeVolume),
   }));
-export const defineLegacyAssembly = async (value: unknown): Promise<AssemblyDraft> =>
-  defineRevisionedSnapshot(AssemblyDraftContentSchema, value);
 export const defineAssembly = defineAssemblyDraft;

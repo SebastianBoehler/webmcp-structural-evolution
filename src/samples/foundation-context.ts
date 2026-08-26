@@ -21,7 +21,7 @@ export function createFoundationContext({
   const envelope = assembly.targetEnvelope;
   if (envelope.kind !== "box") throw new Error("Foundation grid requires the exact box target envelope");
   const axes = [envelope.center.x, envelope.center.y, envelope.center.z, envelope.size.x, envelope.size.y, envelope.size.z];
-  if (axes.some(({ unit }) => unit !== "mm")) throw new Error("Foundation context requires exact mm geometry");
+  if (axes.some(({ unit }) => unit !== "m")) throw new Error("Foundation context requires SI geometry");
   const dimensions = TOPOLOGY_DIMENSIONS;
   const evaluation = evaluateInventory(inventory, assembly);
   const shortageLimit = 2;

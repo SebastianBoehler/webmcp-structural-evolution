@@ -60,35 +60,29 @@ type LocalPoint = ComponentDefinition["centerOfMass"];
 type LocalMount = ComponentDefinition["mountInterfaces"][number];
 type LocalVolume = ComponentDefinition["keepOutVolumes"][number];
 
-const translateMm = (
+const metres = (value: { readonly value: number; readonly unit: "mm" | "m" }) =>
+  value.unit === "mm" ? value.value / 1_000 : value.value;
+const pointMetres = (x: number, y: number, z: number) => ({
+  x: { value: x, unit: "m" as const },
+  y: { value: y, unit: "m" as const },
+  z: { value: z, unit: "m" as const },
+});
+const translateToMetres = (
   local: LocalPoint,
   assemblyOrigin: ReturnType<typeof point>,
-) => {
-  const coordinates = [
-    local.x,
-    local.y,
-    local.z,
-    assemblyOrigin.x,
-    assemblyOrigin.y,
-    assemblyOrigin.z,
-  ];
-  if (coordinates.some((coordinate) => coordinate.unit !== "mm")) {
-    throw new Error("Fixture geometry projection requires explicit mm coordinates");
-  }
-  return point(
-    local.x.value + assemblyOrigin.x.value,
-    local.y.value + assemblyOrigin.y.value,
-    local.z.value + assemblyOrigin.z.value,
-  );
-};
+) => pointMetres(
+  metres(local.x) + metres(assemblyOrigin.x),
+  metres(local.y) + metres(assemblyOrigin.y),
+  metres(local.z) + metres(assemblyOrigin.z),
+);
 const placeMountInAssembly = (
   local: LocalMount,
   assemblyOrigin: ReturnType<typeof point>,
-) => ({ ...local, position: translateMm(local.position, assemblyOrigin) });
+) => ({ ...local, position: translateToMetres(local.position, assemblyOrigin) });
 const placeVolumeInAssembly = (
   local: LocalVolume,
   assemblyOrigin: ReturnType<typeof point>,
-) => ({ ...local, center: translateMm(local.center, assemblyOrigin) });
+) => ({ ...local, center: translateToMetres(local.center, assemblyOrigin) });
 
 const motorAssemblyOrigin = point(105, 0, 0);
 const bodyAssemblyOrigin = point(0, 0, 0);

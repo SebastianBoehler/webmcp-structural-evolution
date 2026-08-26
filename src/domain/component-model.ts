@@ -129,10 +129,12 @@ export const ComponentDefinitionSchema = ComponentDefinitionContentSchema.extend
 export type ComponentDefinition = DeepReadonly<z.infer<typeof ComponentDefinitionSchema>>;
 export const defineComponent = async (value: unknown): Promise<ComponentDefinition> =>
   defineRevisionedSnapshot(ComponentDefinitionContentSchema, value, normalizeComponentDefinition);
-export const defineLegacyComponent = async (value: unknown): Promise<ComponentDefinition> =>
-  defineRevisionedSnapshot(ComponentDefinitionContentSchema, value);
 
 function normalizeComponentDefinition(value: z.infer<typeof ComponentDefinitionContentSchema>) {
+  const geometry = value.geometry === undefined
+    ? {}
+    : { geometry: normalizeComponentGeometry(value.geometry) };
+
   return {
     ...value,
     mass: normalizeMass(value.mass),
@@ -147,8 +149,8 @@ function normalizeComponentDefinition(value: z.infer<typeof ComponentDefinitionC
     keepOutVolumes: value.keepOutVolumes.map(normalizeVolume),
     loadContributions: value.loadContributions.map((load) => ({ ...load })),
     allowedOrientations: value.allowedOrientations.map(normalizeOrientation),
-    geometry: value.geometry && normalizeComponentGeometry(value.geometry),
     interfaces: value.interfaces.map(normalizeSemanticInterface),
+    ...geometry,
   };
 }
 

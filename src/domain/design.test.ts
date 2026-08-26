@@ -1,7 +1,14 @@
 import { expect, test } from "vitest";
 
 import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
-import { MountInterfaceSchema, StudySpecSchema, VolumeSchema } from "./design";
+import { defineComponent as focusedDefineComponent } from "./component-model";
+import {
+  defineComponent,
+  defineAssembly,
+  MountInterfaceSchema,
+  StudySpecSchema,
+  VolumeSchema,
+} from "./design";
 
 const length = (value: number) => ({ value, unit: "mm" as const });
 const center = { x: length(0), y: length(0), z: length(0) };
@@ -29,9 +36,12 @@ test("rejects a non-positive mount diameter", () => {
   }).success).toBe(false);
 });
 
-test("keeps legacy fixture units at the design compatibility boundary", () => {
-  expect(DRONE_ARM_FOUNDATION_STUDY.components[0]?.mass.unit).toBe("g");
-  expect(DRONE_ARM_FOUNDATION_STUDY.assembly.components[0]?.transform.position.x.unit).toBe("mm");
+test("re-exports the shared SI constructors and canonical fixture snapshots", () => {
+  expect(defineComponent).toBe(focusedDefineComponent);
+  expect(DRONE_ARM_FOUNDATION_STUDY.components[0]?.mass).toEqual({ value: 0.038, unit: "kg" });
+  expect(DRONE_ARM_FOUNDATION_STUDY.assembly.components[0]?.transform.position.x)
+    .toEqual({ value: 0.105, unit: "m" });
+  expect(defineAssembly).toBeDefined();
 });
 
 test.each([

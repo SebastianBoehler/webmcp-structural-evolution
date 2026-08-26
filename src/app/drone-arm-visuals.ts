@@ -5,8 +5,8 @@ import type { AssemblyVisualPart } from "../viewer/render-envelope";
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
 
 function millimetres(value: { readonly value: number; readonly unit: string }): number {
-  if (value.unit !== "mm") throw new Error("The drone-arm visual requires millimetre geometry");
-  return value.value;
+  if (value.unit !== "m") throw new Error("The drone-arm visual requires SI length geometry");
+  return value.value * 1_000;
 }
 
 function centerOf(
