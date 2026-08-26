@@ -43,8 +43,8 @@ export const ComponentPackageManifestSchema = z.object({
   const geometry = manifest.component.geometry;
   if (geometry?.kind === "asset") {
     const geometryAsset = manifest.assets.find(({ digest }) => digest === geometry.assetId);
-    if (!geometryAsset || geometryAsset.mediaType !== geometry.mediaType) {
-      context.addIssue({ code: "custom", message: "Component geometry must reference a declared matching asset", path: ["component", "geometry"] });
+    if (!geometryAsset || geometryAsset.mediaType !== geometry.mediaType || geometryAsset.units !== geometry.units) {
+      context.addIssue({ code: "custom", message: "Component geometry must reference a declared asset with matching type and units", path: ["component", "geometry"] });
     }
   }
 });

@@ -33,6 +33,7 @@ async function packageFixture(options: {
   asset?: Uint8Array;
   declaredDigest?: string;
   extraEntry?: string;
+  assetUnits?: "m" | "mm";
 } = {}) {
   const bytes = options.asset ?? asset;
   const digest = options.declaredDigest ?? await digestAsset(bytes);
@@ -43,7 +44,7 @@ async function packageFixture(options: {
   const manifest = {
     version: 1,
     component,
-    assets: [{ path: "assets/motor.stl", digest, mediaType: "model/stl", units: "mm", role: "display" }],
+    assets: [{ path: "assets/motor.stl", digest, mediaType: "model/stl", units: options.assetUnits ?? "mm", role: "display" }],
   };
   const entries: Record<string, Uint8Array> = {
     "component.json": strToU8(JSON.stringify(manifest)),
@@ -72,5 +73,9 @@ describe("parseComponentPackage", () => {
   it("rejects zip traversal and unsupported entries", async () => {
     await expect(parseComponentPackage(await packageFixture({ extraEntry: "../escape.step" }))).rejects.toThrow(/entry path/i);
     await expect(parseComponentPackage(await packageFixture({ extraEntry: "scripts/model.py" }))).rejects.toThrow(/entry path/i);
+  });
+
+  it("rejects a geometry asset whose declared units disagree with the component", async () => {
+    await expect(parseComponentPackage(await packageFixture({ assetUnits: "m" }))).rejects.toThrow(/units/i);
   });
 });
