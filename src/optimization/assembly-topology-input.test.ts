@@ -10,7 +10,9 @@ describe("compileLiveTopologyContext", () => {
     expect(context.grid.dimensions).toEqual({ width: 128, height: 128, depth: 32 });
     expect(context.input.motorMounts).toHaveLength(4);
     expect(context.input.supports).not.toHaveLength(0);
-    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({ kind: "box", sizeM: [0.084, 0.05, 0.003] }));
+    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({
+      kind: "box", centerM: [-0.001524, -0.001524, -0.0015], sizeM: [0.084, 0.06, 0.003],
+    }));
     expect(context.input.protectedVoids).not.toHaveLength(0);
     const expectedProtectedVolumes = initialDroneWorkspace.draft.components.reduce((count, instance) => {
       const definition = initialDroneWorkspace.catalog.find(({ revision }) => revision === instance.componentRevision)!;
@@ -30,9 +32,21 @@ describe("compileLiveTopologyContext", () => {
     expect(context.input.loadPathGuides).toHaveLength(16);
     expect(context.input.loadPathGuides.every(({ pointsM }) => pointsM.length === 4)).toBe(true);
     expect(context.input.loadPathGuides.some(({ pointsM }) => pointsM.some(([, , z]) => z >= 0.01))).toBe(true);
-    expect(context.input.accessVoids.filter((volume) =>
-      volume.kind === "box" && volume.sizeM?.[0] === 0.024 && volume.sizeM[1] === 0.006,
-    )).toHaveLength(4);
+    const strapSlots = context.input.accessVoids.filter((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.022 && volume.sizeM[1] === 0.005625,
+    );
+    expect(strapSlots).toHaveLength(4);
+    const expectedSlotCenters = [
+      [0.022476, -0.023024],
+      [0.022476, 0.019976],
+      [-0.025524, -0.023024],
+      [-0.025524, 0.019976],
+    ];
+    strapSlots.forEach(({ centerM }, index) => {
+      expect(centerM[0]).toBeCloseTo(expectedSlotCenters[index]![0]!, 12);
+      expect(centerM[1]).toBeCloseTo(expectedSlotCenters[index]![1]!, 12);
+    });
+    expect(strapSlots.every((slot) => slot.sizeM?.[2] === 0.024 && slot.centerM[2] === 0)).toBe(true);
     const strapTopClearance = context.input.protectedVoids.find((volume) =>
       volume.kind === "box" && volume.sizeM?.[0] === 0.022 && volume.centerM[0] > 0,
     );
@@ -40,6 +54,10 @@ describe("compileLiveTopologyContext", () => {
     expect(strapTopClearance?.centerM[1]).toBeCloseTo(-0.001524, 9);
     expect(strapTopClearance?.centerM[2]).toBeCloseTo(-0.0015, 9);
     expect(context.input.assemblyMassKg).toBeCloseTo(0.515, 3);
+    expect(context.input.inertialMasses.reduce((sum, item) => sum + item.massKg, 0)).toBeCloseTo(context.input.assemblyMassKg, 12);
+    const batteryMass = context.input.inertialMasses.find(({ id }) => id === "battery");
+    expect(batteryMass?.massKg).toBeCloseTo(0.254, 12);
+    expect(batteryMass?.inertiaTensorKgM2[2][2]).toBeGreaterThan(0);
     expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(0.001);
   });
 });

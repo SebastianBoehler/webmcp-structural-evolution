@@ -1,6 +1,7 @@
 mod grid;
 #[cfg(test)]
 mod grid_tests;
+mod inertial_relief;
 mod optimize;
 mod solver;
 #[cfg(test)]
@@ -26,6 +27,15 @@ pub struct AssemblySolverInput {
     pub minimum_feature_m: f32,
     pub minimum_load_path_width_m: f32,
     pub minimum_frame_thickness_m: f32,
+    pub inertial_masses: Vec<InertialMassInput>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InertialMassInput {
+    pub center_m: [f32; 3],
+    pub mass_kg: f32,
+    pub inertia_tensor_kg_m2: [[f32; 3]; 3],
 }
 
 #[derive(Clone, Deserialize)]

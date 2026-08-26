@@ -12,9 +12,12 @@ import "./flight-simulation-panel.css";
 export interface FlightSimulationPanelProps {
   readonly motors: readonly FlightMotor[];
   readonly massKg: number;
+  readonly componentCount: number;
+  readonly batteryMassKg: number;
   readonly onFrame: (frame: FlightFrame | undefined) => void;
   readonly onActiveChange?: (active: boolean) => void;
-  readonly onDroneOnlyChange: (droneOnly: boolean) => void;
+  readonly componentsVisible: boolean;
+  readonly onComponentsVisibleChange: (visible: boolean) => void;
 }
 
 const number = (value: number, digits = 2) => value.toFixed(digits);
@@ -22,13 +25,15 @@ const number = (value: number, digits = 2) => value.toFixed(digits);
 export function FlightSimulationPanel({
   motors,
   massKg,
+  componentCount,
+  batteryMassKg,
   onFrame,
   onActiveChange,
-  onDroneOnlyChange,
+  componentsVisible,
+  onComponentsVisibleChange,
 }: FlightSimulationPanelProps) {
   const [scenario, setScenario] = useState<FlightScenarioId>("hover");
   const [running, setRunning] = useState(false);
-  const [droneOnly, setDroneOnly] = useState(false);
   const [frame, setFrame] = useState<FlightFrame>();
   const startedAt = useRef(0);
   const lastReadoutAt = useRef(0);
@@ -64,17 +69,12 @@ export function FlightSimulationPanel({
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">
         <div><strong>Flight load replay</strong><span>4 optimizer cases</span></div>
-        <button
-          type="button"
-          aria-label="Drone-only view"
-          aria-pressed={droneOnly}
-          onClick={() => {
-            const next = !droneOnly;
-            setDroneOnly(next);
-            onDroneOnlyChange(next);
-          }}
-        >Drone only</button>
       </div>
+      <div className="flight-simulation__view" role="group" aria-label="Replay geometry">
+        <button type="button" aria-pressed={!componentsVisible} onClick={() => onComponentsVisibleChange(false)}>Frame only</button>
+        <button type="button" aria-pressed={componentsVisible} onClick={() => onComponentsVisibleChange(true)}>Full assembly</button>
+      </div>
+      <p className="flight-simulation__mass">Mass model: {number(massKg * 1_000, 0)} g · {componentCount} attached parts · battery {number(batteryMassKg * 1_000, 0)} g</p>
       <div className="flight-simulation__scenarios" role="group" aria-label="Flight scenario">
         {FLIGHT_SCENARIOS.map((item) => (
           <button
@@ -86,7 +86,7 @@ export function FlightSimulationPanel({
           >{item.label}</button>
         ))}
       </div>
-      <p>{FLIGHT_SCENARIOS.find(({ id }) => id === scenario)!.description}</p>
+      <p>{FLIGHT_SCENARIOS.find(({ id }) => id === scenario)!.description}{scenario === "yaw" && " Displayed vectors are tangential X/Y loads producing torque about Z."}</p>
       {frame && <dl className="flight-simulation__metrics">
         <div><dt>Load factor</dt><dd>{number(frame.loadFactorG)} g</dd></div>
         <div><dt>Thrust</dt><dd>{number(frame.resultantForceN[2])} N</dd></div>

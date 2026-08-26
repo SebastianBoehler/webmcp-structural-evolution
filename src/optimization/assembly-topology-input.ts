@@ -4,6 +4,7 @@ import type { ComponentDefinition } from "../domain/component-model";
 import type { VoxelGrid } from "../viewer/field-instances";
 
 type Point = readonly [number, number, number];
+type Tensor3 = readonly [Point, Point, Point];
 
 export interface SolverVolume {
   readonly kind: "box" | "cylinder";
@@ -36,6 +37,12 @@ export interface AssemblyTopologyInput {
   readonly minimumFrameThicknessM: number;
   readonly assemblyMassKg: number;
   readonly centerOfMassM: Point;
+  readonly inertialMasses: readonly {
+    readonly id: string;
+    readonly centerM: Point;
+    readonly massKg: number;
+    readonly inertiaTensorKgM2: Tensor3;
+  }[];
 }
 
 export interface LiveTopologyContext {
@@ -100,6 +107,56 @@ function collisionClearances(definition: ComponentDefinition, centerM: Point, ya
   return definition.collisionVolumes.map((volume) => expanded(worldVolume(volume, centerM, yawRad), clearanceM));
 }
 
+function retentionAccessVoids(
+  definition: ComponentDefinition,
+  centerM: Point,
+  yawRad: number,
+  grid: AssemblyTopologyInput["grid"],
+): readonly SolverVolume[] {
+  if (definition.category !== "retention") return [];
+  const gridDepthM = grid.cellSizeM[2] * grid.dimensions.depth;
+  const gridCenterZ = grid.originM[2] + gridDepthM / 2;
+  return definition.protectedVolumes
+    .filter(({ id }) => id.endsWith("left-clearance") || id.endsWith("right-clearance"))
+    .map((volume) => {
+      const world = worldVolume(volume, centerM, yawRad);
+      if (world.kind !== "box" || !world.sizeM) {
+        throw new Error(`Retention pass-through ${volume.id} must be a box.`);
+      }
+      return {
+        ...world,
+        centerM: [world.centerM[0], world.centerM[1], gridCenterZ] as Point,
+        // Resolve the 3.5 mm physical slot with at least three cells so the
+        // conservative voxel boundary cannot bridge a one-cell opening.
+        sizeM: [world.sizeM[0], Math.max(world.sizeM[1], grid.cellSizeM[1] * 3), gridDepthM] as Point,
+      };
+    });
+}
+
+function componentInertiaTensor(definition: ComponentDefinition, massKg: number, yawRad: number): Tensor3 {
+  const envelope = worldVolume(definition.envelope, [0, 0, 0], yawRad);
+  let localX: number;
+  let localY: number;
+  let localZ: number;
+  if (envelope.kind === "box") {
+    const [sizeX, sizeY, sizeZ] = envelope.sizeM!;
+    localX = massKg * (sizeY ** 2 + sizeZ ** 2) / 12;
+    localY = massKg * (sizeX ** 2 + sizeZ ** 2) / 12;
+    localZ = massKg * (sizeX ** 2 + sizeY ** 2) / 12;
+  } else {
+    const radius = envelope.radiusM!;
+    const height = envelope.heightM!;
+    localX = localY = massKg * (3 * radius ** 2 + height ** 2) / 12;
+    localZ = massKg * radius ** 2 / 2;
+  }
+  const cosine = Math.cos(envelope.yawRad);
+  const sine = Math.sin(envelope.yawRad);
+  const xx = cosine ** 2 * localX + sine ** 2 * localY;
+  const yy = sine ** 2 * localX + cosine ** 2 * localY;
+  const xy = cosine * sine * (localX - localY);
+  return [[xx, xy, 0], [xy, yy, 0], [0, 0, localZ]];
+}
+
 function dynamicGrid(state: AssemblyAuthoringState): AssemblyTopologyInput["grid"] {
   const envelope = state.draft.targetEnvelope;
   if (envelope.kind !== "box") throw new Error("The FPV topology solver requires the live box design envelope.");
@@ -155,6 +212,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
   const accessVoids: SolverVolume[] = [];
   let assemblyMassKg = 0;
   const weightedCenter = [0, 0, 0];
+  const inertialMasses: AssemblyTopologyInput["inertialMasses"][number][] = [];
 
   for (const instance of state.draft.components) {
     const definition = definitionFor(state, instance.componentRevision);
@@ -172,6 +230,12 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
       ], yawRad));
       assemblyMassKg += definition.mass.value;
       for (let axis = 0; axis < 3; axis += 1) weightedCenter[axis] += worldCenter[axis]! * definition.mass.value;
+      inertialMasses.push({
+        id: instance.instanceId,
+        centerM: worldCenter,
+        massKg: definition.mass.value,
+        inertiaTensorKgM2: componentInertiaTensor(definition, definition.mass.value, yawRad),
+      });
     }
     if (definition.category === "motor") {
       const mountRadiusM = Math.max(...definition.mountInterfaces.map(({ position }) => Math.hypot(metres(position.x), metres(position.y)))) + 0.004;
@@ -202,11 +266,10 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
       supports.push(...definition.collisionVolumes.map((volume) => worldVolume(volume, centerM, yawRad)));
     } else {
       if (definition.category === "battery") {
-        requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], -0.0045], sizeM: [0.084, 0.050, 0.003], yawRad });
-        for (const x of [-0.024, 0.024]) for (const y of [-0.0225, 0.0225]) {
-          accessVoids.push({ kind: "box", centerM: [centerM[0] + x, centerM[1] + y, 0], sizeM: [0.024, 0.006, 0.024], yawRad });
-        }
+        // A 60 mm deck leaves a load-bearing outer rim around both 43 mm strap loops.
+        requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], -0.0015], sizeM: [0.084, 0.060, 0.003], yawRad });
       }
+      accessVoids.push(...retentionAccessVoids(definition, centerM, yawRad, grid));
       if (definition.id === "fpv-camera") {
         requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], 0], sizeM: [0.035, 0.030, 0.005], yawRad });
         for (const side of [-1, 1]) {
@@ -242,6 +305,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
     minimumFrameThicknessM: 0.005,
     assemblyMassKg,
     centerOfMassM,
+    inertialMasses,
   };
   return {
     input,

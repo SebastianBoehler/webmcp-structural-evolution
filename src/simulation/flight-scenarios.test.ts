@@ -26,6 +26,17 @@ describe("flight scenario replay", () => {
     expect(frame.motorThrustN[1]).not.toBeCloseTo(frame.motorThrustN[3]!);
   });
 
+  it("renders yaw as tangential XY loads producing torque about Z", () => {
+    const frame = flightFrameAt("yaw", 0.25, motors, 0.495);
+    expect(Math.abs(frame.resultantTorqueNm[2])).toBeGreaterThan(0.01);
+    frame.motorLoadVectorsN.forEach(([forceX, forceY, forceZ], index) => {
+      const [motorX, motorY] = motors[index]!.centerM;
+      expect(forceZ).toBeCloseTo(0);
+      expect(motorX * forceX + motorY * forceY).toBeCloseTo(0, 8);
+      expect(Math.hypot(forceX, forceY)).toBeGreaterThan(0);
+    });
+  });
+
   it("maps every optimizer load case to an explicit replay scenario", () => {
     expect(FLIGHT_SCENARIOS.map(({ solverCase }) => solverCase)).toEqual([
       "collective-thrust", "roll-differential", "pitch-differential", "yaw-torsion",

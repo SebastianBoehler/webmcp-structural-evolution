@@ -205,13 +205,29 @@ export function mountFieldRenderer(
         ? Math.max(0.001, flightFrame.motorThrustN.reduce((sum, value) => sum + value, 0) / 4)
         : 1;
       const structuralScale = flightFrame ? Math.max(...flightFrame.motorThrustN) / meanThrust : 1;
-      for (const [index, thrust] of (flightFrame?.motorThrustN ?? []).entries()) {
+      const loadVectors = flightFrame?.motorLoadVectorsN ?? [];
+      const meanLoad = Math.max(0.001, loadVectors.reduce(
+        (sum, vector) => sum + Math.hypot(...vector), 0,
+      ) / Math.max(1, loadVectors.length));
+      for (const [index, vector] of loadVectors.entries()) {
         const motor = prepared.assemblyParts?.filter(({ kind }) => kind === "load-vector")[index];
         const root = motor ? assemblyMeshSet.roots.get(motor.id) : undefined;
-        if (root) root.scale.z = Math.max(0.18, thrust / meanThrust);
+        if (!root) continue;
+        const direction = new THREE.Vector3(...vector);
+        const magnitude = direction.length();
+        root.visible = magnitude > 1.0e-6;
+        root.scale.set(1, 1, Math.max(0.18, magnitude / meanLoad));
+        if (root.visible) root.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, -1),
+          direction.normalize(),
+        );
       }
       if (!flightFrame) {
-        for (const [id, root] of assemblyMeshSet.roots) if (id.endsWith("-load-vector")) root.scale.set(1, 1, 1);
+        for (const [id, root] of assemblyMeshSet.roots) if (id.endsWith("-load-vector")) {
+          root.visible = true;
+          root.quaternion.identity();
+          root.scale.set(1, 1, 1);
+        }
       }
       for (const mesh of meshSet?.meshes ?? []) {
         const match = /verified-(?:stress|displacement|safety)-band-(\d+)/.exec(mesh.name);

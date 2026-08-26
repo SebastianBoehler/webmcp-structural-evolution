@@ -27,7 +27,10 @@ export function smoothTopologyDensity(
       sum += density[sx + width * (sy + height * sz)]! * sampleWeight;
       total += sampleWeight;
     }
-    output[x + width * (y + height * z)] = sum / total;
+    const index = x + width * (y + height * z);
+    // Exact zero is reserved by the solver for protected and access voids.
+    // Keep those cells hard-zero so display smoothing cannot seal holes.
+    output[index] = density[index] === 0 ? 0 : sum / total;
   }
   return output;
 }

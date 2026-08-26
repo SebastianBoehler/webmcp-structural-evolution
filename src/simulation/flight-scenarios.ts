@@ -18,6 +18,7 @@ export interface FlightFrame {
   readonly scenario: FlightScenarioId;
   readonly timeS: number;
   readonly motorThrustN: readonly number[];
+  readonly motorLoadVectorsN: readonly Point[];
   readonly resultantForceN: Point;
   readonly resultantTorqueNm: Point;
   readonly linearAccelerationMps2: Point;
@@ -29,7 +30,7 @@ export const FLIGHT_SCENARIOS: readonly FlightScenario[] = Object.freeze([
   { id: "hover", label: "Hover", solverCase: "collective-thrust", description: "Balanced collective thrust at one-g equilibrium." },
   { id: "roll", label: "Aggressive roll", solverCase: "roll-differential", description: "North/south differential thrust excites arm bending and roll torque." },
   { id: "pitch", label: "Pitch brake", solverCase: "pitch-differential", description: "East/west differential thrust represents a hard pitch reversal." },
-  { id: "yaw", label: "Yaw burst", solverCase: "yaw-torsion", description: "Alternating rotor reaction torque excites in-plane torsion." },
+  { id: "yaw", label: "Yaw burst", solverCase: "yaw-torsion", description: "Differential rotor reaction torque excites in-plane torsion." },
 ]);
 
 const G = 9.80665;
@@ -52,6 +53,7 @@ export function flightFrameAt(
   if (motors.length !== 4) throw new Error("Flight replay requires four motors.");
   if (!Number.isFinite(massKg) || massKg <= 0) throw new Error("Flight replay requires positive assembly mass.");
   const motorThrustN = profile(scenario, timeS, massKg * G / 4);
+  const hoverN = massKg * G / 4;
   const totalThrust = motorThrustN.reduce((sum, value) => sum + value, 0);
   let torqueX = 0;
   let torqueY = 0;
@@ -62,6 +64,15 @@ export function flightFrameAt(
     torqueY -= motor.centerM[0] * thrust;
     if (scenario === "yaw") torqueZ += thrust * (index % 2 === 0 ? 1 : -1) * 0.012;
   });
+  const motorLoadVectorsN = motors.map((motor, index): Point => {
+    const thrust = motorThrustN[index]!;
+    if (scenario !== "yaw") return [0, 0, thrust];
+    const radius = Math.hypot(motor.centerM[0], motor.centerM[1]);
+    if (radius <= 0) throw new Error("Yaw replay requires motors away from the center of mass.");
+    const spinSign = index % 2 === 0 ? 1 : -1;
+    const tangentialN = (thrust - hoverN) * spinSign * 0.012 / radius;
+    return [-motor.centerM[1] / radius * tangentialN, motor.centerM[0] / radius * tangentialN, 0];
+  });
   const phase = wave(timeS);
   const attitudeRad: Point = scenario === "roll" ? [phase * 0.34, 0, 0]
     : scenario === "pitch" ? [0, phase * 0.3, 0]
@@ -70,6 +81,7 @@ export function flightFrameAt(
     scenario,
     timeS,
     motorThrustN: Object.freeze(motorThrustN),
+    motorLoadVectorsN: Object.freeze(motorLoadVectorsN),
     resultantForceN: [0, 0, totalThrust],
     resultantTorqueNm: [torqueX, torqueY, torqueZ],
     linearAccelerationMps2: [0, 0, totalThrust / massKg - G],

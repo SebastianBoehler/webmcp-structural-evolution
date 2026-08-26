@@ -1,3 +1,4 @@
+use super::inertial_relief::{apply_inertial_relief, set_kinematic_stabilizers};
 use super::{AssemblySolverInput, LoadPathGuideInput, SolverVolume};
 
 #[derive(Clone)]
@@ -117,6 +118,7 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
     let mut passive_solid = Vec::with_capacity(width * height * depth);
     let mut passive_void = Vec::with_capacity(width * height * depth);
     let mut fixed_dofs = vec![false; width * height * depth * 3];
+    let mut support_nodes = Vec::new();
     let frame_center = volume_center(&input.supports[0]);
     for z in 0..depth {
         for y in 0..height {
@@ -156,24 +158,25 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                 });
                 let inside_domain = frame_layer && (core || arm);
                 coordinates.push(point);
-                // Tool access must win over the motor plate. Other component keep-outs do not
-                // erase the load-bearing mount annulus or the real body fixture.
-                passive_solid.push((mount || supported || required) && !access);
+                // Access and component keep-outs win over generated/required deck material.
+                // Only the physical motor annulus and body fixture remain non-negotiable solids.
+                passive_solid.push(!access && (mount || supported || (required && !void)));
                 passive_void.push(
-                    access || ((!inside_domain || void) && !mount && !supported && !required),
+                    access || (!mount && !supported && (void || (!inside_domain && !required))),
                 );
                 let index = x + width * (y + height * z);
-                if supported {
-                    fixed_dofs[index * 3..index * 3 + 3].fill(true);
+                if supported && !access {
+                    support_nodes.push(index);
                 }
             }
         }
     }
-    if !fixed_dofs.iter().any(|fixed| *fixed) {
+    if support_nodes.is_empty() {
         return Err("live assembly support does not intersect the topology grid".into());
     }
+    set_kinematic_stabilizers(&mut fixed_dofs, &coordinates, &support_nodes)?;
     let mut load_cases = vec![vec![0.0; coordinates.len() * 3]; 4];
-    for (motor_index, motor) in input.motor_mounts.iter().enumerate() {
+    for motor in &input.motor_mounts {
         let nodes = coordinates
             .iter()
             .enumerate()
@@ -212,12 +215,25 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                 motor.center_m[1] - frame_center[1],
             ];
             let radius = radial[0].hypot(radial[1]).max(1.0e-6);
-            let yaw_sign = if motor_index % 2 == 0 { 1.0 } else { -1.0 };
             let tangential_force = motor.load_n[2].abs() * 0.12 / node_count;
-            load_cases[3][node * 3] += -radial[1] / radius * tangential_force * yaw_sign;
-            load_cases[3][node * 3 + 1] += radial[0] / radius * tangential_force * yaw_sign;
+            // A yaw command increases one counter-rotating pair and decreases the other.
+            // Their incremental reaction torques therefore add in the commanded direction.
+            load_cases[3][node * 3] += -radial[1] / radius * tangential_force;
+            load_cases[3][node * 3 + 1] += radial[0] / radius * tangential_force;
         }
     }
+    let solid_nodes = passive_solid
+        .iter()
+        .enumerate()
+        .filter_map(|(index, solid)| solid.then_some(index))
+        .collect::<Vec<_>>();
+    apply_inertial_relief(
+        &mut load_cases,
+        &coordinates,
+        &solid_nodes,
+        &support_nodes,
+        &input.inertial_masses,
+    )?;
     Ok(Grid {
         dimensions,
         coordinates,

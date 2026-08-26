@@ -81,7 +81,6 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const [showComponents, setShowComponents] = useState(true);
   const [simulationActive, setSimulationActive] = useState(false);
   const flightFrameChannel = useMemo(createFlightFrameChannel, []);
-  const [droneOnly, setDroneOnly] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState<DrawerView>();
   const [componentsOpen, setComponentsOpen] = useState(false);
   const [componentsCollapsed, setComponentsCollapsed] = useState(false);
@@ -333,7 +332,6 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                   ? "Verified branch ready for human review"
                   : undefined}
               flightFrameSource={flightFrameChannel}
-              droneOnly={droneOnly}
               environment={viewerEnvironment}
               onPartSelect={setSelectedPart}
               onPartMove={handlePartMove}
@@ -359,6 +357,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               <FlightSimulationPanel
                 motors={viewerCurrent ? flightMotors : []}
                 massKg={liveTopology.input.assemblyMassKg}
+                componentCount={liveTopology.input.inertialMasses.length}
+                batteryMassKg={liveTopology.input.inertialMasses.find(({ id }) => id === "battery")?.massKg ?? 0}
                 onFrame={handleFlightFrame}
                 onActiveChange={(active) => {
                   setSimulationActive(active);
@@ -367,7 +367,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                     setShowConstraints(false);
                   }
                 }}
-                onDroneOnlyChange={setDroneOnly}
+                componentsVisible={showComponents}
+                onComponentsVisibleChange={setShowComponents}
               />
               {viewerCurrent && <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts} />}
             </aside>
