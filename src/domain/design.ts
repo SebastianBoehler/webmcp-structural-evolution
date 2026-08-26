@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { AssemblySpecSchema, type AssemblySpec } from "./assembly-model";
+import {
+  AssemblySpecSchema,
+  defineLegacyAssembly,
+  type AssemblySpec,
+} from "./assembly-model";
+import { defineLegacyComponent } from "./component-model";
 import {
   DensitySchema,
   ForceVectorSchema,
@@ -19,6 +24,11 @@ export * from "./assembly-model";
 export * from "./component-model";
 export * from "./engineering-units";
 export { freezeSnapshot, type DeepReadonly } from "./snapshots";
+
+// Old design imports retain their source-unit snapshots; new callers import the
+// SI-normalizing constructors from the focused domain modules.
+export const defineComponent = defineLegacyComponent;
+export const defineAssembly = defineLegacyAssembly;
 
 const finite = z.number().finite();
 const unitValue = <Unit extends string>(unit: Unit, value = finite) =>

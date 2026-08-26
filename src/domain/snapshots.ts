@@ -31,10 +31,11 @@ export function freezeSnapshot<T>(value: T): DeepReadonly<T> {
 export async function defineRevisionedSnapshot<Content extends object>(
   contentSchema: z.ZodType<Content>,
   value: unknown,
+  normalize: (content: Content) => Content = (content) => content,
 ): Promise<DeepReadonly<Content & { revision: string }>> {
   const candidate = RevisionedInputSchema.parse(value);
   const { revision: claimedRevision, ...unvalidatedContent } = candidate;
-  const content = contentSchema.parse(unvalidatedContent);
+  const content = contentSchema.parse(normalize(contentSchema.parse(unvalidatedContent)));
   const derivedRevision = await revisionId(content);
 
   if (claimedRevision !== undefined && claimedRevision !== derivedRevision) {

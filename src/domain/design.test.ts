@@ -29,6 +29,11 @@ test("rejects a non-positive mount diameter", () => {
   }).success).toBe(false);
 });
 
+test("keeps legacy fixture units at the design compatibility boundary", () => {
+  expect(DRONE_ARM_FOUNDATION_STUDY.components[0]?.mass.unit).toBe("g");
+  expect(DRONE_ARM_FOUNDATION_STUDY.assembly.components[0]?.transform.position.x.unit).toBe("mm");
+});
+
 test.each([
   ["minimum feature", "minimumFeature", 0],
   ["minimum feature", "minimumFeature", -1],

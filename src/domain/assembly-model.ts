@@ -1,11 +1,18 @@
 import { z } from "zod";
 
-import { MountInterfaceSchema, TransformSchema, VolumeSchema } from "./engineering-units";
+import {
+  MountInterfaceSchema,
+  normalizeMountInterface,
+  normalizeTransform,
+  normalizeVolume,
+  TransformSchema,
+  VolumeSchema,
+} from "./engineering-units";
 import { defineRevisionedSnapshot, RevisionSchema, type DeepReadonly } from "./snapshots";
 
 const ComponentRequirementSchema = z.object({
   instanceId: z.string().min(1),
-  componentRevision: z.string().min(1),
+  componentRevision: RevisionSchema,
   quantity: z.number().int().positive(),
   transform: TransformSchema,
 }).strict();
@@ -27,5 +34,17 @@ export const AssemblySpecSchema = AssemblyDraftSchema;
 export type AssemblyDraft = DeepReadonly<z.infer<typeof AssemblyDraftSchema>>;
 export type AssemblySpec = AssemblyDraft;
 export const defineAssemblyDraft = async (value: unknown): Promise<AssemblyDraft> =>
+  defineRevisionedSnapshot(AssemblyDraftContentSchema, value, (draft) => ({
+    ...draft,
+    components: draft.components.map((component) => ({
+      ...component,
+      transform: normalizeTransform(component.transform),
+    })),
+    targetEnvelope: normalizeVolume(draft.targetEnvelope),
+    preservedMounts: draft.preservedMounts.map(normalizeMountInterface),
+    obstacleVolumes: draft.obstacleVolumes.map(normalizeVolume),
+    accessVolumes: draft.accessVolumes.map(normalizeVolume),
+  }));
+export const defineLegacyAssembly = async (value: unknown): Promise<AssemblyDraft> =>
   defineRevisionedSnapshot(AssemblyDraftContentSchema, value);
 export const defineAssembly = defineAssemblyDraft;

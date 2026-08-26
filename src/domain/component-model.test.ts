@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defineComponent } from "./component-model";
 
 const metre = (value: number) => ({ value, unit: "m" as const });
+const millimetre = (value: number) => ({ value, unit: "mm" as const });
 const degrees = (value: number) => ({ value, unit: "deg" as const });
 const origin = { x: metre(0), y: metre(0), z: metre(0) };
 const orientation = {
@@ -58,5 +59,22 @@ describe("component definitions", () => {
       coordinates: "component-local",
     });
     expect(component.mass.unit).toBe("kg");
+  });
+
+  it("normalizes accepted source engineering values to SI", async () => {
+    const component = await defineComponent({
+      ...validComponent,
+      mass: { value: 38, unit: "g" },
+      centerOfMass: { x: millimetre(10), y: millimetre(0), z: millimetre(0) },
+      allowedOrientations: [{
+        roll: degrees(180),
+        pitch: degrees(0),
+        yaw: degrees(0),
+      }],
+    });
+
+    expect(component.mass).toEqual({ value: 0.038, unit: "kg" });
+    expect(component.centerOfMass.x).toEqual({ value: 0.01, unit: "m" });
+    expect(component.allowedOrientations[0]?.roll).toEqual({ value: Math.PI, unit: "rad" });
   });
 });

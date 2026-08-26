@@ -5,6 +5,14 @@ import {
   LengthVectorSchema,
   MassSchema,
   MountInterfaceSchema,
+  LengthUnitSchema,
+  normalizeLengthVector,
+  normalizeMass,
+  normalizeOrientation,
+  normalizePositiveLength,
+  normalizePositiveLengthVector,
+  normalizeTransform,
+  normalizeVolume,
   OrientationSchema,
   PositiveLengthSchema,
   PositiveLengthVectorSchema,
@@ -65,7 +73,7 @@ export const ParametricGraphSchema = z.object({
 export type ParametricGraph = DeepReadonly<z.infer<typeof ParametricGraphSchema>>;
 
 export const ComponentGeometrySchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("asset"), assetId: DigestSchema, mediaType: CadMediaTypeSchema, units: z.enum(["mm", "m"]) }).strict(),
+  z.object({ kind: z.literal("asset"), assetId: DigestSchema, mediaType: CadMediaTypeSchema, units: LengthUnitSchema }).strict(),
   z.object({ kind: z.literal("parametric"), graph: ParametricGraphSchema }).strict(),
 ]);
 
@@ -120,4 +128,75 @@ export const ComponentDefinitionSchema = ComponentDefinitionContentSchema.extend
 
 export type ComponentDefinition = DeepReadonly<z.infer<typeof ComponentDefinitionSchema>>;
 export const defineComponent = async (value: unknown): Promise<ComponentDefinition> =>
+  defineRevisionedSnapshot(ComponentDefinitionContentSchema, value, normalizeComponentDefinition);
+export const defineLegacyComponent = async (value: unknown): Promise<ComponentDefinition> =>
   defineRevisionedSnapshot(ComponentDefinitionContentSchema, value);
+
+function normalizeComponentDefinition(value: z.infer<typeof ComponentDefinitionContentSchema>) {
+  return {
+    ...value,
+    mass: normalizeMass(value.mass),
+    centerOfMass: normalizeLengthVector(value.centerOfMass),
+    envelope: normalizeVolume(value.envelope),
+    mountInterfaces: value.mountInterfaces.map((mount) => ({
+      ...mount,
+      position: normalizeLengthVector(mount.position),
+      orientation: normalizeOrientation(mount.orientation),
+      diameter: normalizePositiveLength(mount.diameter),
+    })),
+    keepOutVolumes: value.keepOutVolumes.map(normalizeVolume),
+    loadContributions: value.loadContributions.map((load) => ({ ...load })),
+    allowedOrientations: value.allowedOrientations.map(normalizeOrientation),
+    geometry: value.geometry && normalizeComponentGeometry(value.geometry),
+    interfaces: value.interfaces.map(normalizeSemanticInterface),
+  };
+}
+
+function normalizeComponentGeometry(value: z.infer<typeof ComponentGeometrySchema>) {
+  return value.kind === "asset"
+    ? value
+    : { ...value, graph: { nodes: value.graph.nodes.map(normalizeGraphNode) } };
+}
+
+function normalizeGraphNode(value: z.infer<typeof ParametricGraphSchema>["nodes"][number]) {
+  switch (value.kind) {
+    case "box":
+      return { ...value, center: normalizeLengthVector(value.center), size: normalizePositiveLengthVector(value.size) };
+    case "cylinder":
+      return {
+        ...value,
+        center: normalizeLengthVector(value.center),
+        radius: normalizePositiveLength(value.radius),
+        height: normalizePositiveLength(value.height),
+        orientation: normalizeOrientation(value.orientation),
+      };
+    case "transform":
+      return { ...value, transform: normalizeTransform(value.transform) };
+    case "extrude":
+      return { ...value, height: normalizePositiveLength(value.height) };
+    case "fillet":
+      return { ...value, radius: normalizePositiveLength(value.radius) };
+    default:
+      return value;
+  }
+}
+
+function normalizeSemanticInterface(value: z.infer<typeof SemanticInterfaceSchema>) {
+  const base = {
+    ...value,
+    position: normalizeLengthVector(value.position),
+    orientation: normalizeOrientation(value.orientation),
+  };
+
+  switch (value.kind) {
+    case "mount":
+      return { ...base, diameter: normalizePositiveLength(value.diameter) };
+    case "access":
+    case "cooling":
+      return { ...base, volume: normalizeVolume(value.volume) };
+    case "load":
+      return { ...base, force: value.force };
+    default:
+      return base;
+  }
+}
