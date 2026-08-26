@@ -3,7 +3,7 @@ import type { ParametricGraph } from "../domain/component-model";
 export type SiVector = readonly [number, number, number];
 type OptimizationRole = "fixed-component" | "protected";
 type Source = Readonly<{
-  kind: "primary-manufacturer";
+  kind: "manufacturer-datasheet" | "manufacturer-product-page" | "supplier-specification" | "derived-constraint-input";
   title: string;
   url: string;
   accessedOn: "2026-08-26";
@@ -36,7 +36,7 @@ export interface ReferenceDroneComponent {
   readonly exactPart: string;
   readonly category: "motor" | "avionics" | "battery" | "fastener" | "wiring" | "propeller";
   readonly massKg: number;
-  readonly massAccounting: "standalone" | "included-in-parent-motor";
+  readonly massAccounting: "standalone" | "none";
   readonly optimizationRole: OptimizationRole;
   readonly anchor: Readonly<{ id: string; position: readonly [0, 0, 0] }>;
   readonly geometry: ReferenceGeometry;
@@ -61,8 +61,8 @@ const point = (x: number, y: number, z: number) => ({ x: m(x), y: m(y), z: m(z) 
 const cylinder = (id: string, center: SiVector, radius: number, height: number) => ({
   kind: "cylinder" as const, id, center: point(...center), radius: m(radius), height: m(height), orientation: zeroOrientation,
 });
-const source = (title: string, url: string): Source => ({
-  kind: "primary-manufacturer", title, url, accessedOn: "2026-08-26", redistribution: "specification-facts-only; no CAD redistributed",
+const source = (kind: Source["kind"], title: string, url: string): Source => ({
+  kind, title, url, accessedOn: "2026-08-26", redistribution: "specification-facts-only; no CAD redistributed",
 });
 
 const motorGraph: ParametricGraph = { nodes: [
@@ -92,12 +92,14 @@ const fastenerGraph: ParametricGraph = { nodes: [
   { kind: "subtraction", id: "m3x8-with-drive", left: "m3x8-solid", right: "socket-recess" },
 ] };
 
-const hobbywing = source("Hobbywing XRotor 2207.5SL 1780KV specification", "https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf");
-const hobbywingProduct = source("Hobbywing XRotor 2207.5 product page", "https://www.hobbywing.com/en/products/xrotor-22075");
-const speedybee = source("SpeedyBee F405 V4 BLS 55A 30x30 stack", "https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/");
-const tattu = source("Tattu R-Line V5 1550mAh 6S 150C", "https://www.genstattu.com/tattu-r-line-version-5-0-1550mah-6s-150c-22-2v-lipo-battery-pack-with-xt60-plug/");
-const accu = source("Accu SSCF-M3-8-12.9-Z", "https://www.accu.co.uk/metric-cap-head-screws/386767-SSCF-M3-8-12-9-Z");
-const hqprop = source("HQProp HQ5X4.3X3V2S-PC", "https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html");
+const hobbywing = source("manufacturer-datasheet", "Hobbywing XRotor 2207.5SL 1780KV specification", "https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf");
+const hobbywingProduct = source("manufacturer-product-page", "Hobbywing XRotor 2207.5 product page", "https://www.hobbywing.com/en/products/xrotor-22075");
+const speedybee = source("manufacturer-product-page", "SpeedyBee F405 V4 BLS 55A 30x30 stack", "https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/");
+const tattu = source("manufacturer-product-page", "Tattu R-Line V5 1550mAh 6S 150C", "https://www.genstattu.com/tattu-r-line-version-5-0-1550mah-6s-150c-22-2v-lipo-battery-pack-with-xt60-plug/");
+const accu = source("supplier-specification", "Accu SSCF-M3-8-12.9-Z", "https://www.accu.co.uk/metric-cap-head-screws/386767-SSCF-M3-8-12-9-Z");
+const hqprop = source("manufacturer-product-page", "HQProp HQ5X4.3X3V2S-PC", "https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html");
+const wiringMotorInput = source("derived-constraint-input", "Hobbywing motor-lead input to derived corridor", hobbywing.url);
+const wiringStackInput = source("derived-constraint-input", "SpeedyBee connection input to derived corridor", speedybee.url);
 const mountPoints = [[0.005657, 0.005657, 0], [-0.005657, 0.005657, 0], [-0.005657, -0.005657, 0], [0.005657, -0.005657, 0]] as const;
 const stackMounts = [[0.01525, 0.01525, 0], [-0.01525, 0.01525, 0], [-0.01525, -0.01525, 0], [0.01525, -0.01525, 0]] as const;
 
@@ -113,7 +115,7 @@ export const REFERENCE_DRONE_CATALOG: readonly ReferenceDroneComponent[] = Objec
     provenance: { mode: "modeled-from-specification", sources: [speedybee], dimensionalUncertainty: "Board dimensions and masses are published; 4 mm installed board gap is a conservative +/-2 mm assembly assumption.", dimensionsUsed: ["FC 41.6 x 39.4 x 7.8 mm", "ESC 45.6 x 44 x 8 mm", "30.5 mm square mount", "4 mm holes"] } },
   { id: "battery-6s-1550", exactPart: "Tattu TA-RL5-150C-1550-6S1P", category: "battery", massKg: 0.254, massAccounting: "standalone", optimizationRole: "fixed-component", anchor: { id: "package-center", position: [0, 0, 0] }, geometry: { kind: "box", size: [0.078, 0.037, 0.052] }, collision: [{ kind: "box", center: [0, 0, 0], size: [0.078, 0.037, 0.052] }], interfaces: [{ id: "battery-power", kind: "cable", position: [0.039, 0, 0], connector: "XT60" }], protectedEnvelopes: [{ kind: "box", center: [0, 0, 0], size: [0.084, 0.043, 0.058] }], provenance: { mode: "modeled-from-specification", sources: [tattu], dimensionalUncertainty: "Manufacturer tolerances: length +/-5 mm, width/height +/-2 mm, mass +/-20 g.", dimensionsUsed: ["78 x 37 x 52 mm package", "XT60 interface"] } },
   { id: "fastener-m3x8", exactPart: "Accu SSCF-M3-8-12.9-Z", category: "fastener", massKg: 0.0008, massAccounting: "standalone", optimizationRole: "fixed-component", anchor: { id: "under-head-bearing-plane", position: [0, 0, 0] }, geometry: { kind: "parametric", graph: fastenerGraph, display: { kind: "fastener" } }, collision: [{ kind: "cylinder", center: [0, 0, 0.0025], radius: 0.00284, height: 0.011 }], interfaces: [{ id: "m3-thread", kind: "mate", position: [0, 0, 0], diameter: 0.003 }], protectedEnvelopes: [], provenance: { mode: "modeled-from-specification", sources: [accu], dimensionalUncertainty: "Head diameter +0/-0.36 mm and head height +0/-0.14 mm; thread represented by its nominal envelope.", dimensionsUsed: ["M3 x 8 mm shank", "5.68 x 3 mm head", "2.5 x 1.3 mm socket"] } },
-  { id: "motor-wiring-corridor", exactPart: "Reference 3x20AWG motor-lead routing corridor rev 1", category: "wiring", massKg: 0.038, massAccounting: "included-in-parent-motor", optimizationRole: "protected", anchor: { id: "corridor-center", position: [0, 0, 0] }, geometry: { kind: "corridor", size: [0.184, 0.006, 0.006] }, collision: [{ kind: "box", center: [0, 0, 0], size: [0.184, 0.006, 0.006] }], interfaces: [{ id: "wire-route", kind: "cable", position: [0, 0, 0], connector: "3x 20AWG motor leads" }], protectedEnvelopes: [{ kind: "box", center: [0, 0, 0], size: [0.184, 0.006, 0.006] }], provenance: { mode: "modeled-from-specification", sources: [hobbywing, speedybee], dimensionalUncertainty: "6 mm corridor is a conservative routing allowance around published 20AWG motor leads; 38 g is the source-backed parent motor mass including leads and is explicitly non-additive.", dimensionsUsed: ["three 20AWG motor leads", "150 mm published lead length", "184 x 6 x 6 mm protected route assumption"] } },
+  { id: "motor-wiring-corridor", exactPart: "Reference 3x20AWG motor-lead routing corridor rev 1", category: "wiring", massKg: 0, massAccounting: "none", optimizationRole: "protected", anchor: { id: "corridor-center", position: [0, 0, 0] }, geometry: { kind: "corridor", size: [0.184, 0.006, 0.006] }, collision: [{ kind: "box", center: [0, 0, 0], size: [0.184, 0.006, 0.006] }], interfaces: [{ id: "wire-route", kind: "cable", position: [0, 0, 0], connector: "3x 20AWG motor leads" }], protectedEnvelopes: [{ kind: "box", center: [0, 0, 0], size: [0.184, 0.006, 0.006] }], provenance: { mode: "modeled-from-specification", sources: [wiringMotorInput, wiringStackInput], dimensionalUncertainty: "6 mm corridor is a conservative routing allowance around published 20AWG motor leads; the constraint has no independent physical mass.", dimensionsUsed: ["three 20AWG motor leads", "150 mm published lead length", "184 x 6 x 6 mm protected route assumption"] } },
   { id: "propeller-5x4.3x3", exactPart: "HQProp HQ5X4.3X3V2S-PC", category: "propeller", massKg: 0.0038, massAccounting: "standalone", optimizationRole: "protected", anchor: { id: "hub-mid-plane", position: [0, 0, 0] }, geometry: { kind: "swept-rotor", radius: 0.0635, hubRadius: 0.0064, hubHeight: 0.0065, bladeCount: 3 }, collision: [{ kind: "swept-disc", center: [0, 0, 0], radius: 0.0635, height: 0.0065 }], interfaces: [{ id: "propeller-shaft", kind: "mate", position: [0, 0, 0], diameter: 0.005 }], protectedEnvelopes: [{ kind: "swept-disc", center: [0, 0, 0], radius: 0.066, height: 0.0085 }], provenance: { mode: "modeled-from-specification", sources: [hqprop], dimensionalUncertainty: "Published overall and hub dimensions; blade planform is illustrative and the protected radius includes 2.5 mm clearance.", dimensionsUsed: ["5 inch diameter", "12.8 x 6.5 mm hub", "5 mm shaft", "3 blades"] } },
 ]);
 

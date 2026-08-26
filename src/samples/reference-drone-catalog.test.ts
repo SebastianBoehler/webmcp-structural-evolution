@@ -6,6 +6,51 @@ import {
   referenceDroneAssembly,
 } from "./reference-drone-catalog";
 
+const EXPECTED_PROVENANCE = {
+  "motor-2207": {
+    exactPart: "Hobbywing XRotor-2207.5SL-1780KV",
+    massKg: 0.038,
+    massAccounting: "standalone",
+    sources: [
+      { kind: "manufacturer-datasheet", url: "https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf" },
+      { kind: "manufacturer-product-page", url: "https://www.hobbywing.com/en/products/xrotor-22075" },
+    ],
+  },
+  "fc-esc-stack-30x30": {
+    exactPart: "SpeedyBee F405 V4 + BLS 55A Stack, SB-F4V4-55-STACK",
+    massKg: 0.034,
+    massAccounting: "standalone",
+    sources: [{ kind: "manufacturer-product-page", url: "https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/" }],
+  },
+  "battery-6s-1550": {
+    exactPart: "Tattu TA-RL5-150C-1550-6S1P",
+    massKg: 0.254,
+    massAccounting: "standalone",
+    sources: [{ kind: "manufacturer-product-page", url: "https://www.genstattu.com/tattu-r-line-version-5-0-1550mah-6s-150c-22-2v-lipo-battery-pack-with-xt60-plug/" }],
+  },
+  "fastener-m3x8": {
+    exactPart: "Accu SSCF-M3-8-12.9-Z",
+    massKg: 0.0008,
+    massAccounting: "standalone",
+    sources: [{ kind: "supplier-specification", url: "https://www.accu.co.uk/metric-cap-head-screws/386767-SSCF-M3-8-12-9-Z" }],
+  },
+  "motor-wiring-corridor": {
+    exactPart: "Reference 3x20AWG motor-lead routing corridor rev 1",
+    massKg: 0,
+    massAccounting: "none",
+    sources: [
+      { kind: "derived-constraint-input", url: "https://www.hobbywing.com/en/uploads/file/20251117/feb50ba5342e53ce2431c20799f047d8.pdf" },
+      { kind: "derived-constraint-input", url: "https://www.speedybee.com/speedybee-f405-v4-bls-55a-30x30-fc-esc-stack/" },
+    ],
+  },
+  "propeller-5x4.3x3": {
+    exactPart: "HQProp HQ5X4.3X3V2S-PC",
+    massKg: 0.0038,
+    massAccounting: "standalone",
+    sources: [{ kind: "manufacturer-product-page", url: "https://www.hqprop.com/hq-freestyle-prop-5x43x3v2s-2cw2ccw-poly-carbonate-p0233.html" }],
+  },
+} as const;
+
 describe("reference drone catalog", () => {
   it("uses the motor mount plane as one world-transform anchor", () => {
     const motor = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "motor-2207")!;
@@ -33,10 +78,21 @@ describe("reference drone catalog", () => {
   });
 
   it("keeps every modeled component traceable to an accessed source", () => {
-    const wiring = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "motor-wiring-corridor")!;
+    const actualProvenance = Object.fromEntries(REFERENCE_DRONE_CATALOG.map((component) => [
+      component.id,
+      {
+        exactPart: component.exactPart,
+        massKg: component.massKg,
+        massAccounting: component.massAccounting,
+        sources: component.provenance.sources.map(({ kind, url }) => ({ kind, url })),
+      },
+    ]));
 
-    expect(REFERENCE_DRONE_CATALOG.every((component) => component.exactPart.trim().length > 0)).toBe(true);
-    expect(REFERENCE_DRONE_CATALOG.every((component) => component.massKg > 0)).toBe(true);
+    expect(actualProvenance).toEqual(EXPECTED_PROVENANCE);
+    expect(REFERENCE_DRONE_CATALOG.filter(({ massAccounting }) => massAccounting === "standalone")
+      .every(({ massKg }) => massKg > 0)).toBe(true);
+    expect(REFERENCE_DRONE_CATALOG.filter(({ massAccounting }) => massAccounting === "none")
+      .every(({ massKg }) => massKg === 0)).toBe(true);
     expect(REFERENCE_DRONE_CATALOG.every((component) =>
       component.provenance.dimensionalUncertainty.trim().length > 0)).toBe(true);
     expect(REFERENCE_DRONE_CATALOG.every((component) =>
@@ -48,13 +104,9 @@ describe("reference drone catalog", () => {
       source.accessedOn === "2026-08-26")).toBe(true);
     expect(REFERENCE_DRONE_CATALOG.flatMap((component) =>
       component.provenance.sources).every((source) =>
-      source.kind === "primary-manufacturer" && source.url.startsWith("https://") &&
       source.redistribution.trim().length > 0)).toBe(true);
     expect(REFERENCE_DRONE_CATALOG.every((component) =>
       component.provenance.mode === "modeled-from-specification")).toBe(true);
-    expect(wiring.massAccounting).toBe("included-in-parent-motor");
-    expect(REFERENCE_DRONE_CATALOG.filter(({ id }) => id !== wiring.id).every((component) =>
-      component.massAccounting === "standalone")).toBe(true);
   });
 
   it("models the motor as a bounded multi-feature graph with mount semantics", async () => {
