@@ -15,7 +15,17 @@ describe("drone assembly workspace", () => {
     expect(parts.filter(({ kind }) => kind === "motor-mount")).toHaveLength(4);
     expect(parts.filter(({ kind }) => kind === "propeller")).toHaveLength(4);
     expect(parts.filter(({ kind }) => kind === "guard")).toHaveLength(4);
-    expect(parts.find(({ kind }) => kind === "flight-controller")).toMatchObject({ size: [54.3, 39, 17.5] });
+    expect(parts.find(({ id }) => id === "flight-controller")).toMatchObject({
+      kind: "flight-controller",
+      size: [41.6, 39.4, 7.8],
+    });
+    expect(parts.find(({ id }) => id === "flight-controller-esc")).toMatchObject({
+      kind: "flight-controller",
+      size: [45.6, 44, 8],
+    });
+    expect(parts.find(({ id }) => id === "battery")).toMatchObject({ size: [78, 37, 52] });
+    expect(parts.filter(({ id }) => id.includes("-fastener-"))).toHaveLength(16);
+    expect(parts.some(({ id }) => id === "receiver")).toBe(false);
     expect(parts.filter(({ appearance }) => appearance === "constraint").length).toBeGreaterThanOrEqual(8);
     expect(parts.find(({ id }) => id === "arm-design-region")?.appearance).toBe("design-region");
   });
@@ -27,13 +37,11 @@ describe("drone assembly workspace", () => {
     act(() => view.result.current.movePart("motor-east", [118, 14, 12]));
 
     const after = view.result.current.parts.filter(({ dragGroup }) => dragGroup === "motor-east");
-    expect(after.map(({ center }) => center.slice(0, 2))).toEqual([
-      [118, 14],
-      [118, 14],
-      [118, 14],
-      [118, 14],
-    ]);
-    expect(before.map(({ center }) => center.slice(0, 2))).not.toEqual(after.map(({ center }) => center.slice(0, 2)));
+    expect(after).toHaveLength(8);
+    expect(after.map(({ center }, index) => [
+      center[0] - before[index]!.center[0],
+      center[1] - before[index]!.center[1],
+    ])).toEqual(Array.from({ length: 8 }, () => [13, 14]));
     expect(view.result.current.layoutState).toBe("changed");
     expect(view.result.current.layoutVersion).toBe(2);
   });
