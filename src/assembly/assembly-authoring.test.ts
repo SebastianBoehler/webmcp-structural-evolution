@@ -145,4 +145,37 @@ describe("assembly authoring", () => {
     expect(first.revision).toBe(second.revision);
     expect(first.constraints.map(({ id }) => id)).toEqual(["a-leaf-follows-middle", "z-middle-follows-root"]);
   });
+
+  it("blocks mates that diverge only after a target moves through an active mate", async () => {
+    const state = await createAssemblyAuthoringState(await anchorDraft("late-conflict", {
+      root: [0.105, 0, 0.006], left: [0, 0, 0], right: [0, 0, 0], moving: [0, 0, 0],
+    }), REFERENCE_DRONE_CATALOG);
+    const solved = solveAssemblyConstraints(await applyConstraints(state, [
+      { id: "a-moving-to-left", moving: "moving", fixed: "left" },
+      { id: "b-moving-to-right", moving: "moving", fixed: "right" },
+      { id: "z-left-to-root", moving: "left", fixed: "root" },
+    ]));
+
+    expect(solved.constraintConflicts).toContainEqual(expect.objectContaining({
+      kind: "constraint-conflict", constraintIds: ["a-moving-to-left", "b-moving-to-right"],
+    }));
+    expect(solved.instances.moving?.transform.positionMm).toEqual([0, 0, 0]);
+    expect(solved.unresolvedDegreesOfFreedom.moving).toEqual(["x", "y", "z", "roll", "pitch", "yaw"]);
+  });
+
+  it("keeps an external root mate on a cycle node while reporting the cycle", async () => {
+    const state = await createAssemblyAuthoringState(await anchorDraft("cycle-with-root", {
+      root: [0.105, 0, 0.006], "cycle-a": [0, 0, 0], "cycle-b": [0, 0, 0],
+    }), REFERENCE_DRONE_CATALOG);
+    const solved = solveAssemblyConstraints(await applyConstraints(state, [
+      { id: "a-root-to-cycle-a", moving: "cycle-a", fixed: "root" },
+      { id: "z-cycle-a-follows-b", moving: "cycle-a", fixed: "cycle-b" },
+      { id: "z-cycle-b-follows-a", moving: "cycle-b", fixed: "cycle-a" },
+    ]));
+
+    expect(solved.instances["cycle-a"]?.transform.positionMm).toEqual([105, 0, 6]);
+    expect(solved.unresolvedDegreesOfFreedom["cycle-a"]).toEqual([]);
+    expect(solved.unresolvedDegreesOfFreedom["cycle-b"]).toEqual(["x", "y", "z", "roll", "pitch", "yaw"]);
+    expect(solved.constraintConflicts).toContainEqual(expect.objectContaining({ kind: "constraint-cycle" }));
+  });
 });

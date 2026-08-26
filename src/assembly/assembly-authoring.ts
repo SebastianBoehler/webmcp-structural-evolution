@@ -78,21 +78,27 @@ export function solveAssemblyConstraints(state: AssemblyAuthoringState): SolvedA
   const dof = new Map(state.draft.components.map(({ instanceId }) => [instanceId, new Set(["x", "y", "z", "roll", "pitch", "yaw"])]));
   const constraints = [...state.constraints].sort(compareId);
   const cycleIds = cyclicConstraintIds(constraints);
-  const conflictIds = conflictingConstraintIds(constraints, cycleIds, byInstance, transforms, state.catalog);
+  const conflictIds = new Set<string>();
   const blockedIds = new Set([...cycleIds, ...conflictIds]);
-  const active = constraints.filter(({ id }) => !blockedIds.has(id));
-  for (let pass = 0; pass <= active.length; pass += 1) {
+  for (let pass = 0; pass <= constraints.length; pass += 1) {
     let changed = false;
+    const newConflicts = conflictingConstraintIds(constraints, blockedIds, byInstance, transforms, state.catalog);
+    for (const id of newConflicts) {
+      if (blockedIds.has(id)) continue;
+      blockedIds.add(id); conflictIds.add(id); changed = true;
+      const movingId = constraints.find((constraint) => constraint.id === id)!.moving.instanceId;
+      const original = originalTransforms.get(movingId)!;
+      transforms.set(movingId, cloneMutableTransform(original));
+    }
+    const active = constraints.filter(({ id }) => !blockedIds.has(id));
     for (const constraint of active) {
       changed = applyConstraint(constraint, byInstance, transforms, state.catalog) || changed;
-      const unresolved = dof.get(constraint.moving.instanceId)!;
-      for (const degree of constrainedDegrees(constraint.kind)) unresolved.delete(degree);
     }
     if (!changed) break;
   }
-  for (const constraint of constraints.filter(({ id }) => blockedIds.has(id))) {
-    const original = originalTransforms.get(constraint.moving.instanceId)!;
-    transforms.set(constraint.moving.instanceId, { position: [...original.position] as Vector, orientation: [...original.orientation] as Vector });
+  for (const constraint of constraints.filter(({ id }) => !blockedIds.has(id))) {
+    const unresolved = dof.get(constraint.moving.instanceId)!;
+    for (const degree of constrainedDegrees(constraint.kind)) unresolved.delete(degree);
   }
   const constraintConflicts = [
     ...conflictIds.size ? [{ id: `constraint-conflict:${[...conflictIds].sort().join(":")}`, kind: "constraint-conflict" as const, constraintIds: [...conflictIds].sort() }] : [],
@@ -138,10 +144,10 @@ function cyclicConstraintIds(constraints: readonly AssemblyConstraint[]) {
 }
 
 function conflictingConstraintIds(
-  constraints: readonly AssemblyConstraint[], cycleIds: ReadonlySet<string>, instances: Map<string, ComponentInstance>, transforms: Map<string, MutableTransform>, catalog: readonly ComponentDefinition[],
+  constraints: readonly AssemblyConstraint[], blockedIds: ReadonlySet<string>, instances: Map<string, ComponentInstance>, transforms: Map<string, MutableTransform>, catalog: readonly ComponentDefinition[],
 ) {
   const groups = new Map<string, AssemblyConstraint[]>();
-  for (const constraint of constraints.filter(({ id }) => !cycleIds.has(id))) {
+  for (const constraint of constraints.filter(({ id }) => !blockedIds.has(id))) {
     const group = groups.get(constraint.moving.instanceId) ?? [];
     group.push(constraint); groups.set(constraint.moving.instanceId, group);
   }
