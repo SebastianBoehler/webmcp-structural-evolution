@@ -184,7 +184,7 @@ const StudySpecContentSchema = z
     manufacturing: z
       .object({
         process: z.literal("fused-filament-fabrication"),
-        minimumFeature: LengthSchema,
+        minimumFeature: PositiveLengthSchema,
         buildDirection: z.enum(["x", "y", "z"]),
       })
       .strict(),
@@ -196,7 +196,7 @@ const StudySpecContentSchema = z
       })
       .strict(),
     hardLimits: z
-      .object({ maximumDisplacement: LengthSchema })
+      .object({ maximumDisplacement: PositiveLengthSchema })
       .strict(),
     deterministicSeed: z.number().int().nonnegative(),
     solverRevision: z.string().min(1),

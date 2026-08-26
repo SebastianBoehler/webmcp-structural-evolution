@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { MountInterfaceSchema, VolumeSchema } from "./design";
+import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
+import { MountInterfaceSchema, StudySpecSchema, VolumeSchema } from "./design";
 
 const length = (value: number) => ({ value, unit: "mm" as const });
 const center = { x: length(0), y: length(0), z: length(0) };
@@ -26,4 +27,18 @@ test("rejects a non-positive mount diameter", () => {
   expect(MountInterfaceSchema.safeParse({
     id: "mount", position: center, orientation, diameter: length(0), fastenerType: "M3",
   }).success).toBe(false);
+});
+
+test.each([
+  ["minimum feature", "minimumFeature", 0],
+  ["minimum feature", "minimumFeature", -1],
+  ["maximum displacement", "maximumDisplacement", 0],
+  ["maximum displacement", "maximumDisplacement", -1],
+] as const)("rejects a non-positive %s magnitude", (_label, field, value) => {
+  const source = DRONE_ARM_FOUNDATION_STUDY.study;
+  const candidate = field === "minimumFeature"
+    ? { ...source, manufacturing: { ...source.manufacturing, minimumFeature: length(value) } }
+    : { ...source, hardLimits: { maximumDisplacement: length(value) } };
+
+  expect(StudySpecSchema.safeParse(candidate).success).toBe(false);
 });

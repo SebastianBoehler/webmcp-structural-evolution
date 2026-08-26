@@ -162,8 +162,10 @@ test("unmount during proposal hashing never stages or computes a late branch", a
     await hashGate;
     return originalDigest(algorithm, data);
   });
+  const invocationController = new AbortController();
+  const removeInvocationListener = vi.spyOn(invocationController.signal, "removeEventListener");
   const hook = renderHook(() => useProjectState(options(compute)));
-  const invocation = hook.result.current.services.runProbe(baseInput);
+  const invocation = hook.result.current.services.runProbe(baseInput, invocationController.signal);
   await waitFor(() => expect(digest).toHaveBeenCalledOnce());
 
   hook.unmount();
@@ -172,6 +174,7 @@ test("unmount during proposal hashing never stages or computes a late branch", a
 
   expect(branch.status).toBe("canceled");
   expect(compute).not.toHaveBeenCalled();
+  expect(removeInvocationListener).toHaveBeenCalledWith("abort", expect.any(Function));
   digest.mockRestore();
 });
 

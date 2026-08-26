@@ -19,13 +19,11 @@ import { inspectProjectFacts } from "./project-inspection";
 import { createExperimentRail } from "./project-experiment-rail";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
 import { abandonedProbe, cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
-import type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
+import type { ExperimentRailApi, ProjectStateApi, ProjectStateOptions } from "./project-state-types";
 import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
-export function useProjectState(options: ProjectStateOptions): {
-  readonly state: FoundationProjectState; readonly services: FoundationServices; readonly experimentRail: ExperimentRailApi;
-} {
+export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const stateRef = useRef<FoundationProjectState | null>(null);
   if (!stateRef.current) stateRef.current = createInitialProjectState(options);
   const [state, setState] = useState(stateRef.current);
@@ -86,6 +84,7 @@ export function useProjectState(options: ProjectStateOptions): {
     if (operation.branchRevision) {
       void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
     } else {
+      operation.detachExternalAbort?.();
       operation.controller.abort();
       operationRef.current = null;
     }
