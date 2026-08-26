@@ -16,6 +16,7 @@
     "check": "pnpm wasm:build && pnpm test:run && pnpm build && cargo test --manifest-path crates/reference/Cargo.toml"
   },
   "dependencies": {
+    "fflate": "0.8.3",
     "occt-import-js": "0.0.23",
     "react": "19.2.8",
     "react-dom": "19.2.8",
