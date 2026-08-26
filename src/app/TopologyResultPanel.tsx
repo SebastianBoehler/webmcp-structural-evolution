@@ -22,7 +22,7 @@ const megapascals = (value: number) => compact(value / 1_000_000);
 
 export function TopologyResultPanel({ branch, variant = "balanced", assemblyParts = [] }: TopologyResultPanelProps) {
   const [exported, setExported] = useState(false);
-  const [glbStatus, setGlbStatus] = useState<"idle" | "exporting" | "exported">("idle");
+  const [glbStatus, setGlbStatus] = useState<"idle" | "exporting" | "exported" | "error">("idle");
   if (branch.result.status !== "verified" || !branch.result.topology) return null;
   const output = branch.result.output;
   const metrics = branch.result.topology;
@@ -33,7 +33,7 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
     <section className="topology-result" aria-label="Topology result">
       <div className="topology-result__header">
         <div><strong>Optimized frame</strong><span>{variant} · PLA profile</span></div>
-        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{safe ? "Passes PLA screen" : "Fails PLA screen"}</span>
+        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{safe ? "Provisional axial screen" : "Fails axial PLA screen"}</span>
       </div>
       <dl>
         <div><dt>Material removed</dt><dd>{percent(removed)}</dd></div>
@@ -41,6 +41,7 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
         <div><dt>Peak displacement</dt><dd>{millimetres(metrics.maxDisplacement)} mm</dd></div>
         <div><dt>Peak axial stress</dt><dd>{megapascals(metrics.maxStress)} MPa</dd></div>
         <div><dt>Minimum safety factor</dt><dd>{compact(metrics.minimumSafetyFactor)}×</dd></div>
+        <div><dt>Calibration</dt><dd>Continuum FEA pending</dd></div>
         {metrics.assemblyMassKg !== undefined && <div><dt>Accounted assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
         {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated PLA frame mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
         {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
@@ -63,9 +64,9 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
           setGlbStatus("exporting");
           void downloadEngineeringAssemblyGlb(branch.grid, output, assemblyParts)
             .then(() => setGlbStatus("exported"))
-            .catch(() => setGlbStatus("idle"));
+            .catch(() => setGlbStatus("error"));
         }}
-      >{!safe ? "GLB blocked: unsafe candidate" : glbStatus === "exporting" ? "Building PBR GLB…" : glbStatus === "exported" ? "Assembly GLB exported" : "Export PBR assembly GLB"}</button>
+      >{!safe ? "GLB blocked: unsafe candidate" : glbStatus === "exporting" ? "Building PBR GLB…" : glbStatus === "exported" ? "Assembly GLB exported" : glbStatus === "error" ? "GLB export failed · retry" : "Export PBR assembly GLB"}</button>
     </section>
   );
 }

@@ -23,7 +23,7 @@
 .topology-result__header strong { display: block; }
 .topology-result__header span,
 .topology-result dt { color: var(--text-secondary); font-size: var(--text-caption); }
-.topology-result__status { color: var(--success) !important; }
+.topology-result__status { color: var(--text-secondary) !important; }
 .topology-result__status--unsafe { color: var(--danger, #e66c54) !important; }
 .topology-result dl { display: grid; gap: 0.35rem; margin: 0.7rem 0; }
 .topology-result dd { margin: 0; font-variant-numeric: tabular-nums; font-size: var(--text-caption); }
