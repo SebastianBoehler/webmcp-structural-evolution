@@ -18,7 +18,19 @@ export interface ViewerRenderModel {
   readonly grid: VoxelGrid;
   readonly currentInstances: PackedInstances;
   readonly alternativeLayers: readonly AlternativeLayer[];
+  readonly assemblyParts?: readonly AssemblyVisualPart[];
 }
+
+export type AssemblyVisualPart = Readonly<{
+  id: string;
+  selectionId: string;
+  label: string;
+  center: Vector3Tuple;
+  appearance: "component" | "design-region" | "constraint";
+}> & (
+  | Readonly<{ kind: "box"; size: Vector3Tuple }>
+  | Readonly<{ kind: "cylinder"; radius: number; height: number }>
+);
 
 export interface CameraEnvelope {
   readonly target: Vector3Tuple;
@@ -161,11 +173,14 @@ function includeInstances(
   }
 }
 
-function cameraFor(grid: VoxelGrid, bounds: Bounds): CameraEnvelope {
+function cameraFor(grid: VoxelGrid, bounds: Bounds, focusAssembly: boolean): CameraEnvelope {
   const ranges = bounds.max.map((maximum, axis) => maximum - bounds.min[axis]!);
   const span = bounded(Math.max(1, ...ranges, ...grid.cellSize), "camera span");
   const target = Object.freeze(grid.anchor.position.map((value, axis) =>
-    bounded(value, `camera target[${axis}]`),
+    bounded(
+      focusAssembly ? (bounds.min[axis]! + bounds.max[axis]!) / 2 : value,
+      `camera target[${axis}]`,
+    ),
   )) as Vector3Tuple;
   const position = Object.freeze([1.4, 1, 1.8].map((factor, axis) => bounded(
     f32Add(
@@ -184,10 +199,28 @@ function cameraFor(grid: VoxelGrid, bounds: Bounds): CameraEnvelope {
   });
 }
 
+function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: number): void {
+  const label = `assembly part[${index}]`;
+  if (!part.id.trim() || !part.selectionId.trim() || !part.label.trim()) {
+    throw new RangeError(`${label} requires an id, selection id, and label`);
+  }
+  const half = part.kind === "box"
+    ? part.size.map((value, axis) => bounded(value / 2, `${label} half size[${axis}]`))
+    : [part.radius, part.radius, part.height / 2].map((value, axis) =>
+        bounded(value, `${label} half size[${axis}]`));
+  part.center.forEach((value, axis) => {
+    const center = bounded(value, `${label} center[${axis}]`);
+    bounds.min[axis] = Math.min(bounds.min[axis], bounded(center - half[axis]!, `${label} minimum[${axis}]`));
+    bounds.max[axis] = Math.max(bounds.max[axis], bounded(center + half[axis]!, `${label} maximum[${axis}]`));
+  });
+}
+
 export function prepareRenderModel(model: ViewerRenderModel): PreparedRenderModel {
   const grid = normalizeGrid(model.grid);
   const anchor = grid.anchor.position;
   const bounds: Bounds = { min: [...anchor], max: [...anchor] };
+  const assemblyParts = model.assemblyParts ?? [];
+  assemblyParts.forEach((part, index) => includeAssemblyPart(part, bounds, index));
   includeInstances(model.currentInstances, grid, ZERO_OFFSET, bounds, "current");
   const layers = model.alternativeLayers.map((layer, index) => {
     const layerGrid = normalizeGrid(layer.grid);
@@ -203,6 +236,7 @@ export function prepareRenderModel(model: ViewerRenderModel): PreparedRenderMode
     grid,
     currentInstances: model.currentInstances,
     alternativeLayers: Object.freeze(layers),
-    camera: cameraFor(grid, bounds),
+    assemblyParts: Object.freeze(assemblyParts),
+    camera: cameraFor(grid, bounds, assemblyParts.length > 0),
   });
 }

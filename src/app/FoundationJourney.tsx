@@ -12,10 +12,16 @@ import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer"
 import type { AlternativeMode, ViewerBranch } from "../viewer/alternative-instances";
 import { FoundationTools } from "../webmcp/FoundationTools";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
+import { ComponentBrowser } from "./ComponentBrowser";
+import { DRONE_ARM_VISUALS } from "./drone-arm-visuals";
 import { EvidencePanel } from "./EvidencePanel";
 import { ExperimentRail } from "./ExperimentRail";
+import { InspectorPanel } from "./InspectorPanel";
 import { ReceiptLedger } from "./ReceiptLedger";
 import { useProjectState } from "./useProjectState";
+import { useTheme } from "./useTheme";
+import { WorkbenchDrawer, type DrawerView } from "./WorkbenchDrawer";
+import { WorkbenchHeader } from "./WorkbenchHeader";
 
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
 const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
@@ -52,8 +58,14 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     capability,
     compute,
   });
+  const { theme, setTheme } = useTheme();
   const [mode, setMode] = useState<AlternativeMode>("overlay");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
+  const [selectedPart, setSelectedPart] = useState("arm-design-region");
+  const [showConstraints, setShowConstraints] = useState(false);
+  const [activeDrawer, setActiveDrawer] = useState<DrawerView>();
+  const [componentsOpen, setComponentsOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
 
@@ -63,15 +75,13 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const alternatives = state.stagedBranches.filter(
     (branch) => branch.branchRevision !== state.acceptedBranchRevision && branch.result?.status === "verified",
   );
-  const viewerCurrent: ViewerBranch | null = accepted?.result?.status === "verified"
-    ? {
-        branchRevision: accepted.branchRevision,
-        contextRevision: state.contextRevision,
-        parentRevision: accepted.parentRevision,
-        grid: state.context.grid,
-        result: accepted.result,
-      }
-    : null;
+  const viewerCurrent: ViewerBranch | null = accepted?.result?.status === "verified" ? {
+    branchRevision: accepted.branchRevision,
+    contextRevision: state.contextRevision,
+    parentRevision: accepted.parentRevision,
+    grid: state.context.grid,
+    result: accepted.result,
+  } : null;
   const viewerAlternatives: readonly ViewerBranch[] = alternatives.map((branch) => ({
     branchRevision: branch.branchRevision,
     contextRevision: branch.parentRevision,
@@ -79,8 +89,6 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     grid: state.context.grid,
     result: branch.result!,
   }));
-  const selectedRegion = state.context.selection;
-
   const currentVerified = alternatives.filter(
     (branch) => branch.parentRevision === state.contextRevision && !branch.stale && branch.status === "verified",
   );
@@ -99,12 +107,18 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     : canRetry("edge-biased") ? "edge-biased"
       : latestVariant("edge-biased")?.status === "verified" && canRetry("center-biased")
         ? "center-biased" : undefined;
+  const pendingPromotion = currentBranches.find(
+    (branch) => branch.status === "verified" && branch.branchRevision !== state.acceptedBranchRevision,
+  );
+  const readyToCompare = accepted && currentVerified.length >= 2;
   const retrying = nextVariant !== undefined && latestVariant(nextVariant) !== undefined;
-  const primaryLabel = capability.status !== "available" ? "Run foundation probe"
-    : nextVariant === "baseline" ? `${retrying ? "Retry" : "Run"} baseline verification`
-    : nextVariant === "edge-biased" ? `${retrying ? "Retry" : "Run"} edge-biased alternative`
-      : nextVariant === "center-biased" ? `${retrying ? "Retry" : "Run"} center-biased alternative`
-        : accepted ? "Alternatives ready to compare" : "Baseline verified—promote below";
+  const primaryLabel = state.operationStatus === "running" ? "Verification running…"
+    : state.operationStatus === "canceling" ? "Canceling…"
+      : nextVariant === "baseline" ? `${retrying ? "Retry" : "Run"} baseline verification`
+        : nextVariant === "edge-biased" ? `${retrying ? "Retry" : "Generate"} edge alternative`
+          : nextVariant === "center-biased" ? `${retrying ? "Retry" : "Generate"} center alternative`
+            : readyToCompare ? "Compare alternatives"
+              : pendingPromotion ? "Review verified branch" : "No action available";
 
   const runVariant = async (variant: ProbeVariant) => {
     setError(undefined);
@@ -118,19 +132,25 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     setError(undefined);
     try {
       const [left, right] = currentVerified;
-      if (!left || !right) throw new Error("Two exact verified non-stale alternatives are required");
-      setComparison(await services.compareProbes({ leftRevision: left.branchRevision, rightRevision: right.branchRevision }));
+      if (!left || !right) throw new Error("Generate two verified alternatives before comparing them.");
+      setComparison(await services.compareProbes({
+        leftRevision: left.branchRevision,
+        rightRevision: right.branchRevision,
+      }));
+      setActiveDrawer("evidence");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+  const runPrimary = () => {
+    if (nextVariant) void runVariant(nextVariant);
+    else if (readyToCompare) void compare();
+    else if (pendingPromotion) setActiveDrawer("branches");
+  };
   const cancel = async () => {
     setError(undefined);
-    try {
-      await services.cancelProbe();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
+    try { await services.cancelProbe(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
   const intervene = async () => {
     setError(undefined);
@@ -144,102 +164,122 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const journeyState = useMemo(() => ({
-    proposed: state.stagedBranches.length > 0,
-    verified: state.stagedBranches.some((branch) => branch.status === "verified"),
-    compared: comparison !== undefined,
-    stale: state.stagedBranches.some((branch) => branch.stale),
-    promoted: state.acceptedBranchRevision !== initialAcceptedRevision,
-  }), [state, comparison]);
+  const visibleParts = useMemo(
+    () => DRONE_ARM_VISUALS.filter((part) => showConstraints || part.appearance !== "constraint"),
+    [showConstraints],
+  );
+  const drawerItems = [
+    {
+      id: "evidence" as const,
+      label: "Evidence",
+      content: <EvidencePanel state={state} comparison={comparison} initialAcceptedRevision={initialAcceptedRevision} />,
+    },
+    {
+      id: "branches" as const,
+      label: "Branches",
+      count: state.stagedBranches.length,
+      content: <ExperimentRail state={state} api={experimentRail} />,
+    },
+    {
+      id: "history" as const,
+      label: "History",
+      count: state.receipts.length,
+      content: <ReceiptLedger receipts={state.receipts} />,
+    },
+    {
+      id: "agents" as const,
+      label: "Agent tools",
+      content: <FoundationTools state={state} services={services} />,
+    },
+  ];
 
   return (
-    <main className="workbench">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Local agentic engineering foundation</p>
-          <h1>Structural Evolution</h1>
-          <p className="lede">Inspect one exact drone-arm configuration, stage reversible alternatives, and promote only evidence a human has verified.</p>
-        </div>
-        <div className={`capability-badge capability-badge--${capability.status}`} role="status">
-          <strong>WebGPU {capability.status}</strong><span>{capability.message}</span>
-        </div>
-        <div className="probe-actions">
-          <button
-            className="primary-action"
-            type="button"
-            disabled={!nextVariant || capability.status !== "available" || state.operationStatus !== "idle"}
-            onClick={() => nextVariant && void runVariant(nextVariant)}
-          >{state.operationStatus === "running"
-              ? "Probe running…"
-              : state.operationStatus === "canceling" ? "Probe canceling…" : primaryLabel}</button>
-          {state.operationStatus === "running" && (
-            <button className="cancel-action" type="button" onClick={() => void cancel()}>
-              Cancel running probe
-            </button>
-          )}
-        </div>
-        {error && <p className="inline-error" role="alert">{error}</p>}
-      </header>
-
-      <ol className="journey-strip" aria-label="Foundation journey">
-        <li data-complete>Inspect</li><li data-complete={journeyState.proposed}>Propose</li>
-        <li data-complete={journeyState.verified}>Verify</li><li data-complete={journeyState.compared}>Compare</li>
-        <li data-complete={journeyState.stale}>Intervene</li><li data-complete={journeyState.promoted}>Promote</li>
-      </ol>
-
-      <section className="fixture-grid" aria-label="Exact fixture and selected configuration">
-        <article className="fixture-card">
-          <p className="eyebrow">Exact input fixture</p>
-          <h2>Drone motor-arm foundation study</h2>
-          <dl className="fact-list">
-            <div><dt>Study revision</dt><dd><code>{fixture.study.revision}</code></dd></div>
-            <div><dt>Selection</dt><dd>{state.context.selection.label} <code>{state.context.selection.id}</code></dd></div>
-            <div><dt>Region bounds</dt><dd>{state.context.selection.min.join(",")} → {state.context.selection.maxExclusive.join(",")}</dd></div>
-            <div><dt>Coordinate space</dt><dd>{state.context.coordinateSpace} · {state.context.unit}</dd></div>
-            <div><dt>Grid</dt><dd>{Object.values(state.context.grid.dimensions).join(" × ")} · cell {state.context.grid.cellSize.join(" × ")} {state.context.unit}</dd></div>
-            <div><dt>Grid anchor</dt><dd>{state.context.grid.anchor.position.join(", ")} · {state.context.grid.anchor.orientation.join(", ")}</dd></div>
-            <div><dt>Constraint handshake</dt><dd>{state.context.locks.join(", ")}</dd></div>
-            <div><dt>Interfaces</dt><dd>{state.context.interfaces.preservedMounts} preserved mounts · {state.context.interfaces.keepOuts} keep-outs</dd></div>
-            <div><dt>Inventory</dt><dd>{state.context.inventory.status}; {state.context.inventory.shortageCount} exact shortfall</dd></div>
-          </dl>
-          <button
-            type="button"
-            disabled={state.context.locks.includes("cable-clearance")}
-            onClick={() => void intervene()}
-          >{state.context.locks.includes("cable-clearance") ? "Cable clearance locked" : "Lock cable clearance"}</button>
-        </article>
-
-        <div className="viewer-shell">
-          <p className="anchor-note">Overlay, peel, and audition keep every alternative as an exact configuration at the shared assembly anchor.</p>
-          <FieldViewer
-            current={viewerCurrent}
-            alternatives={viewerAlternatives}
-            selectedRegion={selectedRegion}
-            threshold={0.5}
-            mode={mode}
-            selectedAlternative={selectedAlternative}
-            environment={viewerEnvironment}
-            onModeChange={setMode}
-            onAlternativeSelect={setSelectedAlternative}
-          />
-        </div>
-      </section>
-
-      <EvidencePanel state={state} comparison={comparison} initialAcceptedRevision={initialAcceptedRevision} />
-
-      <section className="comparison-actions" aria-label="Exact comparison actions">
-        <button type="button" disabled={currentVerified.length < 2} onClick={() => void compare()}>
-          Compare verified alternatives
-        </button>
-        <p>Comparison requires two verified, non-stale branches with the exact same parent revision.</p>
-      </section>
-
-      <ExperimentRail state={state} api={experimentRail} />
-      <ReceiptLedger receipts={state.receipts} />
-      <details className="agent-details">
-        <summary>Agent access and protocol status</summary>
-        <FoundationTools state={state} services={services} />
-      </details>
+    <main className="workbench-shell">
+      <WorkbenchHeader
+        capability={capability}
+        theme={theme}
+        primaryLabel={primaryLabel}
+        primaryDisabled={
+          capability.status !== "available"
+          || state.operationStatus !== "idle"
+          || (!nextVariant && !readyToCompare && !pendingPromotion)
+        }
+        cancelVisible={state.operationStatus === "running"}
+        onPrimary={runPrimary}
+        onCancel={() => void cancel()}
+        onThemeChange={setTheme}
+        onOpenComponents={() => setComponentsOpen(true)}
+        onOpenInspector={() => setInspectorOpen(true)}
+      />
+      {error && <p className="global-error" role="alert">{error}</p>}
+      <div className="workbench-stage">
+        <ComponentBrowser
+          selectedId={selectedPart}
+          open={componentsOpen}
+          onSelect={(id) => { setSelectedPart(id); setComponentsOpen(false); }}
+          onClose={() => setComponentsOpen(false)}
+        />
+        <section className="viewport-workspace" aria-labelledby="viewport-title">
+          <header className="viewport-toolbar">
+            <div><h2 id="viewport-title">Assembly viewport</h2><p>{state.context.selection.label}</p></div>
+            <div className="toolbar-controls">
+              <div className="segmented-control" aria-label="Comparison mode">
+                {(["overlay", "peel", "audition"] as const).map((value) => (
+                  <button type="button" key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="toggle-button"
+                type="button"
+                aria-pressed={showConstraints}
+                onClick={() => setShowConstraints((shown) => !shown)}
+              >Constraints</button>
+            </div>
+          </header>
+          <div className="viewport-canvas">
+            <FieldViewer
+              current={viewerCurrent}
+              alternatives={viewerAlternatives}
+              selectedRegion={state.context.selection}
+              threshold={0.5}
+              mode={mode}
+              grid={state.context.grid}
+              assemblyParts={visibleParts}
+              selectedAlternative={selectedAlternative}
+              selectedPart={selectedPart}
+              statusText={viewerCurrent
+                ? undefined
+                : pendingPromotion
+                  ? "Verified branch ready for human review"
+                  : undefined}
+              environment={viewerEnvironment}
+              onPartSelect={setSelectedPart}
+            />
+            {viewerCurrent && alternatives.length > 0 && (
+              <div className="alternative-selector" aria-label="Rendered alternatives">
+                {alternatives.map((branch, index) => (
+                  <button
+                    type="button"
+                    key={branch.branchRevision}
+                    aria-pressed={selectedAlternative === branch.branchRevision}
+                    onClick={() => setSelectedAlternative(branch.branchRevision)}
+                  >Alternative {index + 1}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
+        </section>
+        <InspectorPanel
+          selectedId={selectedPart}
+          context={state.context}
+          open={inspectorOpen}
+          onClose={() => setInspectorOpen(false)}
+          onLockCableClearance={() => void intervene()}
+        />
+      </div>
     </main>
   );
 }

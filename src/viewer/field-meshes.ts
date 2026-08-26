@@ -120,7 +120,7 @@ export function createFieldMeshes(
 ): FieldMeshSet {
   const meshes: THREE.InstancedMesh[] = [];
   const ghostMaterials = new Map<string, THREE.MeshBasicMaterial>();
-  meshes.push(currentMesh(grid, currentInstances, ownership));
+  if (currentInstances.length > 0) meshes.push(currentMesh(grid, currentInstances, ownership));
   for (const layer of layers) {
     const mesh = ghostMesh(layer, ownership);
     meshes.push(mesh);

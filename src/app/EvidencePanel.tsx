@@ -17,8 +17,8 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
   return (
     <section className="evidence-panel" aria-labelledby="evidence-title">
       <div className="section-heading">
-        <p className="eyebrow">Evidence boundary</p>
         <h2 id="evidence-title">Prediction stays separate from proof</h2>
+        <p>Agent intent, measured output, and human authority remain distinct.</p>
       </div>
       <div className="evidence-grid">
         <article className="evidence-card evidence-card--prediction">
@@ -53,7 +53,10 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
         <article className="evidence-card">
           <p className="evidence-card__label">Human authority</p>
           {humanPromoted
-            ? <p>Human-promoted configuration: <code>{state.acceptedBranchRevision}</code></p>
+            ? <>
+                <p>Human-promoted configuration accepted.</p>
+                <details><summary>Show revision</summary><code>{state.acceptedBranchRevision}</code></details>
+              </>
             : <p>No experiment is accepted. Promotion is human-only.</p>}
         </article>
       </div>
@@ -69,7 +72,7 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
         </article>
       )}
 
-      <p className="scope-boundary"><strong>Compute foundation—not structural optimization.</strong> This verifies browser compute, Wasm agreement, immutable evidence, and agent tooling; it does not claim FEM, topology optimization, or structural validity.</p>
+      <p className="scope-boundary"><strong>Current foundation:</strong> browser compute, Wasm agreement, immutable evidence, and agent tooling are verified before the structural solver is connected.</p>
     </section>
   );
 }

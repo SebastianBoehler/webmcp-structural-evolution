@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import * as THREE from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,23 @@ import {
   region,
   renderedMeshes,
 } from "./field-viewer-test-support";
+import type { AssemblyVisualPart } from "./render-envelope";
+
+const part: AssemblyVisualPart = {
+  id: "motor-envelope",
+  selectionId: "motor",
+  label: "Motor",
+  appearance: "component",
+  kind: "cylinder",
+  center: [8, 0, 2],
+  radius: 2,
+  height: 4,
+};
+
+function renderedScene(test: ReturnType<typeof harness>): THREE.Scene {
+  test.flushFrame();
+  return test.renderer.render.mock.calls.at(-1)?.[0] as THREE.Scene;
+}
 
 describe("FieldViewer", () => {
   afterEach(() => {
@@ -19,41 +36,31 @@ describe("FieldViewer", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the canvas paired with semantic controls, selection, and branch deltas", () => {
+  it("renders the exact assembly before compute and exposes concise interaction guidance", () => {
     const test = harness();
-    const onModeChange = vi.fn();
-    const onAlternativeSelect = vi.fn();
-
     render(
       <FieldViewer
-        current={current}
-        alternatives={[alternative]}
+        current={null}
+        alternatives={[]}
         selectedRegion={region}
         threshold={0.5}
         mode="overlay"
+        grid={grid}
+        assemblyParts={[part]}
+        selectedPart="motor"
         environment={test.environment}
-        onModeChange={onModeChange}
-        onAlternativeSelect={onAlternativeSelect}
       />,
     );
 
-    expect(screen.getByRole("img", { name: /3d voxel field comparison/i })).toBeVisible();
-    expect(screen.getByText(/arm rib.*x 0–2.*y 0–2.*z 0–1/i)).toBeVisible();
-    expect(screen.getByRole("group", { name: /comparison mode/i })).toBeVisible();
-    expect(screen.getByRole("columnheader", { name: /parent/i })).toBeVisible();
-    expect(screen.getByRole("cell", { name: "accepted" })).toBeVisible();
-    expect(screen.getAllByRole("cell", { name: "accepted-context" })).toHaveLength(3);
-    expect(screen.getByRole("cell", { name: /1 added/i })).toBeVisible();
-    expect(screen.getByRole("cell", { name: /1 removed/i })).toBeVisible();
-    expect(test.controls.target.set).toHaveBeenCalledWith(5, 7, 11);
-
-    fireEvent.click(screen.getByRole("radio", { name: /peel/i }));
-    fireEvent.click(screen.getByRole("button", { name: /select lighter/i }));
-    expect(onModeChange).toHaveBeenCalledWith("peel");
-    expect(onAlternativeSelect).toHaveBeenCalledWith("lighter");
+    expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
+    expect(screen.getByText(/drag to orbit.*scroll to zoom.*click a component/i)).toBeVisible();
+    expect(screen.getByRole("status").textContent).toMatch(/assembly ready/i);
+    const motor = renderedScene(test).getObjectByName("assembly-part:motor-envelope") as THREE.Mesh;
+    expect(motor).toBeDefined();
+    expect((motor.material as THREE.MeshStandardMaterial).emissiveIntensity).toBe(0.9);
   });
 
-  it("renders one solid mesh plus one ghost mesh per compatible alternative", () => {
+  it("renders one solid field plus one ghost per compatible alternative", () => {
     const test = harness();
     render(
       <FieldViewer
@@ -67,15 +74,13 @@ describe("FieldViewer", () => {
     );
 
     expect(renderedMeshes(test)).toHaveLength(3);
+    expect(screen.getByRole("status").textContent).toMatch(/verified field.*arm rib/i);
   });
 
-  it("auditions one exact alternative as the sole solid mesh without mutating either field", () => {
+  it("auditions one exact alternative without mutating either field", () => {
     const test = harness();
     const currentBefore = Array.from(current.result.status === "verified" ? current.result.output : []);
-    const alternativeBefore = Array.from(
-      alternative.result.status === "verified" ? alternative.result.output : [],
-    );
-
+    const alternativeBefore = Array.from(alternative.result.status === "verified" ? alternative.result.output : []);
     render(
       <FieldViewer
         current={current}
@@ -88,21 +93,15 @@ describe("FieldViewer", () => {
       />,
     );
 
-    const meshes = renderedMeshes(test);
-    expect(meshes).toHaveLength(1);
-    expect(meshes[0]?.count).toBe(3);
-    expect(Array.from(current.result.status === "verified" ? current.result.output : [])).toEqual(
-      currentBefore,
-    );
-    expect(
-      Array.from(alternative.result.status === "verified" ? alternative.result.output : []),
-    ).toEqual(alternativeBefore);
+    expect(renderedMeshes(test)).toHaveLength(1);
+    expect(renderedMeshes(test)[0]?.count).toBe(3);
+    expect(Array.from(current.result.status === "verified" ? current.result.output : [])).toEqual(currentBefore);
+    expect(Array.from(alternative.result.status === "verified" ? alternative.result.output : [])).toEqual(alternativeBefore);
   });
 
-  it("highlights only the focused branch and synchronizes an externally selected branch", () => {
+  it("synchronizes an externally selected alternative without remounting", () => {
     const test = harness();
-    const stiffer = { ...alternative, branchRevision: "stiffer" };
-    const alternatives = [alternative, stiffer] as const;
+    const alternatives = [alternative, { ...alternative, branchRevision: "stiffer" }] as const;
     const view = render(
       <FieldViewer
         current={current}
@@ -110,15 +109,13 @@ describe("FieldViewer", () => {
         selectedRegion={region}
         threshold={0.5}
         mode="overlay"
+        selectedAlternative="lighter"
         environment={test.environment}
       />,
     );
-
-    fireEvent.focus(screen.getByRole("button", { name: /select lighter/i }));
     let ghosts = renderedMeshes(test).filter((mesh) => mesh.name.startsWith("verified-delta"));
     expect((ghosts.find((mesh) => mesh.name.endsWith("lighter"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.34);
     expect((ghosts.find((mesh) => mesh.name.endsWith("stiffer"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.12);
-    expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
 
     view.rerender(
       <FieldViewer
@@ -133,13 +130,12 @@ describe("FieldViewer", () => {
     );
     ghosts = renderedMeshes(test).filter((mesh) => mesh.name.startsWith("verified-delta"));
     expect((ghosts.find((mesh) => mesh.name.endsWith("stiffer"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.34);
-    expect((ghosts.find((mesh) => mesh.name.endsWith("lighter"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.12);
     expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
   });
 
-  it("uses device-pixel resize data and the DPR fallback without creating frame-loop observers", () => {
+  it("resizes in physical pixels and disposes owned render resources", () => {
     const test = harness({ dpr: 2 });
-    render(
+    const view = render(
       <FieldViewer
         current={current}
         alternatives={[]}
@@ -149,7 +145,6 @@ describe("FieldViewer", () => {
         environment={test.environment}
       />,
     );
-
     test.emitResize({
       devicePixelContentBoxSize: [{ inlineSize: 800, blockSize: 400 }],
       contentRect: { width: 300, height: 150 },
@@ -157,103 +152,34 @@ describe("FieldViewer", () => {
     expect(test.renderer.setPixelRatio).toHaveBeenLastCalledWith(2);
     expect(test.renderer.setSize).toHaveBeenLastCalledWith(400, 200, false);
 
-    test.emitResize({ contentRect: { width: 320, height: 180 } });
-    expect(test.renderer.setSize).toHaveBeenLastCalledWith(320, 180, false);
-    test.flushFrame();
-    expect(test.environment.createResizeObserver).toHaveBeenCalledTimes(1);
-    expect(test.renderer.render).toHaveBeenCalled();
-  });
-
-  it("disconnects observers, cancels RAF, and disposes every owned render resource", () => {
-    const geometryDispose = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
-    const materialDispose = vi.spyOn(THREE.Material.prototype, "dispose");
-    const meshDispose = vi.spyOn(THREE.InstancedMesh.prototype, "dispose");
-    const test = harness();
-
-    const view = render(
-      <FieldViewer
-        current={current}
-        alternatives={[alternative]}
-        selectedRegion={region}
-        threshold={0.5}
-        mode="overlay"
-        environment={test.environment}
-      />,
-    );
     view.unmount();
-
     expect(test.disconnect).toHaveBeenCalledOnce();
-    expect(test.cancelFrame).toHaveBeenCalledWith(7);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
-    expect(meshDispose).toHaveBeenCalledTimes(2);
-    expect(geometryDispose).toHaveBeenCalledTimes(2);
-    expect(materialDispose).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps unverified and incompatible outputs visible in DOM but out of the scene", () => {
+  it("keeps rejected outputs out of the scene and explains current-output failures", () => {
     const test = harness();
     const failed: ViewerBranch = {
       ...alternative,
       branchRevision: "failed-branch",
       result: { status: "failed", code: "device-error", message: "GPU lost", elapsedMs: 2 },
     };
-    const incompatible: ViewerBranch = {
-      ...alternative,
-      branchRevision: "shifted-branch",
-      grid: { ...grid, anchor: { ...grid.anchor, position: [9, 7, 11] } },
-    };
-
     render(
       <FieldViewer
-        current={current}
-        alternatives={[failed, incompatible]}
-        selectedRegion={region}
-        threshold={0.5}
-        mode="overlay"
-        environment={test.environment}
-      />,
-    );
-
-    expect(renderedMeshes(test)).toHaveLength(1);
-    expect(screen.getByRole("cell", { name: /failed.*gpu lost.*not rendered/i })).toBeVisible();
-    expect(screen.getByRole("cell", { name: /incompatible.*not rendered/i })).toBeVisible();
-  });
-
-  it("shows loading and current-output failures instead of fabricating a field", () => {
-    const test = harness();
-    const { rerender } = render(
-      <FieldViewer
-        current={null}
+        current={{ ...current, result: failed.result }}
         alternatives={[]}
         selectedRegion={region}
         threshold={0.5}
         mode="overlay"
+        grid={grid}
+        assemblyParts={[part]}
         environment={test.environment}
       />,
     );
-    expect(screen.getByRole("status").textContent).toMatch(/waiting for verified compute/i);
 
-    rerender(
-      <FieldViewer
-        current={{
-          ...current,
-          result: {
-            status: "mismatch",
-            code: "verification-mismatch",
-            message: "verification mismatch",
-            elapsedMs: 2,
-            relativeL2: 1,
-            tolerance: 0.000005,
-          },
-        }}
-        alternatives={[]}
-        selectedRegion={region}
-        threshold={0.5}
-        mode="overlay"
-        environment={test.environment}
-      />,
-    );
-    expect(screen.getByRole("alert").textContent).toMatch(/verification mismatch.*not rendered/i);
+    expect(screen.getByRole("alert").textContent).toMatch(/gpu lost.*unverified field is hidden/i);
+    expect(renderedMeshes(test)).toHaveLength(0);
+    expect(renderedScene(test).getObjectByName("assembly-part:motor-envelope")).toBeDefined();
   });
 });

@@ -6,6 +6,12 @@ import {
   highlightFieldMesh,
   type FieldMeshSet,
 } from "./field-meshes";
+import {
+  createAssemblyMeshes,
+  highlightAssemblyPart,
+  selectableAssemblyMeshes,
+  type AssemblyMeshSet,
+} from "./assembly-meshes";
 import { createCleanupLedger, type CleanupToken } from "./cleanup-ledger";
 import {
   prepareRenderModel,
@@ -62,6 +68,7 @@ export interface FieldViewerEnvironment {
 export interface FieldRendererSession {
   dispose(): void;
   setHighlightedBranch(branchRevision: string | undefined): void;
+  setSelectedPart(partId: string | undefined): void;
 }
 
 export class FieldRendererMountError extends Error {
@@ -75,7 +82,11 @@ export class FieldRendererMountError extends Error {
 }
 
 const defaultEnvironment: FieldViewerEnvironment = {
-  createRenderer: (canvas) => new THREE.WebGLRenderer({ antialias: true, canvas }),
+  createRenderer: (canvas) => {
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, canvas });
+    renderer.setClearColor(0x000000, 0);
+    return renderer;
+  },
   createControls: (camera, canvas) => new OrbitControls(camera, canvas),
   createResizeObserver: (callback) => new ResizeObserver((entries) => callback(entries)),
   requestFrame: (callback) => requestAnimationFrame(callback),
@@ -101,11 +112,13 @@ export function mountFieldRenderer(
   canvas: HTMLCanvasElement,
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
+  onPartSelect?: (partId: string) => void,
 ): FieldRendererSession {
   const prepared = prepareRenderModel(model);
   const ownership = createCleanupLedger();
   let renderer: RendererLike | undefined;
   let meshSet: FieldMeshSet | undefined;
+  let assemblyMeshSet: AssemblyMeshSet | undefined;
   let scene: THREE.Scene | undefined;
   let camera: THREE.PerspectiveCamera | undefined;
   let frame: number | undefined;
@@ -145,6 +158,11 @@ export function mountFieldRenderer(
       highlightFieldMesh(meshSet.ghostMaterials, branchRevision);
       scheduleRender();
     },
+    setSelectedPart(partId) {
+      if (inactive || !assemblyMeshSet) return;
+      highlightAssemblyPart(assemblyMeshSet.materials, partId);
+      scheduleRender();
+    },
   };
 
   try {
@@ -167,6 +185,10 @@ export function mountFieldRenderer(
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(5, 8, 12);
     attach(key);
+    assemblyMeshSet = createAssemblyMeshes(prepared.assemblyParts ?? [], {
+      own: (release) => ownership.own(release),
+      attach,
+    });
     meshSet = createFieldMeshes(
       prepared.grid,
       prepared.currentInstances,
@@ -198,6 +220,31 @@ export function mountFieldRenderer(
     }
     ownership.own(() => createdControls.removeEventListener("change", scheduleRender));
     createdControls.addEventListener("change", scheduleRender);
+    if (onPartSelect && assemblyMeshSet.meshes.length > 0) {
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      let press: readonly [number, number] | undefined;
+      const pointerDown = (event: PointerEvent) => { press = [event.clientX, event.clientY]; };
+      const pointerUp = (event: PointerEvent) => {
+        if (!press || Math.hypot(event.clientX - press[0], event.clientY - press[1]) > 5) return;
+        press = undefined;
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || !camera || !assemblyMeshSet) return;
+        pointer.set(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        raycaster.setFromCamera(pointer, camera);
+        const selectable = selectableAssemblyMeshes(assemblyMeshSet.meshes);
+        const hit = raycaster.intersectObjects([...selectable], false)[0];
+        const partId = hit?.object.userData.partId;
+        if (typeof partId === "string") onPartSelect(partId);
+      };
+      canvas.addEventListener("pointerdown", pointerDown);
+      canvas.addEventListener("pointerup", pointerUp);
+      ownership.own(() => canvas.removeEventListener("pointerup", pointerUp));
+      ownership.own(() => canvas.removeEventListener("pointerdown", pointerDown));
+    }
     scheduleRender();
   } catch (error) {
     session.dispose();

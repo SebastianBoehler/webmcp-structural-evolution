@@ -16,10 +16,13 @@ import {
   type ResizeEntryLike,
   type ViewerRenderModel,
 } from "./field-renderer";
-import { visibleInstances } from "./field-instances";
+import { visibleInstances, type VoxelGrid } from "./field-instances";
+import type { AssemblyVisualPart } from "./render-envelope";
 import "./field-viewer.css";
 
 export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer";
+
+const EMPTY_ASSEMBLY_PARTS: readonly AssemblyVisualPart[] = Object.freeze([]);
 
 export interface FieldViewerProps {
   readonly current: ViewerBranch | null;
@@ -27,11 +30,13 @@ export interface FieldViewerProps {
   readonly selectedRegion: SelectedSemanticRegion;
   readonly threshold: number;
   readonly mode: AlternativeMode;
+  readonly grid?: VoxelGrid;
+  readonly assemblyParts?: readonly AssemblyVisualPart[];
   readonly selectedAlternative?: string;
-  readonly fieldKind?: "density" | "keep-out";
+  readonly selectedPart?: string;
+  readonly statusText?: string;
   readonly environment?: FieldViewerEnvironment;
-  readonly onModeChange?: (mode: AlternativeMode) => void;
-  readonly onAlternativeSelect?: (branchRevision: string) => void;
+  readonly onPartSelect?: (partId: string) => void;
 }
 
 interface PreparedViewer {
@@ -42,9 +47,16 @@ interface PreparedViewer {
   readonly notice?: string;
 }
 
-function resultError(branch: ViewerBranch): string {
-  if (branch.result.status === "verified") return "";
-  return `${branch.result.status}: ${branch.result.message}; current field not rendered.`;
+function assemblyModel(
+  grid: VoxelGrid | undefined,
+  assemblyParts: readonly AssemblyVisualPart[],
+): ViewerRenderModel | undefined {
+  return grid ? {
+    grid,
+    currentInstances: new Uint32Array(),
+    alternativeLayers: [],
+    assemblyParts,
+  } : undefined;
 }
 
 function prepareViewer(
@@ -54,10 +66,18 @@ function prepareViewer(
   threshold: number,
   mode: AlternativeMode,
   selectedAlternative: string | undefined,
+  fallbackGrid: VoxelGrid | undefined,
+  assemblyParts: readonly AssemblyVisualPart[],
 ): PreparedViewer {
-  if (!current) return { comparisons: [], omittedCount: 0 };
+  const base = assemblyModel(current?.grid ?? fallbackGrid, assemblyParts);
+  if (!current) return { model: base, comparisons: [], omittedCount: 0 };
   if (current.result.status !== "verified") {
-    return { comparisons: [], omittedCount: 0, error: resultError(current) };
+    return {
+      model: base,
+      comparisons: [],
+      omittedCount: 0,
+      error: `${current.result.status}: ${current.result.message}; the unverified field is hidden.`,
+    };
   }
   try {
     const extraction = extractAlternativeLayers(
@@ -66,20 +86,16 @@ function prepareViewer(
     let currentInstances = visibleInstances(current.result.output, current.grid, threshold);
     let notice: string | undefined;
     if (mode === "audition") {
-      const audition = extraction.layers.find(
-        (layer) => layer.branchRevision === selectedAlternative,
-      );
-      if (audition) {
-        currentInstances = audition.auditionInstances!;
-      } else {
-        notice = "Select a verified compatible alternative to audition; the accepted field remains visible.";
-      }
+      const audition = extraction.layers.find((layer) => layer.branchRevision === selectedAlternative);
+      if (audition) currentInstances = audition.auditionInstances!;
+      else notice = "Choose a verified alternative to audition. The accepted field remains visible.";
     }
     return {
       model: {
         grid: current.grid,
         currentInstances,
         alternativeLayers: mode === "audition" ? [] : extraction.layers,
+        assemblyParts,
       },
       comparisons: extraction.comparisons,
       omittedCount: extraction.omittedCount,
@@ -87,20 +103,12 @@ function prepareViewer(
     };
   } catch (error) {
     return {
+      model: base,
       comparisons: [],
       omittedCount: 0,
-      error: `Verified field metadata is invalid; not rendered. ${error instanceof Error ? error.message : String(error)}`,
+      error: `The verified field metadata is invalid, so the field is hidden. ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-}
-
-function regionSummary(region: SelectedSemanticRegion): string {
-  return `${region.label} (${region.id}), x ${region.min[0]}–${region.maxExclusive[0]}, y ${region.min[1]}–${region.maxExclusive[1]}, z ${region.min[2]}–${region.maxExclusive[2]}`;
-}
-
-function statusText(comparison: AlternativeComparison): string {
-  if (comparison.status === "renderable") return "Renderable: verified local delta";
-  return `${comparison.status}: ${comparison.reason}`;
 }
 
 export function FieldViewer({
@@ -109,146 +117,82 @@ export function FieldViewer({
   selectedRegion,
   threshold,
   mode,
+  grid,
+  assemblyParts = EMPTY_ASSEMBLY_PARTS,
   selectedAlternative,
-  fieldKind = "density",
+  selectedPart,
+  statusText,
   environment,
-  onModeChange,
-  onAlternativeSelect,
+  onPartSelect,
 }: FieldViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<FieldRendererSession | null>(null);
-  const summaryId = useId();
-  const [highlightedBranch, setHighlightedBranch] = useState<string | undefined>(selectedAlternative);
+  const descriptionId = useId();
   const [renderError, setRenderError] = useState<string>();
   const auditionSelection = mode === "audition" ? selectedAlternative : undefined;
-  const prepared = useMemo(
-    () => prepareViewer(
-      current,
-      alternatives,
-      selectedRegion,
-      threshold,
-      mode,
-      auditionSelection,
-    ),
-    [current, alternatives, selectedRegion, threshold, mode, auditionSelection],
-  );
-
-  useEffect(() => setHighlightedBranch(selectedAlternative), [selectedAlternative]);
+  const prepared = useMemo(() => prepareViewer(
+    current,
+    alternatives,
+    selectedRegion,
+    threshold,
+    mode,
+    auditionSelection,
+    grid,
+    assemblyParts,
+  ), [current, alternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !prepared.model) return;
     setRenderError(undefined);
     try {
-      const session = mountFieldRenderer(canvas, prepared.model, viewerEnvironment(environment));
+      const session = mountFieldRenderer(
+        canvas,
+        prepared.model,
+        viewerEnvironment(environment),
+        onPartSelect,
+      );
       sessionRef.current = session;
       return () => {
         if (sessionRef.current === session) sessionRef.current = null;
         session.dispose();
       };
     } catch (error) {
-      const failedSession = error instanceof FieldRendererMountError
-        ? error.cleanupSession
-        : undefined;
-      if (failedSession) sessionRef.current = failedSession;
-      setRenderError(`3D renderer failed: ${error instanceof Error ? error.message : String(error)}`);
-      if (failedSession) {
-        return () => {
-          if (sessionRef.current === failedSession) sessionRef.current = null;
-          failedSession.dispose();
-        };
-      }
+      const failed = error instanceof FieldRendererMountError ? error.cleanupSession : undefined;
+      if (failed) sessionRef.current = failed;
+      setRenderError(`The 3D renderer failed. ${error instanceof Error ? error.message : String(error)}`);
+      return failed ? () => failed.dispose() : undefined;
     }
-  }, [environment, prepared.model]);
+  }, [environment, onPartSelect, prepared.model]);
 
-  useEffect(() => {
-    sessionRef.current?.setHighlightedBranch(highlightedBranch);
-  }, [highlightedBranch]);
+  useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [selectedAlternative]);
+  useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [selectedPart]);
 
-  const leaveAlternative = () => setHighlightedBranch(selectedAlternative);
+  const issue = prepared.error ?? renderError;
   return (
-    <section className="field-viewer" aria-labelledby={summaryId}>
-      <div className="field-viewer__viewport">
-        <canvas
-          ref={canvasRef}
-          role="img"
-          aria-label="3D voxel field comparison"
-          aria-describedby={summaryId}
-        />
-        {!current && <p className="field-viewer__message" role="status">Waiting for verified compute output.</p>}
-        {(prepared.error || renderError) && (
-          <p className="field-viewer__message field-viewer__message--error" role="alert">
-            {prepared.error ?? renderError}
-          </p>
-        )}
-        {prepared.notice && <p className="field-viewer__message" role="status">{prepared.notice}</p>}
-      </div>
-
-      <div className="field-viewer__details">
-        <p className="field-viewer__eyebrow">Verified {fieldKind} field</p>
-        <h2 id={summaryId}>Selected region: {regionSummary(selectedRegion)}</h2>
-        <fieldset>
-          <legend>Comparison mode</legend>
-          <div className="field-viewer__modes">
-            {(["overlay", "peel", "audition"] as const).map((value) => (
-              <label key={value}>
-                <input
-                  type="radio"
-                  name={`${summaryId}-mode`}
-                  value={value}
-                  checked={mode === value}
-                  onChange={() => onModeChange?.(value)}
-                />
-                {value}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {prepared.omittedCount > 0 && (
-          <p role="status">{prepared.omittedCount} verified alternatives are listed but not rendered by the three-branch limit.</p>
-        )}
-        <div className="field-viewer__table-wrap">
-          <table>
-            <caption>Verified branch comparison for {selectedRegion.label}</caption>
-            <thead>
-              <tr><th>Branch</th><th>Context</th><th>Parent</th><th>Delta</th><th>Status</th><th>Inspect</th></tr>
-            </thead>
-            <tbody>
-              {current && (
-                <tr>
-                  <td>{current.branchRevision}</td><td>{current.contextRevision}</td><td>{current.parentRevision}</td>
-                  <td>Accepted source</td><td>{current.result.status}</td><td>Current</td>
-                </tr>
-              )}
-              {prepared.comparisons.map((comparison) => {
-                const branchLabel = comparison.branchRevision.trim() || "Missing branch ID";
-                return (
-                  <tr key={comparison.sourceIndex} data-highlighted={highlightedBranch === comparison.branchRevision}>
-                    <td>{branchLabel}</td>
-                    <td>{comparison.contextRevision}</td>
-                    <td>{comparison.parentRevision}</td>
-                    <td>{comparison.addedCount} added, {comparison.removedCount} removed</td>
-                    <td>{statusText(comparison)}</td>
-                    <td>
-                      <button
-                        type="button"
-                        aria-label={`Select ${branchLabel}`}
-                        disabled={comparison.status !== "renderable"}
-                        onClick={() => onAlternativeSelect?.(comparison.branchRevision)}
-                        onFocus={() => setHighlightedBranch(comparison.branchRevision)}
-                        onBlur={leaveAlternative}
-                        onMouseEnter={() => setHighlightedBranch(comparison.branchRevision)}
-                        onMouseLeave={leaveAlternative}
-                      >Inspect</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <section className="field-viewer" aria-label="Drone-arm CAD viewport">
+      <canvas
+        ref={canvasRef}
+        role="img"
+        tabIndex={0}
+        aria-label="Interactive 3D drone-arm assembly and verified density field"
+        aria-describedby={descriptionId}
+      />
+      <p className="field-viewer__help" id={descriptionId}>
+        Drag to orbit · Scroll to zoom · Click a component to inspect
+      </p>
+      <p className="field-viewer__field-status" role="status">
+        {statusText ?? (current
+          ? `Verified field · ${selectedRegion.label}`
+          : "Assembly ready · Run verification to add the density field")}
+      </p>
+      {issue && <p className="field-viewer__message field-viewer__message--error" role="alert">{issue}</p>}
+      {prepared.notice && <p className="field-viewer__message" role="status">{prepared.notice}</p>}
+      {prepared.omittedCount > 0 && (
+        <p className="field-viewer__message" role="status">
+          {prepared.omittedCount} verified alternatives are hidden by the three-branch render limit.
+        </p>
+      )}
     </section>
   );
 }
