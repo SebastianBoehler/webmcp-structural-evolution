@@ -129,3 +129,51 @@ test("identical branch identity is rejected and never enables comparison", async
   const facts = await result.current.services.inspectContext({ scope: "current" });
   expect(facts.nextActions).not.toContain("compare_foundation_probes");
 });
+
+test.each(["older-first", "newer-first"] as const)(
+  "newer intervention wins when hashes complete %s",
+  async (completionOrder) => {
+    const { result } = renderHook(() => useProjectState(options(vi.fn(async () => verified()))));
+    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+    const releases: Array<() => void> = [];
+    const digestSpy = vi.spyOn(crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+      if (releases.length >= 2) return originalDigest(algorithm, data);
+      const index = releases.length;
+      await new Promise<void>((resolve) => { releases[index] = resolve; });
+      return originalDigest(algorithm, data);
+    });
+    const olderInput = {
+      selection: { id: "older-selection", label: "Older selection" },
+      locks: ["older-lock"],
+    };
+    const newerInput = {
+      selection: { id: "newer-selection", label: "Newer selection" },
+      locks: ["newer-lock"],
+    };
+
+    const older = result.current.experimentRail.intervene(olderInput).then(
+      () => "resolved",
+      (error: unknown) => error instanceof Error ? error.message : String(error),
+    );
+    const newer = result.current.experimentRail.intervene(newerInput);
+    await waitFor(() => expect(releases).toHaveLength(2));
+
+    await act(async () => {
+      if (completionOrder === "older-first") {
+        releases[0]!();
+        expect(await older).toMatch(/superseded/i);
+        releases[1]!();
+      } else {
+        releases[1]!();
+        await newer;
+        releases[0]!();
+      }
+      await Promise.all([older, newer]);
+    });
+
+    expect(await older).toMatch(/superseded/i);
+    expect(result.current.state.selection).toEqual(newerInput.selection);
+    expect(result.current.state.locks).toEqual(newerInput.locks);
+    digestSpy.mockRestore();
+  },
+);

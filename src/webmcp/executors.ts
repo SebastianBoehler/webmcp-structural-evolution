@@ -18,6 +18,7 @@ export interface FoundationServices {
   inspectContext(input: InspectContextInput): Promise<InspectContextFacts>;
   runProbe(input: RunFoundationProbeInput): Promise<FoundationBranch>;
   compareProbes(input: CompareFoundationProbesInput): Promise<ProbeComparisonFacts>;
+  canCompare(): boolean;
   recordRejectedCall(action: string, affectedRevision: string | null, error: string): Promise<void>;
 }
 
@@ -93,7 +94,7 @@ export async function runFoundationProbe(
       status: branch.status,
       stale: branch.stale,
       measurement: branch.measurement,
-      nextActions: branch.status === "verified"
+      nextActions: services.canCompare()
         ? ["inspect_design_context", "compare_foundation_probes"]
         : ["inspect_design_context"],
     };

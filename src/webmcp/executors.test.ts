@@ -60,6 +60,7 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
       stale: false as const,
       nextActions: ["inspect_design_context"],
     })),
+    canCompare: vi.fn(() => false),
     recordRejectedCall: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -114,6 +115,50 @@ test("run validates bounded intent and delegates only the deterministic variant"
     measurement: { status: "verified", elapsedMs: 9, relativeL2: 0 },
   });
   expect((facts.measurement as Record<string, unknown>).prediction).toBeUndefined();
+  expect(facts.nextActions).toEqual(["inspect_design_context"]);
+});
+
+test("run advertises comparison only when the latest state has an exact comparable pair", async () => {
+  const shared = services({ canCompare: vi.fn(() => true) });
+  const response = await runFoundationProbe({
+    parentRevision: revisionA,
+    variant: "baseline",
+    hypothesis: "Check the shipped probe",
+    prediction: "Verification stays within the probe budget",
+  }, shared);
+
+  expect(responseJson(response).nextActions).toEqual([
+    "inspect_design_context",
+    "compare_foundation_probes",
+  ]);
+});
+
+test("stale verified completion does not advertise unavailable comparison", async () => {
+  const shared = services({
+    runProbe: vi.fn(async () => ({
+      parentRevision: revisionA,
+      branchRevision: revisionB,
+      hypothesis: "Check the shipped probe",
+      prediction: "Verification stays within the probe budget",
+      variant: "baseline" as const,
+      stale: true as const,
+      status: "verified" as const,
+      measurement: {
+        status: "verified" as const,
+        elapsedMs: 12,
+        relativeL2: 0,
+        resultDigest: "c".repeat(64),
+      },
+    })),
+  });
+  const response = await runFoundationProbe({
+    parentRevision: revisionA,
+    variant: "baseline",
+    hypothesis: "Check the shipped probe",
+    prediction: "Verification stays within the probe budget",
+  }, shared);
+
+  expect(responseJson(response).nextActions).toEqual(["inspect_design_context"]);
 });
 
 test("run rejects structural predictions and records a bounded failed receipt", async () => {

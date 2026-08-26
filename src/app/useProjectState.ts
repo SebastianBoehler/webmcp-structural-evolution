@@ -3,7 +3,6 @@ import type { JsonValue } from "../domain/canonical-json";
 import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
 import { runComputeProbe, type ProbeResult } from "../gpu/compute-probe";
-import type { ProbeInput } from "../gpu/probe-contract";
 import type { FoundationServices } from "../webmcp/executors";
 import {
   CompareFoundationProbesInputSchema,
@@ -13,31 +12,19 @@ import {
   type FoundationProjectState,
   type ProbeComparisonFacts,
   type RunFoundationProbeInput,
-  type SemanticSelection,
 } from "../webmcp/schemas";
 import { toolFactsFit } from "../webmcp/tool-output";
+import { hasComparableBranches } from "../webmcp/comparability";
 import { inspectProjectFacts } from "./project-inspection";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
+import type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 import {
   createInitialProjectState,
   freezeValue,
   publishProjectState,
 } from "./project-state-copy";
 
-type ProbeRunner = (input: ProbeInput) => Promise<ProbeResult>;
-export interface ProjectStateOptions {
-  readonly contextRevision: string;
-  readonly acceptedBranchRevision: string;
-  readonly selection: SemanticSelection;
-  readonly locks: readonly string[];
-  readonly capability: FoundationProjectState["capability"];
-  readonly compute?: ProbeRunner;
-}
-
-export interface ExperimentRailApi {
-  intervene(input: { readonly selection: SemanticSelection; readonly locks: readonly string[] }): Promise<void>;
-  promoteBranch(branchRevision: string): Promise<void>;
-}
+export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
 export function useProjectState(options: ProjectStateOptions): {
   readonly state: FoundationProjectState;
@@ -51,6 +38,7 @@ export function useProjectState(options: ProjectStateOptions): {
   computeRef.current = options.compute ?? runComputeProbe;
   const sequenceRef = useRef(0);
   const operationRef = useRef<symbol | null>(null);
+  const interventionGenerationRef = useRef(0);
   const verifiedOutputsRef = useRef(new Map<string, Float32Array>());
 
   const commit = (next: FoundationProjectState) => {
@@ -224,6 +212,9 @@ export function useProjectState(options: ProjectStateOptions): {
       }, startedAt);
       return facts;
     },
+    canCompare() {
+      return hasComparableBranches(stateRef.current!.stagedBranches);
+    },
     async recordRejectedCall(action, affectedRevision, error) {
       const current = stateRef.current!;
       await addReceipt(action, { rejected: true }, affectedRevision ?? current.contextRevision, {
@@ -235,6 +226,7 @@ export function useProjectState(options: ProjectStateOptions): {
   const experimentRail = useMemo<ExperimentRailApi>(() => ({
     async intervene(input) {
       const startedAt = performance.now();
+      const generation = ++interventionGenerationRef.current;
       let contextRevision: string;
       while (true) {
         const base = stateRef.current!;
@@ -244,6 +236,13 @@ export function useProjectState(options: ProjectStateOptions): {
           locks: [...input.locks],
         });
         const latest = stateRef.current!;
+        if (generation !== interventionGenerationRef.current) {
+          const error = "Human intervention was superseded by a newer intervention";
+          await addReceipt("human_intervention", input as unknown as JsonValue, latest.contextRevision, {
+            status: "failed", error,
+          }, startedAt);
+          throw new Error(error);
+        }
         if (latest.acceptedBranchRevision !== base.acceptedBranchRevision) continue;
         commit({
           ...latest,

@@ -93,3 +93,27 @@ test("mutating an exposed verified field cannot alter authoritative evidence", a
   expect(republished.result.output[0]).toBe(0.25);
   expect(republished.measurement?.resultDigest).toBe(digest);
 });
+
+test("typed-array callback methods never receive authoritative evidence", async () => {
+  const compute = vi.fn(async () => verified(0.25));
+  const { result } = renderHook(() => useProjectState(availableOptions(compute)));
+  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  const branch = result.current.state.stagedBranches[0]!;
+  if (branch.result?.status !== "verified") throw new Error("Expected verified branch");
+  const output = branch.result.output;
+
+  output.forEach((_value, _index, array) => { array[0] = 91; });
+  output.map((_value, index, array) => {
+    if (index === 0) array[0] = 92;
+    return 1;
+  });
+  output.reduce((sum, value, index, array) => {
+    if (index === 0) array[0] = 93;
+    return sum + value;
+  }, 0);
+
+  await act(async () => { await result.current.services.inspectContext({ scope: "current" }); });
+  const republished = result.current.state.stagedBranches[0]!;
+  if (republished.result?.status !== "verified") throw new Error("Expected verified branch");
+  expect(republished.result.output[0]).toBe(0.25);
+});

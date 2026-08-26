@@ -38,6 +38,7 @@ function services(state: FoundationProjectState): FoundationServices {
     })),
     runProbe: vi.fn(),
     compareProbes: vi.fn(),
+    canCompare: vi.fn(() => false),
     recordRejectedCall: vi.fn(async () => undefined),
   };
 }

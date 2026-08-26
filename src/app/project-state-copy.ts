@@ -18,7 +18,8 @@ function readonlyField(field: Float32Array): Float32Array {
         return () => { throw new TypeError("Verified field output is read-only"); };
       }
       const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
+      if (property === "constructor") return value;
+      return typeof value === "function" ? value.bind(target.slice()) : value;
     },
     set() { return true; },
     defineProperty() { return false; },
