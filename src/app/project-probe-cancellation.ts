@@ -22,6 +22,7 @@ export interface ActiveProbeOperation {
   attempt?: number;
   cancellation?: Promise<FoundationBranch>;
   cancellationReason?: string;
+  abandoned?: boolean;
   detachExternalAbort?: () => void;
 }
 
@@ -107,4 +108,16 @@ export function cancelActiveProbe(
     finalizeCancellation(operation, cancelStartedAt, dependencies));
   operation.controller.abort();
   return operation.cancellation;
+}
+
+export function abandonedProbe(
+  operation: ActiveProbeOperation,
+  proposalRevision: string,
+  branchRevision: string,
+  attempt: number,
+): FoundationBranch {
+  return freezeValue({
+    ...operation.input, proposalRevision, branchRevision, attempt,
+    stale: false, status: "canceled" as const,
+  });
 }

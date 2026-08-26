@@ -18,10 +18,9 @@ import { hasComparableBranches } from "../webmcp/comparability";
 import { inspectProjectFacts } from "./project-inspection";
 import { createExperimentRail } from "./project-experiment-rail";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
-import { cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
+import { abandonedProbe, cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
 import type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
-
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
 export function useProjectState(options: ProjectStateOptions): {
@@ -83,6 +82,7 @@ export function useProjectState(options: ProjectStateOptions): {
   useEffect(() => () => {
     const operation = operationRef.current;
     if (!operation) return;
+    operation.abandoned = true;
     if (operation.branchRevision) {
       void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
     } else {
@@ -167,6 +167,7 @@ export function useProjectState(options: ProjectStateOptions): {
         release();
         return reject(error instanceof Error ? error.message : String(error));
       }
+      if (operation.abandoned) return abandonedProbe(operation, proposalRevision, branchRevision, attempt);
       let latest = stateRef.current!;
       if (latest.contextRevision !== parsed.parentRevision) {
         release();
@@ -295,6 +296,5 @@ export function useProjectState(options: ProjectStateOptions): {
     commit,
     addReceipt,
   }), []);
-
   return { state, services, experimentRail };
 }

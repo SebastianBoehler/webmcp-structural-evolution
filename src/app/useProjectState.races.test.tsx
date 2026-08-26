@@ -153,6 +153,28 @@ test("unmount aborts an active operation and its invocation resolves canceled", 
   expect(branch.status).toBe("canceled");
 });
 
+test("unmount during proposal hashing never stages or computes a late branch", async () => {
+  const compute = vi.fn(async () => verified());
+  const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+  let releaseHash!: () => void;
+  const hashGate = new Promise<void>((resolve) => { releaseHash = resolve; });
+  const digest = vi.spyOn(crypto.subtle, "digest").mockImplementationOnce(async (algorithm, data) => {
+    await hashGate;
+    return originalDigest(algorithm, data);
+  });
+  const hook = renderHook(() => useProjectState(options(compute)));
+  const invocation = hook.result.current.services.runProbe(baseInput);
+  await waitFor(() => expect(digest).toHaveBeenCalledOnce());
+
+  hook.unmount();
+  releaseHash();
+  const branch = await invocation;
+
+  expect(branch.status).toBe("canceled");
+  expect(compute).not.toHaveBeenCalled();
+  digest.mockRestore();
+});
+
 test("intervention that completes during promotion is never overwritten", async () => {
   const compute = vi.fn(async () => verified());
   const { result } = renderHook(() => useProjectState(options(compute)));
