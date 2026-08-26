@@ -9,7 +9,9 @@ import {
   current,
   harness,
   region,
+  renderedMeshes,
 } from "./field-viewer-test-support";
+import type { InstanceRecord, VoxelGrid } from "./field-instances";
 
 function model() {
   if (current.result.status !== "verified") throw new Error("fixture must be verified");
@@ -109,22 +111,81 @@ describe("mountFieldRenderer", () => {
     expect(test.renderer.render).not.toHaveBeenCalled();
   });
 
-  it("continues releasing every owner when RAF cancellation throws", () => {
+  it("retries only the transiently failed RAF owner and keeps callbacks inactive", () => {
     const geometryDispose = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
     const materialDispose = vi.spyOn(THREE.Material.prototype, "dispose");
     const meshDispose = vi.spyOn(THREE.InstancedMesh.prototype, "dispose");
-    const test = harness({ cancelFrameFailure: new Error("cancel failed") });
+    const test = harness();
+    test.cancelFrame.mockImplementationOnce(() => {
+      throw new Error("cancel failed once");
+    });
     const session = mountFieldRenderer(document.createElement("canvas"), model(), test.environment);
 
     expect(() => session.dispose()).not.toThrow();
-    session.dispose();
+    test.emitResize({ contentRect: { width: 320, height: 180 } });
+    test.emitControlChange();
 
+    expect(test.environment.requestFrame).toHaveBeenCalledOnce();
+    expect(test.renderer.render).not.toHaveBeenCalled();
     expect(test.cancelFrame).toHaveBeenCalledOnce();
     expect(test.disconnect).toHaveBeenCalledOnce();
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(meshDispose).toHaveBeenCalledTimes(2);
     expect(geometryDispose).toHaveBeenCalledTimes(2);
     expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+
+    session.dispose();
+    expect(test.cancelFrame).toHaveBeenCalledTimes(2);
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+
+    session.dispose();
+    expect(test.cancelFrame).toHaveBeenCalledTimes(2);
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retries only a transiently failed material owner", () => {
+    const geometryDispose = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
+    const materialDispose = vi.spyOn(THREE.Material.prototype, "dispose");
+    const meshDispose = vi.spyOn(THREE.InstancedMesh.prototype, "dispose");
+    materialDispose.mockImplementationOnce(() => {
+      throw new Error("material failed once");
+    });
+    const test = harness();
+    const session = mountFieldRenderer(document.createElement("canvas"), model(), test.environment);
+
+    session.dispose();
+    expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+
+    session.dispose();
+    expect(materialDispose).toHaveBeenCalledTimes(3);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+
+    session.dispose();
+    expect(materialDispose).toHaveBeenCalledTimes(3);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
   });
 
@@ -153,5 +214,71 @@ describe("mountFieldRenderer", () => {
       ).toThrow(/f32/i);
       expect(test.environment.createRenderer).not.toHaveBeenCalled();
     }
+  });
+
+  it.each([
+    [
+      "scaled voxel corner",
+      {
+        dimensions: { width: 1, height: 1, depth: 1 },
+        cellSize: [1e37, 1, 1],
+        anchor: { position: [0, 0, 0], orientation: [0, 0, 0, 1] },
+      },
+      [3.36e38, 0, 0],
+    ],
+    [
+      "near-unit quaternion transform",
+      {
+        dimensions: { width: 1, height: 1, depth: 1 },
+        cellSize: [1, 1, 1],
+        anchor: {
+          position: [0, 0, 0],
+          orientation: [0.707113145, 0.707113145, 0, 0],
+        },
+      },
+      [3.4028e38, 0, 0],
+    ],
+  ])("rejects a %s outside the assembly world envelope before allocation", (_name, grid, position) => {
+    const record: InstanceRecord = {
+      index: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+      localPosition: position as unknown as InstanceRecord["localPosition"],
+      density: 1,
+    };
+    const test = harness();
+
+    expect(() =>
+      mountFieldRenderer(
+        document.createElement("canvas"),
+        {
+          grid: grid as unknown as VoxelGrid,
+          currentInstances: [record],
+          alternativeLayers: [],
+        },
+        test.environment,
+      ),
+    ).toThrow(/world envelope/i);
+    expect(test.environment.createRenderer).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a copied near-unit anchor and renders an engineering-scale fixture", () => {
+    const orientation = [0.707113145, 0.707113145, 0, 0] as const;
+    const sourceGrid: VoxelGrid = {
+      ...current.grid,
+      anchor: { ...current.grid.anchor, orientation },
+    };
+    const test = harness();
+    const session = mountFieldRenderer(
+      document.createElement("canvas"),
+      { ...model(), grid: sourceGrid, alternativeLayers: [] },
+      test.environment,
+    );
+
+    const [mesh] = renderedMeshes(test);
+    expect(mesh?.quaternion.length()).toBeCloseTo(1, 12);
+    expect(sourceGrid.anchor.orientation).toEqual(orientation);
+    session.dispose();
   });
 });

@@ -1,19 +1,18 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import type { AlternativeLayer } from "./alternative-instances";
 import {
   createFieldMeshes,
-  disposeFieldMeshes,
   highlightFieldMesh,
   type FieldMeshSet,
 } from "./field-meshes";
 import {
-  assertFiniteF32,
-  fieldInstanceCount,
-  type InstanceRecord,
-  type VoxelGrid,
-} from "./field-instances";
+  prepareRenderModel,
+  type CameraEnvelope,
+  type ViewerRenderModel,
+} from "./render-envelope";
+
+export type { ViewerRenderModel } from "./render-envelope";
 
 // A 2x DPR ceiling is a rendering-budget decision: voxel comparisons favor legibility over 3x pixels.
 export const MAX_RENDER_DPR = 2;
@@ -59,12 +58,6 @@ export interface FieldViewerEnvironment {
   readonly prefersReducedMotion: () => boolean;
 }
 
-export interface ViewerRenderModel {
-  readonly grid: VoxelGrid;
-  readonly currentInstances: readonly InstanceRecord[];
-  readonly alternativeLayers: readonly AlternativeLayer[];
-}
-
 export interface FieldRendererSession {
   dispose(): void;
   setHighlightedBranch(branchRevision: string | undefined): void;
@@ -86,75 +79,16 @@ export function viewerEnvironment(
   return override ?? defaultEnvironment;
 }
 
-function cameraFor(grid: VoxelGrid): THREE.PerspectiveCamera {
-  const size = grid.dimensions;
-  const span = Math.max(
-    size.width * grid.cellSize[0],
-    size.height * grid.cellSize[1],
-    size.depth * grid.cellSize[2],
-  );
-  const camera = new THREE.PerspectiveCamera(
-    38,
-    1,
-    Math.max(0.01, span / 1000),
-    Math.max(1, span * 20),
-  );
-  camera.position.set(
-    grid.anchor.position[0] + span * 1.4,
-    grid.anchor.position[1] + span,
-    grid.anchor.position[2] + span * 1.8,
-  );
-  camera.lookAt(...grid.anchor.position);
+function cameraFor(envelope: CameraEnvelope): THREE.PerspectiveCamera {
+  const camera = new THREE.PerspectiveCamera(38, 1, envelope.near, envelope.far);
+  camera.position.set(...envelope.position);
+  camera.lookAt(...envelope.target);
   return camera;
 }
 
-function validateInstanceF32(
-  record: InstanceRecord,
-  grid: VoxelGrid,
-  offset: readonly number[],
-  label: string,
-): void {
-  if (!Array.isArray(record.localPosition) || record.localPosition.length !== 3) {
-    throw new RangeError(`${label} local position must contain exactly 3 values`);
-  }
-  const localReach = record.localPosition.reduce((sum, value, axis) => {
-    assertFiniteF32(value, `${label} local position[${axis}]`);
-    return sum + Math.abs(value);
-  }, 0);
-  grid.anchor.position.forEach((position, axis) => {
-    assertFiniteF32(
-      Math.abs(position + offset[axis]!) + localReach,
-      `${label} assembly position[${axis}]`,
-    );
-  });
-}
-
-function validateRenderModelF32(model: ViewerRenderModel): void {
-  fieldInstanceCount(model.grid);
-  model.currentInstances.forEach((record, index) => {
-    validateInstanceF32(record, model.grid, [0, 0, 0], `current instance[${index}]`);
-  });
-  model.alternativeLayers.forEach((layer, layerIndex) => {
-    fieldInstanceCount(layer.grid);
-    if (!Array.isArray(layer.displayOffset) || layer.displayOffset.length !== 3) {
-      throw new RangeError(`alternative layer[${layerIndex}] offset must contain exactly 3 values`);
-    }
-    layer.displayOffset.forEach((value, axis) => {
-      assertFiniteF32(value, `alternative layer[${layerIndex}] offset[${axis}]`);
-      assertFiniteF32(
-        layer.grid.anchor.position[axis] + value,
-        `alternative layer[${layerIndex}] transform[${axis}]`,
-      );
-    });
-    [...layer.added, ...layer.removed].forEach((record, instanceIndex) => {
-      validateInstanceF32(
-        record,
-        layer.grid,
-        layer.displayOffset,
-        `alternative layer[${layerIndex}] instance[${instanceIndex}]`,
-      );
-    });
-  });
+interface CleanupOwner {
+  complete: boolean;
+  readonly release: () => void;
 }
 
 export function mountFieldRenderer(
@@ -162,55 +96,61 @@ export function mountFieldRenderer(
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
 ): FieldRendererSession {
-  validateRenderModelF32(model);
+  const prepared = prepareRenderModel(model);
   let renderer: RendererLike | undefined;
   let controls: ControlsLike | undefined;
   let observer: ObserverLike | undefined;
   let meshSet: FieldMeshSet | undefined;
-  let controlsListening = false;
   let frame: number | undefined;
+  let frameCleanupComplete = true;
   let inactive = false;
   let disposing = false;
-  let teardownComplete = false;
+  let cleanupComplete = false;
+  const cleanupOwners: CleanupOwner[] = [];
   const scene = new THREE.Scene();
-  const camera = cameraFor(model.grid);
+  const camera = cameraFor(prepared.camera);
   let width = 1;
   let height = 1;
   const render = () => {
     frame = undefined;
+    frameCleanupComplete = true;
     if (inactive || !renderer) return;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
   };
   const scheduleRender = () => {
-    if (!inactive && frame === undefined) frame = environment.requestFrame(render);
+    if (!inactive && frame === undefined) {
+      frame = environment.requestFrame(render);
+      frameCleanupComplete = false;
+    }
   };
-  const attempt = (action: (() => void) | undefined) => {
+  const own = (release: () => void) => cleanupOwners.push({ complete: false, release });
+  const attempt = (owner: CleanupOwner) => {
+    if (owner.complete) return;
     try {
-      action?.();
+      owner.release();
+      owner.complete = true;
     } catch {
-      // dispose() has no error channel; teardown is best-effort after every owner is attempted.
+      // The session has no teardown error channel; retain failed ownership for the next dispose().
     }
   };
   const dispose = () => {
-    if (teardownComplete || disposing) return;
+    if (cleanupComplete || disposing) return;
     inactive = true;
     disposing = true;
     try {
-      if (frame !== undefined) attempt(() => environment.cancelFrame(frame!));
-      frame = undefined;
-      attempt(observer ? () => observer!.disconnect() : undefined);
-      if (controlsListening) {
-        attempt(controls ? () => controls!.removeEventListener("change", scheduleRender) : undefined);
+      if (!frameCleanupComplete && frame !== undefined) {
+        try {
+          environment.cancelFrame(frame);
+          frame = undefined;
+          frameCleanupComplete = true;
+        } catch {
+          // Keep the pending handle owned so a later dispose() retries cancellation.
+        }
       }
-      attempt(controls ? () => controls!.dispose() : undefined);
-      if (meshSet) {
-        meshSet.meshes.forEach((mesh) => attempt(() => scene.remove(mesh)));
-        attempt(() => disposeFieldMeshes(meshSet!.meshes));
-      }
-      attempt(renderer ? () => renderer!.dispose() : undefined);
-      teardownComplete = true;
+      cleanupOwners.forEach(attempt);
+      cleanupComplete = frameCleanupComplete && cleanupOwners.every((owner) => owner.complete);
     } finally {
       disposing = false;
     }
@@ -218,16 +158,29 @@ export function mountFieldRenderer(
 
   try {
     renderer = environment.createRenderer(canvas);
+    own(() => renderer!.dispose());
     controls = environment.createControls(camera, canvas);
+    own(() => controls!.dispose());
     environment.prefersReducedMotion();
     controls.enableDamping = false;
-    controls.target.set(...model.grid.anchor.position);
+    controls.target.set(...prepared.camera.target);
     controls.update();
     scene.add(new THREE.HemisphereLight(0xdcefff, 0x101724, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(5, 8, 12);
     scene.add(key);
-    meshSet = createFieldMeshes(model.grid, model.currentInstances, model.alternativeLayers);
+    meshSet = createFieldMeshes(
+      prepared.grid,
+      prepared.currentInstances,
+      prepared.alternativeLayers,
+    );
+    meshSet.meshes.forEach((mesh) => {
+      own(() => scene.remove(mesh));
+      own(() => mesh.dispose());
+      own(() => mesh.geometry.dispose());
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach((material) => own(() => material.dispose()));
+    });
     scene.add(...meshSet.meshes);
     observer = environment.createResizeObserver(([entry]) => {
       if (inactive || !entry || !renderer) return;
@@ -242,6 +195,7 @@ export function mountFieldRenderer(
       renderer.setSize(width, height, false);
       scheduleRender();
     });
+    own(() => observer!.disconnect());
     try {
       observer.observe(canvas, { box: "device-pixel-content-box" });
     } catch (error) {
@@ -249,7 +203,7 @@ export function mountFieldRenderer(
       observer.observe(canvas);
     }
     controls.addEventListener("change", scheduleRender);
-    controlsListening = true;
+    own(() => controls!.removeEventListener("change", scheduleRender));
     scheduleRender();
   } catch (error) {
     dispose();
