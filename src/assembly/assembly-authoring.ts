@@ -20,12 +20,18 @@ export interface ProtectedRegion {
   readonly kind: ProtectedRegionKind;
   readonly volume: AssemblyDraft["targetEnvelope"];
 }
+export interface AssemblyBranch {
+  readonly status: "staged";
+  readonly parentRevision: string | null;
+  readonly revision: string;
+}
 export interface AssemblyAuthoringState {
   readonly draft: AssemblyDraft;
   readonly catalog: readonly ComponentDefinition[];
   readonly constraints: readonly AssemblyConstraint[];
   readonly protectedRegions: readonly ProtectedRegion[];
   readonly revision: string;
+  readonly branch: AssemblyBranch;
 }
 export type AssemblyAction =
   | { readonly kind: "place"; readonly parentRevision: string; readonly instance: ComponentInstance }
@@ -39,6 +45,12 @@ export interface SolvedTransform {
 export interface SolvedAssembly {
   readonly instances: Readonly<Record<string, Readonly<{ transform: SolvedTransform }>>>;
   readonly unresolvedDegreesOfFreedom: Readonly<Record<string, readonly string[]>>;
+  readonly constraintConflicts: readonly ConstraintSolveConflict[];
+}
+export interface ConstraintSolveConflict {
+  readonly id: string;
+  readonly kind: "constraint-conflict" | "constraint-cycle";
+  readonly constraintIds: readonly string[];
 }
 
 export async function createAssemblyAuthoringState(
@@ -62,52 +74,129 @@ export async function applyAssemblyAction(
 export function solveAssemblyConstraints(state: AssemblyAuthoringState): SolvedAssembly {
   const byInstance = new Map(state.draft.components.map((instance) => [instance.instanceId, instance]));
   const transforms = new Map(state.draft.components.map((instance) => [instance.instanceId, cloneTransform(instance)]));
+  const originalTransforms = new Map([...transforms].map(([id, transform]) => [id, { position: [...transform.position] as Vector, orientation: [...transform.orientation] as Vector }]));
   const dof = new Map(state.draft.components.map(({ instanceId }) => [instanceId, new Set(["x", "y", "z", "roll", "pitch", "yaw"])]));
-  for (const constraint of [...state.constraints].sort((left, right) => left.id.localeCompare(right.id))) {
-    const moving = byInstance.get(constraint.moving.instanceId);
-    const fixed = byInstance.get(constraint.fixed.instanceId);
-    if (!moving || !fixed) continue;
-    const movingComponent = componentFor(moving, state.catalog);
-    const fixedComponent = componentFor(fixed, state.catalog);
-    const movingTransform = transforms.get(moving.instanceId)!;
-    const fixedTransform = transforms.get(fixed.instanceId)!;
-    if (constraint.kind === "concentric" || constraint.kind === "orientation") {
-      movingTransform.orientation = [...fixedTransform.orientation] as Vector;
+  const constraints = [...state.constraints].sort(compareId);
+  const cycleIds = cyclicConstraintIds(constraints);
+  const conflictIds = conflictingConstraintIds(constraints, cycleIds, byInstance, transforms, state.catalog);
+  const blockedIds = new Set([...cycleIds, ...conflictIds]);
+  const active = constraints.filter(({ id }) => !blockedIds.has(id));
+  for (let pass = 0; pass <= active.length; pass += 1) {
+    let changed = false;
+    for (const constraint of active) {
+      changed = applyConstraint(constraint, byInstance, transforms, state.catalog) || changed;
+      const unresolved = dof.get(constraint.moving.instanceId)!;
+      for (const degree of constrainedDegrees(constraint.kind)) unresolved.delete(degree);
     }
-    const target = interfaceWorldPoint(fixedComponent, fixedTransform, constraint.fixed.interfaceId);
-    const current = interfaceWorldPoint(movingComponent, movingTransform, constraint.moving.interfaceId);
-    movingTransform.position = add(movingTransform.position, subtract(target, current));
-    const unresolved = dof.get(moving.instanceId)!;
-    for (const degree of constrainedDegrees(constraint.kind)) unresolved.delete(degree);
+    if (!changed) break;
   }
+  for (const constraint of constraints.filter(({ id }) => blockedIds.has(id))) {
+    const original = originalTransforms.get(constraint.moving.instanceId)!;
+    transforms.set(constraint.moving.instanceId, { position: [...original.position] as Vector, orientation: [...original.orientation] as Vector });
+  }
+  const constraintConflicts = [
+    ...conflictIds.size ? [{ id: `constraint-conflict:${[...conflictIds].sort().join(":")}`, kind: "constraint-conflict" as const, constraintIds: [...conflictIds].sort() }] : [],
+    ...cycleIds.size ? [{ id: `constraint-cycle:${[...cycleIds].sort().join(":")}`, kind: "constraint-cycle" as const, constraintIds: [...cycleIds].sort() }] : [],
+  ].sort((left, right) => left.kind.localeCompare(right.kind));
   const instances = Object.fromEntries([...transforms].sort(([left], [right]) => left.localeCompare(right)).map(([id, transform]) => [id, {
     transform: { positionMm: [toMillimetres(transform.position[0]), toMillimetres(transform.position[1]), toMillimetres(transform.position[2])] as const, orientationRad: transform.orientation },
   }]));
   const unresolvedDegreesOfFreedom = Object.fromEntries([...dof].sort(([left], [right]) => left.localeCompare(right))
     .map(([id, degrees]) => [id, [...degrees]]));
-  return freezeSnapshot({ instances, unresolvedDegreesOfFreedom });
+  return freezeSnapshot({ instances, unresolvedDegreesOfFreedom, constraintConflicts });
+}
+
+function applyConstraint(
+  constraint: AssemblyConstraint,
+  instances: Map<string, ComponentInstance>,
+  transforms: Map<string, MutableTransform>,
+  catalog: readonly ComponentDefinition[],
+) {
+  const moving = instances.get(constraint.moving.instanceId);
+  const fixed = instances.get(constraint.fixed.instanceId);
+  if (!moving || !fixed) return false;
+  const movingComponent = componentFor(moving, catalog);
+  const fixedComponent = componentFor(fixed, catalog);
+  const movingTransform = transforms.get(moving.instanceId)!;
+  const fixedTransform = transforms.get(fixed.instanceId)!;
+  const before = cloneMutableTransform(movingTransform);
+  if (constraint.kind === "concentric" || constraint.kind === "orientation") movingTransform.orientation = [...fixedTransform.orientation] as Vector;
+  const target = interfaceWorldPoint(fixedComponent, fixedTransform, constraint.fixed.interfaceId);
+  const current = interfaceWorldPoint(movingComponent, movingTransform, constraint.moving.interfaceId);
+  movingTransform.position = add(movingTransform.position, subtract(target, current));
+  return !sameTransform(before, movingTransform);
+}
+
+function cyclicConstraintIds(constraints: readonly AssemblyConstraint[]) {
+  const graph = new Map<string, Set<string>>();
+  for (const constraint of constraints) {
+    const edges = graph.get(constraint.fixed.instanceId) ?? new Set<string>();
+    edges.add(constraint.moving.instanceId);
+    graph.set(constraint.fixed.instanceId, edges);
+  }
+  return new Set(constraints.filter((constraint) => reaches(graph, constraint.moving.instanceId, constraint.fixed.instanceId)).map(({ id }) => id));
+}
+
+function conflictingConstraintIds(
+  constraints: readonly AssemblyConstraint[], cycleIds: ReadonlySet<string>, instances: Map<string, ComponentInstance>, transforms: Map<string, MutableTransform>, catalog: readonly ComponentDefinition[],
+) {
+  const groups = new Map<string, AssemblyConstraint[]>();
+  for (const constraint of constraints.filter(({ id }) => !cycleIds.has(id))) {
+    const group = groups.get(constraint.moving.instanceId) ?? [];
+    group.push(constraint); groups.set(constraint.moving.instanceId, group);
+  }
+  const conflicts = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const targets = group.map((constraint) => targetPoint(constraint, instances, transforms, catalog));
+    if (targets.some((target) => !sameVector(target, targets[0]!))) for (const { id } of group) conflicts.add(id);
+  }
+  return conflicts;
+}
+
+function targetPoint(constraint: AssemblyConstraint, instances: Map<string, ComponentInstance>, transforms: Map<string, MutableTransform>, catalog: readonly ComponentDefinition[]) {
+  const fixed = instances.get(constraint.fixed.instanceId);
+  if (!fixed) throw new Error(`Constraint instance is absent: ${constraint.fixed.instanceId}`);
+  return interfaceWorldPoint(componentFor(fixed, catalog), transforms.get(fixed.instanceId)!, constraint.fixed.interfaceId);
+}
+
+function reaches(graph: ReadonlyMap<string, ReadonlySet<string>>, from: string, target: string, seen = new Set<string>()): boolean {
+  if (from === target) return true;
+  if (seen.has(from)) return false;
+  seen.add(from);
+  return [...(graph.get(from) ?? [])].some((next) => reaches(graph, next, target, seen));
+}
+
+function sameVector(left: Vector, right: Vector) {
+  return left.every((value, index) => Math.abs(value - right[index]!) <= 1e-12);
+}
+function sameTransform(left: MutableTransform, right: MutableTransform) {
+  return sameVector(left.position, right.position) && sameVector(left.orientation, right.orientation);
+}
+function cloneMutableTransform(transform: MutableTransform): MutableTransform {
+  return { position: [...transform.position] as Vector, orientation: [...transform.orientation] as Vector };
 }
 
 async function place(state: AssemblyAuthoringState, instance: ComponentInstance) {
   if (state.draft.components.some(({ instanceId }) => instanceId === instance.instanceId)) throw new Error(`Assembly instance already exists: ${instance.instanceId}`);
   if (!state.catalog.some(({ revision }) => revision === instance.componentRevision)) throw new Error("Placed component revision is not staged in the catalog");
   const draft = await reifyDraft(state.draft, { components: [...state.draft.components, instance] });
-  return freezeState(draft, state.catalog, state.constraints, state.protectedRegions);
+  return freezeState(draft, state.catalog, state.constraints, state.protectedRegions, state.revision);
 }
 
 async function constrain(state: AssemblyAuthoringState, constraint: AssemblyConstraint) {
   if (state.constraints.some(({ id }) => id === constraint.id)) throw new Error(`Assembly constraint already exists: ${constraint.id}`);
   assertInterface(state, constraint.moving);
   assertInterface(state, constraint.fixed);
-  return freezeState(state.draft, state.catalog, [...state.constraints, freezeSnapshot({ ...constraint })], state.protectedRegions);
+  return freezeState(state.draft, state.catalog, [...state.constraints, freezeSnapshot({ ...constraint })], state.protectedRegions, state.revision);
 }
 
 async function protect(state: AssemblyAuthoringState, region: ProtectedRegion) {
   if (state.protectedRegions.some(({ id }) => id === region.id)) throw new Error(`Protected region already exists: ${region.id}`);
   const normalized = freezeSnapshot({ ...region, volume: normalizeVolume(VolumeSchema.parse(region.volume)) });
   const field = normalized.kind === "access" ? "accessVolumes" : "obstacleVolumes";
-  const draft = await reifyDraft(state.draft, { [field]: [...state.draft[field], normalized.volume] });
-  return freezeState(draft, state.catalog, state.constraints, [...state.protectedRegions, normalized]);
+  const draft = await reifyDraft(state.draft, { [field]: [...state.draft[field], normalized.volume].sort(compareId) });
+  return freezeState(draft, state.catalog, state.constraints, [...state.protectedRegions, normalized], state.revision);
 }
 
 async function reifyDraft(draft: AssemblyDraft, changes: Partial<Omit<AssemblyDraft, "revision">>) {
@@ -120,13 +209,17 @@ async function freezeState(
   catalog: readonly ComponentDefinition[],
   constraints: readonly AssemblyConstraint[],
   protectedRegions: readonly ProtectedRegion[],
+  parentRevision: string | null = null,
 ): Promise<AssemblyAuthoringState> {
+  const canonicalConstraints = [...constraints].sort(compareId);
+  const canonicalRegions = [...protectedRegions].sort(compareId);
   const revision = await revisionId({
     draftRevision: draft.revision,
     catalogRevisions: catalog.map(({ revision: value }) => value).sort(),
-    constraints, protectedRegions,
+    constraints: canonicalConstraints, protectedRegions: canonicalRegions,
   });
-  return freezeSnapshot({ draft, catalog: [...catalog], constraints: [...constraints], protectedRegions: [...protectedRegions], revision });
+  return freezeSnapshot({ draft, catalog: [...catalog], constraints: canonicalConstraints, protectedRegions: canonicalRegions, revision,
+    branch: { status: "staged", parentRevision, revision } });
 }
 
 function assertCatalogResolves(draft: AssemblyDraft, catalog: readonly ComponentDefinition[]) {
@@ -154,6 +247,7 @@ const metres = (value: { readonly value: number; readonly unit: "m" | "mm" }) =>
 const toMillimetres = (value: number) => Math.round(value * 1_000_000_000_000) / 1_000_000_000;
 const add = (left: Vector, right: Vector): Vector => [left[0] + right[0], left[1] + right[1], left[2] + right[2]];
 const subtract = (left: Vector, right: Vector): Vector => [left[0] - right[0], left[1] - right[1], left[2] - right[2]];
+const compareId = <Value extends { readonly id: string }>(left: Value, right: Value) => left.id.localeCompare(right.id);
 
 function cloneTransform(instance: ComponentInstance): MutableTransform {
   const { position, orientation } = instance.transform;
