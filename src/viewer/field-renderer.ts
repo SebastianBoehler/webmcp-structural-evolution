@@ -8,7 +8,12 @@ import {
   highlightFieldMesh,
   type FieldMeshSet,
 } from "./field-meshes";
-import type { InstanceRecord, VoxelGrid } from "./field-instances";
+import {
+  assertFiniteF32,
+  fieldInstanceCount,
+  type InstanceRecord,
+  type VoxelGrid,
+} from "./field-instances";
 
 // A 2x DPR ceiling is a rendering-budget decision: voxel comparisons favor legibility over 3x pixels.
 export const MAX_RENDER_DPR = 2;
@@ -103,47 +108,112 @@ function cameraFor(grid: VoxelGrid): THREE.PerspectiveCamera {
   return camera;
 }
 
+function validateInstanceF32(
+  record: InstanceRecord,
+  grid: VoxelGrid,
+  offset: readonly number[],
+  label: string,
+): void {
+  if (!Array.isArray(record.localPosition) || record.localPosition.length !== 3) {
+    throw new RangeError(`${label} local position must contain exactly 3 values`);
+  }
+  const localReach = record.localPosition.reduce((sum, value, axis) => {
+    assertFiniteF32(value, `${label} local position[${axis}]`);
+    return sum + Math.abs(value);
+  }, 0);
+  grid.anchor.position.forEach((position, axis) => {
+    assertFiniteF32(
+      Math.abs(position + offset[axis]!) + localReach,
+      `${label} assembly position[${axis}]`,
+    );
+  });
+}
+
+function validateRenderModelF32(model: ViewerRenderModel): void {
+  fieldInstanceCount(model.grid);
+  model.currentInstances.forEach((record, index) => {
+    validateInstanceF32(record, model.grid, [0, 0, 0], `current instance[${index}]`);
+  });
+  model.alternativeLayers.forEach((layer, layerIndex) => {
+    fieldInstanceCount(layer.grid);
+    if (!Array.isArray(layer.displayOffset) || layer.displayOffset.length !== 3) {
+      throw new RangeError(`alternative layer[${layerIndex}] offset must contain exactly 3 values`);
+    }
+    layer.displayOffset.forEach((value, axis) => {
+      assertFiniteF32(value, `alternative layer[${layerIndex}] offset[${axis}]`);
+      assertFiniteF32(
+        layer.grid.anchor.position[axis] + value,
+        `alternative layer[${layerIndex}] transform[${axis}]`,
+      );
+    });
+    [...layer.added, ...layer.removed].forEach((record, instanceIndex) => {
+      validateInstanceF32(
+        record,
+        layer.grid,
+        layer.displayOffset,
+        `alternative layer[${layerIndex}] instance[${instanceIndex}]`,
+      );
+    });
+  });
+}
+
 export function mountFieldRenderer(
   canvas: HTMLCanvasElement,
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
 ): FieldRendererSession {
+  validateRenderModelF32(model);
   let renderer: RendererLike | undefined;
   let controls: ControlsLike | undefined;
   let observer: ObserverLike | undefined;
   let meshSet: FieldMeshSet | undefined;
   let controlsListening = false;
   let frame: number | undefined;
-  let disposed = false;
+  let inactive = false;
+  let disposing = false;
+  let teardownComplete = false;
   const scene = new THREE.Scene();
   const camera = cameraFor(model.grid);
   let width = 1;
   let height = 1;
   const render = () => {
     frame = undefined;
-    if (disposed || !renderer) return;
+    if (inactive || !renderer) return;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
   };
   const scheduleRender = () => {
-    if (!disposed && frame === undefined) frame = environment.requestFrame(render);
+    if (!inactive && frame === undefined) frame = environment.requestFrame(render);
+  };
+  const attempt = (action: (() => void) | undefined) => {
+    try {
+      action?.();
+    } catch {
+      // dispose() has no error channel; teardown is best-effort after every owner is attempted.
+    }
   };
   const dispose = () => {
-    if (disposed) return;
-    disposed = true;
-    if (frame !== undefined) environment.cancelFrame(frame);
-    frame = undefined;
-    try { observer?.disconnect(); } catch { /* Continue releasing owned resources. */ }
-    if (controlsListening) {
-      try { controls?.removeEventListener("change", scheduleRender); } catch { /* Continue. */ }
+    if (teardownComplete || disposing) return;
+    inactive = true;
+    disposing = true;
+    try {
+      if (frame !== undefined) attempt(() => environment.cancelFrame(frame!));
+      frame = undefined;
+      attempt(observer ? () => observer!.disconnect() : undefined);
+      if (controlsListening) {
+        attempt(controls ? () => controls!.removeEventListener("change", scheduleRender) : undefined);
+      }
+      attempt(controls ? () => controls!.dispose() : undefined);
+      if (meshSet) {
+        meshSet.meshes.forEach((mesh) => attempt(() => scene.remove(mesh)));
+        attempt(() => disposeFieldMeshes(meshSet!.meshes));
+      }
+      attempt(renderer ? () => renderer!.dispose() : undefined);
+      teardownComplete = true;
+    } finally {
+      disposing = false;
     }
-    try { controls?.dispose(); } catch { /* Continue. */ }
-    if (meshSet) {
-      meshSet.meshes.forEach((mesh) => scene.remove(mesh));
-      disposeFieldMeshes(meshSet.meshes);
-    }
-    try { renderer?.dispose(); } catch { /* Nothing remains after renderer disposal. */ }
   };
 
   try {
@@ -160,7 +230,7 @@ export function mountFieldRenderer(
     meshSet = createFieldMeshes(model.grid, model.currentInstances, model.alternativeLayers);
     scene.add(...meshSet.meshes);
     observer = environment.createResizeObserver(([entry]) => {
-      if (disposed || !entry || !renderer) return;
+      if (inactive || !entry || !renderer) return;
       const rawDpr = environment.devicePixelRatio();
       const validDpr = Number.isFinite(rawDpr) && rawDpr > 0;
       const actualDpr = validDpr ? rawDpr : 1;
@@ -189,7 +259,7 @@ export function mountFieldRenderer(
   return {
     dispose,
     setHighlightedBranch(branchRevision) {
-      if (disposed || !meshSet) return;
+      if (inactive || !meshSet) return;
       highlightFieldMesh(meshSet.ghostMaterials, branchRevision);
       scheduleRender();
     },

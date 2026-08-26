@@ -44,6 +44,16 @@ function finiteTuple(values: readonly number[], name: string, positive = false):
   }
 }
 
+export function assertFiniteF32(value: number, name: string): void {
+  if (!Number.isFinite(value) || !Number.isFinite(Math.fround(value))) {
+    throw new RangeError(`${name} must be representable as a finite f32`);
+  }
+}
+
+function f32Tuple(values: readonly number[], name: string): void {
+  values.forEach((value, index) => assertFiniteF32(value, `${name}[${index}]`));
+}
+
 export function fieldInstanceCount(grid: VoxelGrid): number {
   const axes = Object.entries(grid.dimensions) as [keyof GridDimensions, number][];
   for (const [axis, value] of axes) {
@@ -58,6 +68,9 @@ export function fieldInstanceCount(grid: VoxelGrid): number {
   finiteTuple(grid.cellSize, "grid cellSize", true);
   finiteTuple(grid.anchor.position, "grid anchor position");
   finiteTuple(grid.anchor.orientation, "grid anchor orientation");
+  f32Tuple(grid.cellSize, "grid cellSize");
+  f32Tuple(grid.anchor.position, "grid anchor position");
+  f32Tuple(grid.anchor.orientation, "grid anchor orientation");
   const quaternionLength = Math.hypot(...grid.anchor.orientation);
   if (Math.abs(quaternionLength - 1) > 1e-5) {
     throw new RangeError("grid anchor orientation must be a near-unit quaternion");
@@ -74,6 +87,9 @@ export function fieldInstanceCount(grid: VoxelGrid): number {
   ];
   const reach = extents.reduce((total, extent) => total + extent, 0);
   const renderReach = reach * 20;
+  extents.forEach((extent, index) => assertFiniteF32(extent, `grid derived extent[${index}]`));
+  assertFiniteF32(reach, "grid derived reach");
+  assertFiniteF32(renderReach, "grid derived camera reach");
   if (
     !Number.isFinite(renderReach) ||
     extents.some((extent) => !Number.isFinite(extent)) ||
@@ -81,6 +97,9 @@ export function fieldInstanceCount(grid: VoxelGrid): number {
   ) {
     throw new RangeError("grid derived extents and assembly positions must remain finite");
   }
+  grid.anchor.position.forEach((position, index) => {
+    assertFiniteF32(Math.abs(position) + reach * 2, `grid derived assembly position[${index}]`);
+  });
   return count;
 }
 
@@ -97,6 +116,9 @@ export function instanceAt(field: Float32Array, grid: VoxelGrid, index: number):
   if (localPosition.some((value) => !Number.isFinite(value))) {
     throw new RangeError(`field[${index}] produces a non-finite local position`);
   }
+  localPosition.forEach((value, axis) => {
+    assertFiniteF32(value, `field[${index}] local position[${axis}]`);
+  });
   const record: InstanceRecord = {
     index,
     x,

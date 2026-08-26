@@ -108,4 +108,50 @@ describe("mountFieldRenderer", () => {
     expect(test.environment.requestFrame).toHaveBeenCalledTimes(1);
     expect(test.renderer.render).not.toHaveBeenCalled();
   });
+
+  it("continues releasing every owner when RAF cancellation throws", () => {
+    const geometryDispose = vi.spyOn(THREE.BufferGeometry.prototype, "dispose");
+    const materialDispose = vi.spyOn(THREE.Material.prototype, "dispose");
+    const meshDispose = vi.spyOn(THREE.InstancedMesh.prototype, "dispose");
+    const test = harness({ cancelFrameFailure: new Error("cancel failed") });
+    const session = mountFieldRenderer(document.createElement("canvas"), model(), test.environment);
+
+    expect(() => session.dispose()).not.toThrow();
+    session.dispose();
+
+    expect(test.cancelFrame).toHaveBeenCalledOnce();
+    expect(test.disconnect).toHaveBeenCalledOnce();
+    expect(test.controls.dispose).toHaveBeenCalledOnce();
+    expect(meshDispose).toHaveBeenCalledTimes(2);
+    expect(geometryDispose).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(test.renderer.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("rejects non-f32 geometry before allocating a renderer", () => {
+    const oversizedGrid = {
+      ...model(),
+      grid: {
+        ...current.grid,
+        cellSize: [1e100, 1, 1] as const,
+      },
+      currentInstances: [],
+      alternativeLayers: [],
+    };
+    const oversizedPeel = {
+      ...model(),
+      alternativeLayers: model().alternativeLayers.map((layer) => ({
+        ...layer,
+        displayOffset: [1e100, 0, 0] as const,
+      })),
+    };
+
+    for (const invalidModel of [oversizedGrid, oversizedPeel]) {
+      const test = harness();
+      expect(() =>
+        mountFieldRenderer(document.createElement("canvas"), invalidModel, test.environment),
+      ).toThrow(/f32/i);
+      expect(test.environment.createRenderer).not.toHaveBeenCalled();
+    }
+  });
 });

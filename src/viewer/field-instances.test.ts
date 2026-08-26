@@ -87,7 +87,7 @@ describe("visibleInstances", () => {
       anchor: grid.anchor,
     };
     expect(() => visibleInstances(new Float32Array(2), overflowing, 0.5)).toThrow(
-      /derived.*finite/i,
+      /finite f32|derived.*finite/i,
     );
 
     const rendererOverflow: VoxelGrid = {
@@ -96,7 +96,19 @@ describe("visibleInstances", () => {
       anchor: grid.anchor,
     };
     expect(() => visibleInstances(new Float32Array(1), rendererOverflow, 0.5)).toThrow(
-      /derived.*finite/i,
+      /finite f32|derived.*finite/i,
     );
+  });
+
+  it.each([
+    ["cell size", { dimensions: { width: 1, height: 1, depth: 1 }, cellSize: [1e100, 1, 1], anchor: grid.anchor }, 1],
+    ["anchor position", { ...grid, anchor: { ...grid.anchor, position: [1e100, 0, 0] } }, 8],
+    ["quaternion", { ...grid, anchor: { ...grid.anchor, orientation: [1e100, 0, 0, 1] } }, 8],
+    ["derived extent", { dimensions: { width: 4, height: 1, depth: 1 }, cellSize: [1e38, 1, 1], anchor: grid.anchor }, 4],
+    ["assembly position", { dimensions: { width: 1, height: 1, depth: 1 }, cellSize: [1e38, 1, 1], anchor: { ...grid.anchor, position: [3e38, 0, 0] } }, 1],
+  ])("rejects a finite JS %s that is not safely representable as f32", (_name, candidate, count) => {
+    expect(() =>
+      visibleInstances(new Float32Array(count), candidate as unknown as VoxelGrid, 0.5),
+    ).toThrow(/f32/i);
   });
 });

@@ -73,6 +73,7 @@ interface HarnessOptions {
   readonly controlsFailure?: Error;
   readonly observerFailure?: Error;
   readonly frameFailure?: Error;
+  readonly cancelFrameFailure?: Error;
 }
 
 export function harness(options: HarnessOptions = {}): TestHarness {
@@ -96,7 +97,9 @@ export function harness(options: HarnessOptions = {}): TestHarness {
     target: { set: vi.fn() },
   };
   const disconnect = vi.fn();
-  const cancelFrame = vi.fn();
+  const cancelFrame = vi.fn(() => {
+    if (options.cancelFrameFailure) throw options.cancelFrameFailure;
+  });
   const observe = vi.fn((_target: Element, observerOptions?: ResizeObserverOptions) => {
     if (options.rejectDevicePixelObserve && observerOptions) throw new TypeError("box unsupported");
   });

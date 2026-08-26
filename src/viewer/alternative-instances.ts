@@ -1,5 +1,6 @@
 import type { ProbeResult } from "../gpu/compute-probe";
 import {
+  assertFiniteF32,
   instanceAt,
   validateField,
   visibleInstances,
@@ -83,11 +84,13 @@ function peelOffset(index: number, grid: VoxelGrid): Vector3Tuple {
   const distance = Math.min(3, Math.max(...grid.cellSize) * 3);
   const angles = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3] as const;
   const angle = angles[index]!;
-  return Object.freeze([
+  const offset: Vector3Tuple = [
     Number((Math.cos(angle) * distance).toFixed(6)),
     Number((Math.sin(angle) * distance).toFixed(6)),
     0,
-  ]);
+  ];
+  offset.forEach((value, axis) => assertFiniteF32(value, `peel offset[${axis}]`));
+  return Object.freeze(offset);
 }
 
 function comparison(
