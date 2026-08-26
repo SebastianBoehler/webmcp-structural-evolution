@@ -34,7 +34,7 @@ function receiptIdentity(receipt: ActionReceipt): ReceiptIdentity {
     ?? "not recorded";
   const attempt = field(receipt.validatedInputs, "attempt") ?? field(result, "attempt");
   const branch = text("branchRevision") === "not recorded"
-    && /^(run|cancel)_foundation_probe$/.test(receipt.action)
+    && /^(generate_topology_candidate|cancel_topology_optimization)$/.test(receipt.action)
     ? receipt.affectedRevision ?? "not recorded"
     : text("branchRevision");
   return {
@@ -52,34 +52,34 @@ function humanAction(action: string): string {
 
 function probeTitle(receipt: ActionReceipt): string {
   const variant = textField(receipt.validatedInputs, "variant");
-  if (variant === "baseline") return "Baseline verification";
-  if (variant === "edge-biased") return "Edge alternative";
-  if (variant === "center-biased") return "Center alternative";
-  return "Design verification";
+  if (variant === "balanced") return "Balanced frame";
+  if (variant === "lightweight") return "Lightweight frame";
+  if (variant === "stiffness") return "Stiffness-first frame";
+  return "Topology candidate";
 }
 
 function successfulDescription(receipt: ActionReceipt): string {
   switch (receipt.action) {
-    case "run_foundation_probe":
-      return textField(receipt.validatedInputs, "variant") === "baseline"
-        ? "The baseline passed the exact verification check."
+    case "generate_topology_candidate":
+      return textField(receipt.validatedInputs, "variant") === "balanced"
+        ? "The balanced frame converged and passed structural output checks."
         : "A verified topology alternative is ready for human review.";
     case "promote_branch": return "The verified branch is now the active design.";
-    case "compare_foundation_probes": return "Two verified alternatives were compared using measured results.";
+    case "compare_topology_candidates": return "Two verified alternatives were compared using measured results.";
     case "inspect_design_context": return "The agent inspected the current selection, locks, and assembly context.";
     case "human_intervention": return "The selected region and engineering locks were applied to the design context.";
-    case "cancel_foundation_probe": return "The active verification stopped without changing the accepted design.";
+    case "cancel_topology_optimization": return "The active solve stopped without changing the accepted design.";
     default: return "The action completed and its exact receipt was preserved.";
   }
 }
 
 function receiptSummary(receipt: ActionReceipt): ReceiptSummary {
-  const title = receipt.action === "run_foundation_probe" ? probeTitle(receipt)
+  const title = receipt.action === "generate_topology_candidate" ? probeTitle(receipt)
     : receipt.action === "promote_branch" ? "Design promotion"
-      : receipt.action === "compare_foundation_probes" ? "Alternative comparison"
+      : receipt.action === "compare_topology_candidates" ? "Alternative comparison"
         : receipt.action === "inspect_design_context" ? "Design context inspection"
           : receipt.action === "human_intervention" ? "Design constraints updated"
-            : receipt.action === "cancel_foundation_probe" ? "Verification cancellation"
+            : receipt.action === "cancel_topology_optimization" ? "Optimization canceled"
               : humanAction(receipt.action);
   if (receipt.outcome.status === "failed") {
     return { title, badge: "Failed", description: receipt.outcome.error, tone: "danger" };
@@ -89,7 +89,7 @@ function receiptSummary(receipt: ActionReceipt): ReceiptSummary {
   }
   return {
     title,
-    badge: receipt.action === "run_foundation_probe" ? "Verified" : "Completed",
+    badge: receipt.action === "generate_topology_candidate" ? "Verified" : "Completed",
     description: successfulDescription(receipt),
     tone: "success",
   };

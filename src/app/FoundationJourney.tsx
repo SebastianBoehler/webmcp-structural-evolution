@@ -31,17 +31,17 @@ const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
 const initialAcceptedRevision = fixture.assembly.revision;
 
 const probeCopy: Record<ProbeVariant, { hypothesis: string; prediction: string }> = {
-  baseline: {
-    hypothesis: "Establish the deterministic reference field",
-    prediction: "Verification should pass with zero L2 mismatch",
+  balanced: {
+    hypothesis: "Balance frame stiffness and material use across hover and agility loads",
+    prediction: "Compliance should fall while preserving 36 percent material and every keep-out",
   },
-  "edge-biased": {
-    hypothesis: "Exercise the edge-biased input distribution",
-    prediction: "Verification should pass within the timing budget",
+  "lightweight": {
+    hypothesis: "Reduce frame mass while preserving continuous motor-to-core load paths",
+    prediction: "Material should fall to 28 percent with higher but finite compliance",
   },
-  "center-biased": {
-    hypothesis: "Exercise the center-biased input distribution",
-    prediction: "Verification should pass within the timing budget",
+  "stiffness": {
+    hypothesis: "Prioritize stiffness for aggressive roll pitch and torsion load cases",
+    prediction: "Compliance and displacement should improve using a 46 percent material budget",
   },
 };
 
@@ -82,23 +82,23 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     return !status || status === "failed" || status === "mismatch" || status === "canceled";
   };
   const nextVariant = !accepted
-    ? canRetry("baseline") ? "baseline" : undefined
-    : canRetry("edge-biased") ? "edge-biased"
-      : latestVariant("edge-biased")?.status === "verified" && canRetry("center-biased")
-        ? "center-biased" : undefined;
+    ? canRetry("balanced") ? "balanced" : undefined
+    : canRetry("lightweight") ? "lightweight"
+      : latestVariant("lightweight")?.status === "verified" && canRetry("stiffness")
+        ? "stiffness" : undefined;
   const pendingPromotion = currentBranches.find(
     (branch) => branch.status === "verified" && branch.branchRevision !== state.acceptedBranchRevision,
   );
   const readyToCompare = accepted && currentVerified.length >= 2;
   const retrying = nextVariant !== undefined && latestVariant(nextVariant) !== undefined;
   const primaryLabel = workspace.layoutState !== "verified" ? "Topology context needs rebuild"
-    : state.operationStatus === "running" ? "Verification running…"
+    : state.operationStatus === "running" ? "Optimizing frame…"
     : state.operationStatus === "canceling" ? "Canceling…"
-      : nextVariant === "baseline" ? `${retrying ? "Retry" : "Run"} baseline verification`
-        : nextVariant === "edge-biased" ? `${retrying ? "Retry" : "Generate"} edge alternative`
-          : nextVariant === "center-biased" ? `${retrying ? "Retry" : "Generate"} center alternative`
+      : nextVariant === "balanced" ? `${retrying ? "Retry" : "Generate"} balanced frame`
+        : nextVariant === "lightweight" ? `${retrying ? "Retry" : "Generate"} lightweight frame`
+          : nextVariant === "stiffness" ? `${retrying ? "Retry" : "Generate"} stiffness-first frame`
             : readyToCompare ? "Compare alternatives"
-              : pendingPromotion ? "Review verified branch" : "No action available";
+              : pendingPromotion ? "Review topology candidate" : "No action available";
 
   const runVariant = async (variant: ProbeVariant) => {
     setError(undefined);
@@ -145,8 +145,10 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     }
   };
   const visibleParts = useMemo(
-    () => workspace.parts.filter((part) => showConstraints || part.appearance !== "constraint"),
-    [showConstraints, workspace.parts],
+    () => workspace.parts.filter((part) =>
+      (showConstraints || part.appearance !== "constraint")
+      && (viewerCurrent === null || part.appearance !== "design-region")),
+    [showConstraints, viewerCurrent, workspace.parts],
   );
   const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
     workspace.movePart(id, center);
@@ -214,8 +216,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           open={componentsOpen}
           parts={workspace.parts}
           onSelect={(id) => { setSelectedPart(id); setComponentsOpen(false); }}
-          onImportFile={(file) => {
-            try { setSelectedPart(workspace.importFile(file)); }
+          onImportFile={async (file) => {
+            try { setSelectedPart(await workspace.importFile(file)); }
             catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
           }}
           onClose={() => setComponentsOpen(false)}
@@ -255,7 +257,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                   ? "Moving component · rotor safety geometry follows"
                   : workspace.layoutState === "changed"
                     ? "Layout changed · previous topology evidence is stale"
-                    : undefined
+                    : pendingPromotion ? "Candidate topology · verified and awaiting human acceptance" : undefined
                 : pendingPromotion
                   ? "Verified branch ready for human review"
                   : undefined}
@@ -291,6 +293,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           open={inspectorOpen}
           onClose={() => setInspectorOpen(false)}
           onLockCableClearance={() => void intervene()}
+          onMovePart={workspace.movePart}
         />
       </div>
     </main>

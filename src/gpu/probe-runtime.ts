@@ -23,7 +23,7 @@ export class ProbeStageError extends Error {
 
 export class ProbeCanceledError extends Error {
   constructor() {
-    super("Foundation probe canceled by the user.");
+    super("Topology optimization canceled by the user.");
     this.name = "ProbeCanceledError";
   }
 }

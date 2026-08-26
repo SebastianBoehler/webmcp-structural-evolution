@@ -40,6 +40,28 @@ function motorPieces(part: Extract<AssemblyVisualPart, { kind: "motor" }>): read
   return pieces;
 }
 
+function motorMountPieces(part: Extract<AssemblyVisualPart, { kind: "motor-mount" }>): readonly VisualPiece[] {
+  const pieces: VisualPiece[] = [{
+    geometry: cylinder(part.radius, part.height),
+    color: 0x1688c9,
+    metalness: 0.18,
+  }];
+  for (let index = 0; index < 4; index += 1) {
+    const angle = Math.PI / 4 + index * Math.PI / 2;
+    pieces.push({
+      geometry: new THREE.TorusGeometry(part.boltRadius, 0.7, 8, 24),
+      color: 0x0e4e72,
+      metalness: 0.48,
+      position: [
+        Math.cos(angle) * part.boltCircle,
+        Math.sin(angle) * part.boltCircle,
+        part.height / 2 + 0.08,
+      ],
+    });
+  }
+  return pieces;
+}
+
 function bladeGeometry(radius: number, hubRadius: number, depth: number): THREE.BufferGeometry {
   const shape = new THREE.Shape();
   shape.moveTo(hubRadius * 0.65, -1.2);
@@ -77,9 +99,32 @@ function propellerPieces(part: Extract<AssemblyVisualPart, { kind: "propeller" }
   return pieces;
 }
 
-export function geometryPieces(part: Exclude<AssemblyVisualPart, { kind: "model" }>): readonly VisualPiece[] {
+function flightControllerPieces(part: Extract<AssemblyVisualPart, { kind: "flight-controller" }>): readonly VisualPiece[] {
+  const [width, height, depth] = part.size;
+  const pieces: VisualPiece[] = [
+    { geometry: new THREE.BoxGeometry(width, height, depth * 0.72), color: 0x252d36, metalness: 0.18 },
+    { geometry: new THREE.BoxGeometry(width - 3, height - 3, 1.2), color: 0x244b42, position: [0, 0, depth * 0.38] },
+    { geometry: new THREE.BoxGeometry(9, 9, 1.8), color: 0x151a20, metalness: 0.32, position: [0, 0, depth * 0.49] },
+    { geometry: new THREE.BoxGeometry(7, 6, 2), color: 0x171c22, position: [-12, 6, depth * 0.49] },
+    { geometry: new THREE.BoxGeometry(7, 6, 2), color: 0x171c22, position: [12, -6, depth * 0.49] },
+  ];
+  for (const side of [-1, 1]) {
+    for (let index = -1; index <= 1; index += 1) {
+      pieces.push({
+        geometry: new THREE.BoxGeometry(4.8, 7.2, 4),
+        color: 0xd6d9dc,
+        metalness: 0.24,
+        position: [side * (width / 2 - 2.2), index * 10, depth * 0.12],
+      });
+    }
+  }
+  return pieces;
+}
+
+export function geometryPieces(part: Exclude<AssemblyVisualPart, { kind: "model" | "mesh" }>): readonly VisualPiece[] {
   if (part.kind === "box") return [{ geometry: new THREE.BoxGeometry(...part.size) }];
   if (part.kind === "cylinder") return [{ geometry: cylinder(part.radius, part.height) }];
+  if (part.kind === "motor-mount") return motorMountPieces(part);
   if (part.kind === "guard") return [{
     geometry: new THREE.TorusGeometry(part.radius, part.tubeRadius, 12, 96),
     color: 0xc56b3f,
@@ -87,5 +132,6 @@ export function geometryPieces(part: Exclude<AssemblyVisualPart, { kind: "model"
     opacity: 0.3,
   }];
   if (part.kind === "motor") return motorPieces(part);
+  if (part.kind === "flight-controller") return flightControllerPieces(part);
   return propellerPieces(part);
 }

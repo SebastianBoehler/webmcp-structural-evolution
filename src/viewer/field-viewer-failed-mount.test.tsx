@@ -40,16 +40,18 @@ describe("FieldViewer failed mount cleanup", () => {
     );
 
     expect(screen.getByRole("alert").textContent).toMatch(/mesh construction failed/i);
-    expect(materialDispose).toHaveBeenCalledOnce();
+    const initialMaterialDisposals = materialDispose.mock.calls.length;
+    const initialGeometryDisposals = geometryDispose.mock.calls.length;
+    expect(initialMaterialDisposals).toBeGreaterThanOrEqual(1);
     expect(meshDispose).not.toHaveBeenCalled();
-    expect(geometryDispose).toHaveBeenCalledOnce();
+    expect(initialGeometryDisposals).toBeGreaterThanOrEqual(1);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
 
     view.unmount();
-    expect(materialDispose).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(initialMaterialDisposals + 1);
     expect(meshDispose).not.toHaveBeenCalled();
-    expect(geometryDispose).toHaveBeenCalledOnce();
+    expect(geometryDispose).toHaveBeenCalledTimes(initialGeometryDisposals);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
   });

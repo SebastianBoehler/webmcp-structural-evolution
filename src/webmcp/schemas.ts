@@ -5,6 +5,7 @@ import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import { RevisionSchema, type DeepReadonly } from "../domain/snapshots";
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ProbeResult } from "../gpu/compute-probe";
+import type { TopologyMetrics } from "../gpu/compute-probe";
 
 const caseInsensitiveWord = (word: string) => [...word]
   .map((character) => `[${character.toLowerCase()}${character.toUpperCase()}]`)
@@ -29,22 +30,18 @@ export const structuralClaim = new RegExp(structuralClaimPattern);
 export const foundationPrediction = new RegExp(foundationPredictionPattern);
 
 const boundedIntentPattern = `^(?!.*(?:${unsafeIntentPattern})).+$`;
-const foundationOnlyPattern = `(?=.*(?:${foundationPredictionPattern}))(?!.*(?:${structuralClaimPattern})).+`;
 
 export const InspectContextInputSchema = z.object({
   scope: z.literal("current"),
 }).strict();
 
-export const ProbeVariantSchema = z.enum(["baseline", "edge-biased", "center-biased"]);
+export const ProbeVariantSchema = z.enum(["balanced", "lightweight", "stiffness"]);
 
 export const RunFoundationProbeInputSchema = z.object({
   parentRevision: RevisionSchema,
   variant: ProbeVariantSchema,
   hypothesis: boundedText,
-  prediction: boundedText.refine(
-    (value) => foundationPrediction.test(value) && !structuralClaim.test(value),
-    "Prediction may describe verification, timing, or field behavior only",
-  ),
+  prediction: boundedText,
 }).strict();
 
 export const CompareFoundationProbesInputSchema = z.object({
@@ -67,6 +64,7 @@ export interface ProbeMeasurement {
   readonly resultDigest: string;
   readonly code?: string;
   readonly message?: string;
+  readonly topology?: TopologyMetrics;
 }
 
 export interface FoundationBranch extends RunFoundationProbeInput {
@@ -120,6 +118,8 @@ export interface ProbeComparisonFacts {
   readonly rightStatus: "verified";
   readonly timingDeltaMs: number;
   readonly relativeL2Delta: number;
+  readonly complianceDelta?: number;
+  readonly materialFractionDelta?: number;
   readonly leftDigest: string;
   readonly rightDigest: string;
   readonly stale: false;
@@ -139,9 +139,9 @@ export const runInputJsonSchema = {
   type: "object",
   properties: {
     parentRevision: { type: "string", pattern: "^[0-9a-f]{64}$", description: "Exact current context revision." },
-    variant: { type: "string", enum: ["baseline", "edge-biased", "center-biased"], description: "Bounded deterministic input field." },
-    hypothesis: { type: "string", minLength: 1, maxLength: 120, pattern: boundedIntentPattern, description: "Short reason for this probe branch." },
-    prediction: { type: "string", minLength: 1, maxLength: 120, allOf: [{ pattern: boundedIntentPattern }, { pattern: foundationOnlyPattern }], description: "Expected verification, timing, or field behavior." },
+    variant: { type: "string", enum: ["balanced", "lightweight", "stiffness"], description: "Engineering tradeoff for the deterministic topology solve." },
+    hypothesis: { type: "string", minLength: 1, maxLength: 120, pattern: boundedIntentPattern, description: "Why this topology candidate may improve the active design." },
+    prediction: { type: "string", minLength: 1, maxLength: 120, pattern: boundedIntentPattern, description: "Expected compliance, displacement, material, or manufacturability outcome." },
   },
   required: ["parentRevision", "variant", "hypothesis", "prediction"],
   additionalProperties: false,

@@ -11,6 +11,38 @@ export interface InspectorPanelProps {
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onLockCableClearance: () => void;
+  readonly onMovePart: (id: string, center: readonly [number, number, number]) => void;
+}
+
+function PositionEditor({ part, onMove }: {
+  readonly part: AssemblyVisualPart;
+  readonly onMove: (id: string, center: readonly [number, number, number]) => void;
+}) {
+  const [coordinates, setCoordinates] = useState(() => part.center.map(String));
+  useEffect(() => setCoordinates(part.center.map(String)), [part.center]);
+  const values = coordinates.map(Number);
+  const valid = values.length === 3 && values.every(Number.isFinite);
+  return (
+    <section className="position-editor" aria-label="Exact component position">
+      <div><h3>Position</h3><p>World coordinates · millimetres</p></div>
+      <div className="position-fields">
+        {(["X", "Y", "Z"] as const).map((axis, index) => (
+          <label key={axis}><span>{axis}</span><input
+            aria-label={`${axis} position`}
+            type="number"
+            step="1"
+            value={coordinates[index] ?? ""}
+            onChange={(event) => setCoordinates((current) => current.map(
+              (value, currentIndex) => currentIndex === index ? event.target.value : value,
+            ))}
+          /></label>
+        ))}
+      </div>
+      <button type="button" disabled={!valid} onClick={() => {
+        if (valid) onMove(part.selectionId, values as [number, number, number]);
+      }}>Apply exact position</button>
+    </section>
+  );
 }
 
 const knownDetails = (part: AssemblyVisualPart | undefined) => {
@@ -50,6 +82,7 @@ export function InspectorPanel({
   open,
   onClose,
   onLockCableClearance,
+  onMovePart,
 }: InspectorPanelProps) {
   const part = parts.find((candidate) => candidate.selectionId === selectedId);
   const imported = imports.find((candidate) => candidate.id === selectedId);
@@ -86,6 +119,7 @@ export function InspectorPanel({
       )}
       {isConstraint && <p className="inspector-note">This safety zone follows its motor and remains excluded from generated structures.</p>}
       {part?.movable && <p className="inspector-note">Drag this component in the viewport. Its rotor and protected volume move with it.</p>}
+      {part?.movable && <PositionEditor part={part} onMove={onMovePart} />}
 
       {(details?.source || imported?.sourceUrl) && (
         <a className="source-link" href={details?.source ?? imported?.sourceUrl} target="_blank" rel="noreferrer">Open component source</a>
@@ -109,3 +143,4 @@ export function InspectorPanel({
     </aside>
   );
 }
+import { useEffect, useState } from "react";

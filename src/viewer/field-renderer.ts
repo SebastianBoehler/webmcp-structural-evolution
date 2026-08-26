@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { installAssemblyInteractions, type PartInteractionHandlers } from "./assembly-interactions";
+import { installTransformGizmo, type TransformGizmoSession } from "./transform-gizmo";
 
 import {
   createFieldMeshes,
@@ -70,6 +71,10 @@ export interface FieldRendererSession {
   dispose(): void;
   setHighlightedBranch(branchRevision: string | undefined): void;
   setSelectedPart(partId: string | undefined): void;
+  setReferenceGridVisible(visible: boolean): void;
+  setView(view: "isometric" | "top" | "front" | "right"): void;
+  setTransformSpace(space: "world" | "local"): void;
+  setTranslationSnap(distance: number | null): void;
 }
 
 export class FieldRendererMountError extends Error {
@@ -124,6 +129,9 @@ export function mountFieldRenderer(
   let camera: THREE.PerspectiveCamera | undefined;
   let frame: number | undefined;
   let frameOwnership: CleanupToken | undefined;
+  let controls: ControlsLike | undefined;
+  let referenceGrid: THREE.GridHelper | undefined;
+  let transformGizmo: TransformGizmoSession | undefined;
   let inactive = false;
   let width = 1;
   let height = 1;
@@ -162,8 +170,31 @@ export function mountFieldRenderer(
     setSelectedPart(partId) {
       if (inactive || !assemblyMeshSet) return;
       highlightAssemblyPart(assemblyMeshSet.materials, partId);
+      transformGizmo?.setSelectedPart(partId);
       scheduleRender();
     },
+    setReferenceGridVisible(visible) {
+      if (!referenceGrid) return;
+      referenceGrid.visible = visible;
+      scheduleRender();
+    },
+    setView(view) {
+      if (!camera || !controls) return;
+      const [x, y, z] = prepared.camera.target;
+      const distance = prepared.camera.span * 2.4;
+      const offset = view === "top" ? [0, 0, distance]
+        : view === "front" ? [0, -distance, 0]
+          : view === "right" ? [distance, 0, 0]
+            : [distance * 0.78, -distance * 0.72, distance * 0.68];
+      camera.up.set(0, 0, view === "top" ? -1 : 1);
+      camera.position.set(x + offset[0]!, y + offset[1]!, z + offset[2]!);
+      camera.lookAt(x, y, z);
+      controls.target.set(x, y, z);
+      controls.update();
+      scheduleRender();
+    },
+    setTransformSpace(space) { transformGizmo?.setSpace(space); },
+    setTranslationSnap(distance) { transformGizmo?.setSnap(distance); },
   };
 
   try {
@@ -173,6 +204,7 @@ export function mountFieldRenderer(
     renderer = createdRenderer;
     ownership.own(() => createdRenderer.dispose());
     const createdControls = environment.createControls(camera, canvas);
+    controls = createdControls;
     ownership.own(() => createdControls.dispose());
     environment.prefersReducedMotion();
     createdControls.enableDamping = false;
@@ -186,6 +218,18 @@ export function mountFieldRenderer(
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(5, 8, 12);
     attach(key);
+    referenceGrid = new THREE.GridHelper(Math.max(240, prepared.camera.span * 1.2), 24, 0x7892a8, 0xb5c0ca);
+    referenceGrid.name = "cad-world-grid";
+    referenceGrid.rotation.x = Math.PI / 2;
+    referenceGrid.position.z = prepared.grid.anchor.position[2];
+    const gridMaterials = Array.isArray(referenceGrid.material) ? referenceGrid.material : [referenceGrid.material];
+    for (const material of gridMaterials) {
+      material.transparent = true;
+      material.opacity = 0.34;
+      ownership.own(() => material.dispose());
+    }
+    ownership.own(() => referenceGrid!.geometry.dispose());
+    attach(referenceGrid);
     assemblyMeshSet = createAssemblyMeshes(prepared.assemblyParts ?? [], {
       own: (release) => ownership.own(release),
       attach,
@@ -198,7 +242,18 @@ export function mountFieldRenderer(
         own: (release) => ownership.own(release),
         attach,
       },
+      prepared.densityField,
     );
+    transformGizmo = installTransformGizmo({
+      canvas,
+      camera,
+      meshSet: assemblyMeshSet,
+      controls: createdControls,
+      handlers: interactions,
+      attach,
+      scheduleRender,
+      own: (release) => { ownership.own(release); },
+    });
     const createdObserver = environment.createResizeObserver(([entry]) => {
       if (inactive || !entry || !renderer) return;
       const rawDpr = environment.devicePixelRatio();
@@ -226,7 +281,7 @@ export function mountFieldRenderer(
       camera,
       meshSet: assemblyMeshSet,
       controls: createdControls,
-      handlers: interactions,
+      handlers: { onSelect: interactions.onSelect },
       scheduleRender,
       own: (release) => { ownership.own(release); },
     });

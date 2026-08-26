@@ -17,14 +17,29 @@ export const INITIAL_MOTORS: readonly MotorPlacement[] = Object.freeze([
   { id: "motor-south", label: "South motor", center: [0, -105, 12], movable: true },
 ]);
 
-const midpoint = (point: Point3): Point3 => [point[0] / 2, point[1] / 2, 3];
-const armLength = (point: Point3) => Math.hypot(point[0], point[1]) - 30;
-const armYaw = (point: Point3) => Math.atan2(point[1], point[0]);
+export const INITIAL_EQUIPMENT: Readonly<Record<string, Point3>> = Object.freeze({
+  "flight-controller": [0, 0, 13],
+  battery: [0, 0, -14],
+  receiver: [-30, 0, 8],
+});
 
 function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
   const [x, y, z] = motor.center;
   const dragGroup = motor.id;
   return [
+    {
+      id: `${motor.id}-mount`,
+      selectionId: "arm-design-region",
+      label: `${motor.label} load-bearing plate`,
+      appearance: "generated",
+      kind: "motor-mount",
+      center: [x, y, 0],
+      radius: 17.5,
+      height: 6,
+      boltCircle: 9.5,
+      boltRadius: 1.6,
+      dragGroup,
+    },
     {
       id: motor.id,
       selectionId: motor.id,
@@ -67,34 +82,23 @@ function motorGroup(motor: MotorPlacement): readonly AssemblyVisualPart[] {
   ];
 }
 
-function armPart(motor: MotorPlacement, active: boolean): AssemblyVisualPart {
-  const length = armLength(motor.center);
-  const center = midpoint(motor.center);
-  return {
-    id: active ? "arm-design-region" : `reference-arm-${motor.id}`,
-    selectionId: active ? "arm-design-region" : `reference-arm-${motor.id}`,
-    label: active ? "East arm design region" : `${motor.label} reference arm`,
-    appearance: active ? "design-region" : "component",
-    kind: "box",
-    center,
-    rotation: [0, 0, armYaw(motor.center)],
-    size: [length, 18, active ? 18 : 7],
-  };
-}
-
 function importedPart(component: ImportedComponent, index: number, center?: Point3): AssemblyVisualPart {
-  return {
+  const shared = {
     id: component.id,
     selectionId: component.id,
     label: component.name,
-    appearance: "component",
-    kind: "model",
-    center: center ?? [index * 38 - 19, 0, 22],
+    appearance: "component" as const,
+    center: center ?? [index * 38 - 19, 0, 22] as Point3,
     movable: true,
     dragGroup: component.id,
+    size: component.sizeMm,
+  };
+  if (component.mesh) return { ...shared, kind: "mesh", mesh: component.mesh };
+  return {
+    ...shared,
+    kind: "model",
     assetUrl: component.assetUrl,
     assetUnits: component.assetUnits,
-    size: component.sizeMm,
   };
 }
 
@@ -102,20 +106,44 @@ export function droneAssemblyVisuals(
   motors: readonly MotorPlacement[],
   imports: readonly ImportedComponent[],
   importPositions: Readonly<Record<string, Point3>> = {},
+  equipmentPositions: Readonly<Record<string, Point3>> = INITIAL_EQUIPMENT,
 ): readonly AssemblyVisualPart[] {
-  const activeMotor = motors.find((motor) => motor.id === "motor-east") ?? motors[0]!;
   return Object.freeze([
     {
-      id: "frame-core",
-      selectionId: "frame-core",
-      label: "Avionics frame",
-      appearance: "component",
+      id: "arm-design-region",
+      selectionId: "arm-design-region",
+      label: "Full frame design space",
+      appearance: "design-region",
       kind: "box",
-      center: [0, 0, 3],
-      size: [52, 52, 8],
+      center: [0, 0, 0],
+      size: [240, 240, 24],
     },
-    armPart(activeMotor, true),
-    ...motors.filter((motor) => motor.id !== activeMotor.id).map((motor) => armPart(motor, false)),
+    {
+      id: "flight-controller", selectionId: "flight-controller", label: "Pixhawk 6C Mini envelope",
+      appearance: "component", kind: "flight-controller", center: equipmentPositions["flight-controller"]!,
+      size: [54.3, 39, 17.5], movable: true, dragGroup: "flight-controller",
+    },
+    {
+      id: "flight-controller-keepout", selectionId: "flight-controller-keepout", label: "Flight controller protected volume",
+      appearance: "constraint", kind: "box", center: equipmentPositions["flight-controller"]!,
+      size: [60.3, 45, 23.5], dragGroup: "flight-controller",
+    },
+    {
+      id: "battery", selectionId: "battery", label: "4S LiPo battery",
+      appearance: "component", kind: "box", center: equipmentPositions.battery!, size: [72, 34, 28], movable: true, dragGroup: "battery",
+    },
+    {
+      id: "battery-keepout", selectionId: "battery-keepout", label: "Battery protected volume",
+      appearance: "constraint", kind: "box", center: equipmentPositions.battery!, size: [78, 40, 34], dragGroup: "battery",
+    },
+    {
+      id: "receiver", selectionId: "receiver", label: "Radio receiver",
+      appearance: "component", kind: "box", center: equipmentPositions.receiver!, size: [20, 12, 5], movable: true, dragGroup: "receiver",
+    },
+    ...([0, Math.PI / 2] as const).map((yaw, index): AssemblyVisualPart => ({
+      id: `cable-corridor-${index}`, selectionId: `cable-corridor-${index}`, label: "Protected wiring corridor",
+      appearance: "constraint", kind: "box", center: [0, 0, 5], rotation: [0, 0, yaw], size: [184, 6, 6],
+    })),
     ...motors.flatMap(motorGroup),
     ...imports.map((component, index) => importedPart(component, index, importPositions[component.id])),
   ]);

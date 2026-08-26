@@ -23,6 +23,7 @@ export function selectableAssemblyMeshes(
 
 const appearance = {
   component: { color: 0x687386, opacity: 1, wireframe: false },
+  generated: { color: 0x1688c9, opacity: 1, wireframe: false },
   "design-region": { color: 0x487aa8, opacity: 0.18, wireframe: true },
   constraint: { color: 0xd98b5f, opacity: 0.16, wireframe: true },
 } as const;
@@ -61,7 +62,7 @@ export function createAssemblyMeshes(
     mesh.userData.appearance = part.appearance;
     mesh.userData.movable = part.movable === true;
     mesh.userData.dragGroup = part.dragGroup;
-    mesh.renderOrder = part.appearance === "component" ? 0 : 3;
+    mesh.renderOrder = part.appearance === "constraint" || part.appearance === "design-region" ? 3 : 0;
     meshes.push(mesh);
   };
   for (const part of parts) {
@@ -91,6 +92,23 @@ export function createAssemblyMeshes(
         root.add(scene);
         onLoad?.();
       }).catch(() => onLoad?.());
+      continue;
+    }
+    if (part.kind === "mesh") {
+      for (const surface of part.mesh.surfaces) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(surface.positions, 3));
+        if (surface.normals) geometry.setAttribute("normal", new THREE.BufferAttribute(surface.normals, 3));
+        else geometry.computeVertexNormals();
+        geometry.setIndex(new THREE.BufferAttribute(surface.indices, 1));
+        ownership.own(() => geometry.dispose());
+        const color = surface.color
+          ? new THREE.Color(...surface.color).getHex()
+          : undefined;
+        const mesh = new THREE.Mesh(geometry, materialFor(part, color, undefined, 0.45));
+        ownMesh(mesh, part);
+        root.add(mesh);
+      }
       continue;
     }
     for (const piece of geometryPieces(part)) {

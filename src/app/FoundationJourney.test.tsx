@@ -43,10 +43,10 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByText(/webgpu available/i)).toBeVisible();
   expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-  expect(screen.getByText(/import a glb or gltf reference model/i)).toBeVisible();
+  expect(screen.getByText(/import step, stp, glb, or gltf/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();
-  expect(screen.getByText(/32 × 32 × 32/)).toBeVisible();
+  expect(screen.getByText(/25 × 25 × 5/)).toBeVisible();
   fireEvent.click(screen.getByText("Engineering details"));
   expect(screen.getByText("assembly · mm")).toBeVisible();
 
@@ -60,19 +60,19 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(initialFacts.context).toEqual(DRONE_ARM_FOUNDATION_CONTEXT);
 
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
-  fireEvent.click(screen.getByRole("button", { name: /run baseline verification/i }));
-  await waitFor(() => expect(screen.getByText(/verified against the wasm oracle/i)).toBeVisible());
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  await waitFor(() => expect(screen.getByText(/candidate completed its output checks/i)).toBeVisible());
   expect(screen.getByText(/agent prediction/i)).toBeVisible();
   expect(screen.getByText(/measured evidence/i)).toBeVisible();
 
-  fireEvent.click(screen.getByRole("button", { name: /review verified branch/i }));
-  expect(screen.getByRole("table", { name: /experiment branches/i })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /promote branch/i }));
+  fireEvent.click(screen.getByRole("button", { name: /review topology candidate/i }));
+  expect(screen.getByRole("list", { name: /experiment branches/i })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /use this frame/i }));
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
   await waitFor(() => expect(screen.getByText(/human-promoted configuration/i)).toBeVisible());
 
-  fireEvent.click(screen.getByRole("button", { name: /generate edge alternative/i }));
-  fireEvent.click(await screen.findByRole("button", { name: /generate center alternative/i }));
+  fireEvent.click(screen.getByRole("button", { name: /generate lightweight frame/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /generate stiffness-first frame/i }));
   fireEvent.click(await screen.findByRole("button", { name: /compare alternatives/i }));
   await waitFor(() => expect(screen.getByText(/measured branch comparison/i)).toBeVisible());
 
@@ -98,7 +98,7 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(changedFacts.context).toEqual({
     ...DRONE_ARM_FOUNDATION_CONTEXT,
     selection: expect.objectContaining({
-      id: "cable-clearance", min: [12, 8, 4], maxExclusive: [26, 20, 26],
+      id: "cable-clearance", min: [3, 11, 2], maxExclusive: [22, 14, 5],
     }),
     locks: ["body-fixed-region", "cable-clearance"],
   });
@@ -109,11 +109,11 @@ test("recovers from failures without erasing their evidence", async () => {
     const call = compute.mock.calls.length;
     if (call === 1) return {
       status: "failed" as const, code: "device-error" as const,
-      message: "adapter reset during baseline", elapsedMs: 4,
+      message: "adapter reset during balanced", elapsedMs: 4,
     };
     if (call === 3) return {
       status: "mismatch" as const, code: "verification-mismatch" as const,
-      message: "edge field disagreed with the oracle", elapsedMs: 6,
+      message: "lightweight frame failed output checks", elapsedMs: 6,
       relativeL2: 0.2, tolerance: 0.000005,
     };
     return {
@@ -125,20 +125,20 @@ test("recovers from failures without erasing their evidence", async () => {
   renderJourney(compute);
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
 
-  fireEvent.click(screen.getByRole("button", { name: /run baseline verification/i }));
-  await screen.findByText("adapter reset during baseline");
-  fireEvent.click(screen.getByRole("button", { name: /retry baseline verification/i }));
-  await screen.findByText(/verified against the wasm oracle/i);
-  fireEvent.click(screen.getByRole("button", { name: /review verified branch/i }));
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  await screen.findByText("adapter reset during balanced");
+  fireEvent.click(screen.getByRole("button", { name: /retry balanced frame/i }));
+  await screen.findByText(/candidate completed its output checks/i);
+  fireEvent.click(screen.getByRole("button", { name: /review topology candidate/i }));
   expect(screen.getByText("Attempt 2")).toBeVisible();
-  fireEvent.click(screen.getAllByRole("button", { name: /promote branch/i }).at(-1)!);
-  await screen.findByRole("button", { name: /generate edge alternative/i });
+  fireEvent.click(screen.getAllByRole("button", { name: /use this frame/i }).at(-1)!);
+  await screen.findByRole("button", { name: /generate lightweight frame/i });
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
-  fireEvent.click(screen.getByRole("button", { name: /generate edge alternative/i }));
-  await screen.findByText("edge field disagreed with the oracle");
-  expect(screen.getByText(/historical verification: baseline/i)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /retry edge alternative/i }));
-  await screen.findByRole("button", { name: /generate center alternative/i });
+  fireEvent.click(screen.getByRole("button", { name: /generate lightweight frame/i }));
+  expect((await screen.findAllByText("lightweight frame failed output checks")).length).toBeGreaterThan(0);
+  expect(screen.getByText(/historical verification: balanced/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /retry lightweight frame/i }));
+  await screen.findByRole("button", { name: /generate stiffness-first frame/i });
   expect(compute).toHaveBeenCalledTimes(4);
 });
 
@@ -149,10 +149,10 @@ test("shows cancellation as immutable evidence and ignores a late result", async
   renderJourney(compute);
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
 
-  fireEvent.click(screen.getByRole("button", { name: /run baseline verification/i }));
-  fireEvent.click(await screen.findByRole("button", { name: /cancel probe/i }));
-  await screen.findByText(/foundation probe canceled by the user/i);
-  expect(await screen.findByRole("button", { name: /retry baseline verification/i })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /cancel optimization/i }));
+  await screen.findByText(/topology optimization canceled by the user/i);
+  expect(await screen.findByRole("button", { name: /retry balanced frame/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^history/i }));
   expect(screen.getByRole("log", { name: /action receipts/i }).textContent).toContain("Canceled");
 
@@ -160,7 +160,7 @@ test("shows cancellation as immutable evidence and ignores a late result", async
     status: "verified", output: new Float32Array(32 ** 3).fill(0.7),
     elapsedMs: 9, relativeL2: 0, tolerance: 0.000005,
   });
-  await waitFor(() => expect(screen.queryByText(/verified against the wasm oracle/i)).toBeNull());
+  await waitFor(() => expect(screen.queryByText(/candidate completed its output checks/i)).toBeNull());
 });
 
 test("forwards WebMCP cancellation to one terminal transaction", async () => {
@@ -172,16 +172,16 @@ test("forwards WebMCP cancellation to one terminal transaction", async () => {
     }), { once: true });
   }));
   renderJourney(compute);
-  await waitFor(() => expect(context.active.has("run_foundation_probe")).toBe(true));
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
   const controller = new AbortController();
-  const invocation = context.execute("run_foundation_probe", {
+  const invocation = context.execute("generate_topology_candidate", {
     parentRevision: DRONE_ARM_FOUNDATION_STUDY.study.revision,
-    variant: "baseline",
-    hypothesis: "Exercise the deterministic baseline",
+    variant: "balanced",
+    hypothesis: "Exercise the deterministic balanced",
     prediction: "Verification stays within the probe budget",
   }, controller.signal) as Promise<{ isError?: boolean; content: readonly { text: string }[] }>;
-  await screen.findByRole("button", { name: /cancel probe/i });
-  await waitFor(() => expect(context.active.has("run_foundation_probe")).toBe(false));
+  await screen.findByRole("button", { name: /cancel optimization/i });
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(false));
 
   controller.abort();
   const response = await invocation;
@@ -190,10 +190,10 @@ test("forwards WebMCP cancellation to one terminal transaction", async () => {
   expect(output.status).toBe("canceled");
 
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
-  expect((await screen.findAllByText(/foundation probe canceled by the invoking client/i)).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText(/topology optimization canceled by the invoking client/i)).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: /^history/i }));
   const ledger = screen.getByRole("log", { name: /action receipts/i });
-  expect(ledger.textContent?.match(/run_foundation_probe/g)).toHaveLength(1);
-  expect(ledger.textContent?.match(/cancel_foundation_probe/g)).toHaveLength(1);
-  await waitFor(() => expect(context.active.has("run_foundation_probe")).toBe(true));
+  expect(ledger.textContent?.match(/generate_topology_candidate/g)).toHaveLength(1);
+  expect(ledger.textContent?.match(/cancel_topology_optimization/g)).toHaveLength(1);
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
 });

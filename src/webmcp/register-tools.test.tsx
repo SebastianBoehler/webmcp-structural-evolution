@@ -56,8 +56,8 @@ test("definitions are exactly three narrow annotated tools within Chrome budgets
 
   expect(definitions.map(({ name }) => name)).toEqual([
     "inspect_design_context",
-    "run_foundation_probe",
-    "compare_foundation_probes",
+    "generate_topology_candidate",
+    "compare_topology_candidates",
   ]);
   expect(definitions.every(({ name, description }) => name.length <= 30 && description.length <= 500)).toBe(true);
   for (const definition of definitions) {
@@ -87,8 +87,8 @@ test("run execution remains compatible when a pre-options browser omits callback
     proposalRevision: "b".repeat(64),
     branchRevision: "c".repeat(64),
     attempt: 1,
-    variant: "baseline",
-    hypothesis: "Exercise the deterministic baseline",
+    variant: "balanced",
+    hypothesis: "Exercise the deterministic balanced",
     prediction: "Verification stays within the probe budget",
     stale: false,
     status: "verified",
@@ -97,8 +97,8 @@ test("run execution remains compatible when a pre-options browser omits callback
 
   const response = await run.execute({
     parentRevision: revisionA,
-    variant: "baseline",
-    hypothesis: "Exercise the deterministic baseline",
+    variant: "balanced",
+    hypothesis: "Exercise the deterministic balanced",
     prediction: "Verification stays within the probe budget",
   });
 
@@ -118,14 +118,14 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
   const view = render(<FoundationTools services={shared} state={state} />);
 
   await waitFor(() => expect([...context.active.keys()]).toEqual(["inspect_design_context"]));
-  expect(screen.getByText(/1 of 3 foundation tools registered/i)).toBeVisible();
+  expect(screen.getByText(/1 of 3 structural design tools registered/i)).toBeVisible();
 
   state = projectState({ status: "available", message: "ready" });
   shared = services(state);
   view.rerender(<FoundationTools services={shared} state={state} />);
   await waitFor(() => expect([...context.active.keys()].sort()).toEqual([
+    "generate_topology_candidate",
     "inspect_design_context",
-    "run_foundation_probe",
   ]));
 
   const verified = (suffix: string) => ({
@@ -133,7 +133,7 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
     proposalRevision: suffix.repeat(64),
     branchRevision: suffix.repeat(64),
     attempt: 1,
-    variant: "baseline" as const,
+    variant: "balanced" as const,
     hypothesis: `Probe ${suffix}`,
     prediction: "Verification stays within the probe budget",
     stale: false,
@@ -156,9 +156,9 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
   shared = services(state);
   view.rerender(<FoundationTools services={shared} state={state} />);
   await waitFor(() => expect([...context.active.keys()].sort()).toEqual([
-    "compare_foundation_probes",
+    "compare_topology_candidates",
+    "generate_topology_candidate",
     "inspect_design_context",
-    "run_foundation_probe",
   ]));
 
   state = projectState({
@@ -170,13 +170,13 @@ test("actual hook lifecycle enables state-valid tools and unregisters them", asy
   view.rerender(<FoundationTools services={shared} state={state} />);
   await waitFor(() => expect([...context.active.keys()]).toEqual(["inspect_design_context"]));
   expect(context.aborted).toEqual(expect.arrayContaining([
-    "run_foundation_probe",
-    "compare_foundation_probes",
+    "generate_topology_candidate",
+    "compare_topology_candidates",
   ]));
 
   view.unmount();
   expect(context.active.size).toBe(0);
-  expect(context.aborted).toContain("compare_foundation_probes");
+  expect(context.aborted).toContain("compare_topology_candidates");
 });
 
 test("unsupported WebMCP is visible in semantic status", () => {
@@ -196,9 +196,9 @@ test("registration status waits for the imperative registration promises", async
 
   render(<FoundationTools services={services(state)} state={state} />);
 
-  expect(screen.getByText(/0 of 3 foundation tools registered/i)).toBeVisible();
+  expect(screen.getByText(/0 of 3 structural design tools registered/i)).toBeVisible();
   release();
-  await waitFor(() => expect(screen.getByText(/2 of 3 foundation tools registered/i)).toBeVisible());
+  await waitFor(() => expect(screen.getByText(/2 of 3 structural design tools registered/i)).toBeVisible());
 });
 
 test("registration failures are caught and rendered", async () => {
@@ -209,7 +209,7 @@ test("registration failures are caught and rendered", async () => {
   render(<FoundationTools services={services(state)} state={state} />);
 
   expect((await screen.findAllByRole("alert"))[0]?.textContent).toContain("registration denied");
-  expect(screen.getByText(/0 of 3 foundation tools registered/i)).toBeVisible();
+  expect(screen.getByText(/0 of 3 structural design tools registered/i)).toBeVisible();
 });
 
 test("StrictMode registers one live dynamic tool set and cleans it without abort leaks", async () => {
@@ -221,7 +221,7 @@ test("StrictMode registers one live dynamic tool set and cleans it without abort
   );
 
   await waitFor(() => expect([...context.active.keys()].sort()).toEqual([
-    "inspect_design_context", "run_foundation_probe",
+    "generate_topology_candidate", "inspect_design_context",
   ]));
   expect(screen.queryByRole("alert")).toBeNull();
   view.unmount();

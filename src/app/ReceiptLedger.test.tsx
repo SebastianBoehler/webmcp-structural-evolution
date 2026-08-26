@@ -21,8 +21,8 @@ test.each([
 ] as const)("leads with a human summary and progressively discloses the exact %s receipt", (_status, badge, outcome) => {
   const receipt = defineActionReceipt({
     id: `receipt-${_status}`,
-    action: "run_foundation_probe",
-    validatedInputs: { ...identity, variant: "baseline", prediction: "x".repeat(400) },
+    action: "generate_topology_candidate",
+    validatedInputs: { ...identity, variant: "balanced", prediction: "x".repeat(400) },
     affectedRevision: identity.branchRevision,
     outcome,
     duration: { value: 1, unit: "ms" },
@@ -31,16 +31,16 @@ test.each([
   render(<ReceiptLedger receipts={[receipt]} />);
   const item = screen.getByRole("listitem");
 
-  expect(within(item).getByText("Baseline verification")).toBeVisible();
+  expect(within(item).getByText("Balanced frame")).toBeVisible();
   expect(within(item).getByText(badge)).toBeVisible();
   const technical = within(item).getByText("Technical receipt").closest("details");
   expect(technical?.hasAttribute("open")).toBe(false);
-  expect(technical?.contains(within(item).getByText("run_foundation_probe"))).toBe(true);
+  expect(technical?.contains(within(item).getByText("generate_topology_candidate"))).toBe(true);
   expect(technical?.contains(within(item).getByText(identity.parentRevision))).toBe(true);
 
   fireEvent.click(within(item).getByText("Technical receipt"));
   expect(technical?.hasAttribute("open")).toBe(true);
-  expect(within(item).getByText("run_foundation_probe")).toBeVisible();
+  expect(within(item).getByText("generate_topology_candidate")).toBeVisible();
   expect(within(item).getByText(identity.parentRevision)).toBeVisible();
   expect(within(item).getByText(identity.proposalRevision)).toBeVisible();
   expect(within(item).getAllByText(identity.branchRevision).length).toBeGreaterThan(0);

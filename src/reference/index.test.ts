@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const wasm = vi.hoisted(() => ({
   initialize: vi.fn<() => Promise<void>>(),
   relativeL2: vi.fn<(expected: Float32Array, actual: Float32Array) => number>(),
+  optimize: vi.fn(),
 }));
 
 vi.mock("./pkg/webmcp_reference.js", () => ({
   default: wasm.initialize,
   relative_l2: wasm.relativeL2,
+  optimize_demo_frame: wasm.optimize,
 }));
 
 describe("relativeL2", () => {
@@ -15,6 +17,17 @@ describe("relativeL2", () => {
     vi.resetModules();
     wasm.initialize.mockReset().mockResolvedValue(undefined);
     wasm.relativeL2.mockReset().mockReturnValue(0.25);
+    wasm.optimize.mockReset().mockReturnValue({
+      width: 3,
+      height: 2,
+      depth: 1,
+      density: new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]),
+      initial_compliance: 18,
+      final_compliance: 7,
+      max_displacement: 0.42,
+      material_fraction: 0.36,
+      iterations: 16,
+    });
   });
 
   it("lazy-loads Wasm once through a shared initialization promise", async () => {
@@ -74,5 +87,40 @@ describe("relativeL2", () => {
     ]);
     expect(wasm.initialize).toHaveBeenCalledOnce();
     expect(wasm.relativeL2).not.toHaveBeenCalled();
+  });
+
+  it("returns a bounded topology result from the low-level Wasm solver", async () => {
+    const { optimizeDroneFrame } = await import("./index");
+
+    const result = await optimizeDroneFrame("balanced");
+
+    expect(wasm.optimize).toHaveBeenCalledWith("balanced");
+    expect(result.dimensions).toEqual({ width: 3, height: 2, depth: 1 });
+    expect(result.density).toBeInstanceOf(Float32Array);
+    expect(result.density).toEqual(new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]));
+    expect(result.metrics).toEqual({
+      initialCompliance: 18,
+      finalCompliance: 7,
+      maxDisplacement: 0.42,
+      materialFraction: 0.36,
+      iterations: 16,
+    });
+  });
+
+  it("rejects invalid Wasm topology output instead of rendering it", async () => {
+    const { optimizeDroneFrame } = await import("./index");
+    wasm.optimize.mockReturnValueOnce({
+      width: 3,
+      height: 2,
+      depth: 1,
+      density: new Float32Array([1]),
+      initial_compliance: 18,
+      final_compliance: Number.NaN,
+      max_displacement: 0.42,
+      material_fraction: 0.36,
+      iterations: 16,
+    });
+
+    await expect(optimizeDroneFrame("balanced")).rejects.toThrow(/invalid topology result/i);
   });
 });

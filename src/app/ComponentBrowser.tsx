@@ -7,7 +7,7 @@ export interface ComponentBrowserProps {
   readonly open: boolean;
   readonly parts: readonly AssemblyVisualPart[];
   readonly onSelect: (componentId: string) => void;
-  readonly onImportFile: (file: File) => void;
+  readonly onImportFile: (file: File) => void | Promise<void>;
   readonly onClose: () => void;
 }
 
@@ -22,7 +22,7 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
   return (
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
       <div className="panel-heading">
-        <div><h2>Assembly</h2><p>Drone motor arm</p></div>
+        <div><h2>Assembly</h2><p>Quadrotor frame</p></div>
         <button className="icon-button mobile-only" type="button" onClick={onClose} aria-label="Close components">×</button>
       </div>
       <label className="search-field">
@@ -43,7 +43,7 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
           onClick={() => onSelect("arm-design-region")}
         >
           <span className="part-mark part-mark--region" aria-hidden="true" />
-          <span><strong>Arm design region</strong><small>Generated structure</small></span>
+          <span><strong>Frame design space</strong><small>Topology-optimized structure</small></span>
           <span className="stock-badge stock-badge--ready">Ready</span>
         </button>
         {components.map((component) => (
@@ -64,16 +64,16 @@ export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFi
       <div className="inventory-summary">
         <span>Component library</span>
         <strong>{components.length} placed</strong>
-        <p>Import a GLB or glTF reference model. Engineering metadata remains unverified until supplied.</p>
+        <p>Import STEP, STP, GLB, or glTF. CAD geometry stays local; engineering metadata remains unverified.</p>
         <button type="button" onClick={() => inputRef.current?.click()}>Import component file</button>
         <input
           ref={inputRef}
           className="visually-hidden"
           type="file"
-          accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+          accept=".step,.stp,.glb,.gltf,model/gltf-binary,model/gltf+json"
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file) onImportFile(file);
+            if (file) void onImportFile(file);
             event.target.value = "";
           }}
         />

@@ -19,13 +19,13 @@ test("shows a newest mismatch before separately labelled historical verification
     receipts: [],
     stagedBranches: [
       {
-        parentRevision: revision("a"), proposalRevision: revision("p"), branchRevision: revision("b"), variant: "baseline",
-        hypothesis: "Verify baseline field", prediction: "Verification should pass",
+        parentRevision: revision("a"), proposalRevision: revision("p"), branchRevision: revision("b"), variant: "balanced",
+        hypothesis: "Verify balanced field", prediction: "Verification should pass",
         attempt: 1, stale: false, status: "verified",
         measurement: { status: "verified", elapsedMs: 8, relativeL2: 0, resultDigest: revision("d") },
       },
       {
-        parentRevision: revision("a"), proposalRevision: revision("q"), branchRevision: revision("c"), variant: "edge-biased",
+        parentRevision: revision("a"), proposalRevision: revision("q"), branchRevision: revision("c"), variant: "lightweight",
         hypothesis: "Verify edge field", prediction: "Verification should pass",
         attempt: 1, stale: false, status: "mismatch",
         measurement: {
@@ -39,5 +39,5 @@ test("shows a newest mismatch before separately labelled historical verification
   render(<EvidencePanel state={state} initialAcceptedRevision={revision("a")} />);
 
   expect(screen.getByRole("alert").textContent).toContain("Newest field disagreed with the oracle");
-  expect(screen.getByText(/historical verification/i).textContent).toContain("baseline");
+  expect(screen.getByText(/historical verification/i).textContent).toContain("balanced");
 });

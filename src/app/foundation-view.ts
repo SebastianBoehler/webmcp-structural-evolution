@@ -5,15 +5,18 @@ export function foundationView(state: FoundationProjectState) {
   const accepted = state.stagedBranches.find(
     (branch) => branch.branchRevision === state.acceptedBranchRevision && branch.result?.status === "verified",
   );
-  const alternatives = state.stagedBranches.filter(
-    (branch) => branch.branchRevision !== state.acceptedBranchRevision && branch.result?.status === "verified",
+  const preview = accepted ?? [...state.stagedBranches].reverse().find(
+    (branch) => branch.result?.status === "verified" && !branch.stale,
   );
-  const viewerCurrent: ViewerBranch | null = accepted?.result?.status === "verified" ? {
-    branchRevision: accepted.branchRevision,
+  const alternatives = state.stagedBranches.filter(
+    (branch) => branch.branchRevision !== preview?.branchRevision && branch.result?.status === "verified",
+  );
+  const viewerCurrent: ViewerBranch | null = preview?.result?.status === "verified" ? {
+    branchRevision: preview.branchRevision,
     contextRevision: state.contextRevision,
-    parentRevision: accepted.parentRevision,
+    parentRevision: preview.parentRevision,
     grid: state.context.grid,
-    result: accepted.result,
+    result: preview.result,
   } : null;
   const viewerAlternatives: readonly ViewerBranch[] = alternatives.map((branch) => ({
     branchRevision: branch.branchRevision,
@@ -28,5 +31,5 @@ export function foundationView(state: FoundationProjectState) {
   const currentBranches = state.stagedBranches.filter(
     (branch) => branch.parentRevision === state.contextRevision && !branch.stale,
   );
-  return { accepted, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches };
+  return { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches };
 }

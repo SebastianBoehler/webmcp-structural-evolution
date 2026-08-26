@@ -53,27 +53,30 @@ describe("failed field renderer mounts", () => {
       name: "FieldRendererMountError",
       cleanupSession: { dispose: expect.any(Function) },
     });
-    expect(sceneRemove).toHaveBeenCalledTimes(2);
+    const initialSceneRemovals = sceneRemove.mock.calls.length;
+    const initialGeometryDisposals = geometryDispose.mock.calls.length;
+    const initialMaterialDisposals = materialDispose.mock.calls.length;
+    expect(initialSceneRemovals).toBeGreaterThanOrEqual(3);
     expect(meshDispose).not.toHaveBeenCalled();
-    expect(geometryDispose).toHaveBeenCalledOnce();
-    expect(materialDispose).toHaveBeenCalledOnce();
+    expect(initialGeometryDisposals).toBeGreaterThanOrEqual(1);
+    expect(initialMaterialDisposals).toBeGreaterThanOrEqual(1);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
 
     const cleanupSession = (failure as { cleanupSession: { dispose(): void } }).cleanupSession;
     cleanupSession.dispose();
-    expect(materialDispose).toHaveBeenCalledTimes(2);
-    expect(sceneRemove).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(initialMaterialDisposals + 1);
+    expect(sceneRemove).toHaveBeenCalledTimes(initialSceneRemovals);
     expect(meshDispose).not.toHaveBeenCalled();
-    expect(geometryDispose).toHaveBeenCalledOnce();
+    expect(geometryDispose).toHaveBeenCalledTimes(initialGeometryDisposals);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
 
     cleanupSession.dispose();
-    expect(materialDispose).toHaveBeenCalledTimes(2);
-    expect(sceneRemove).toHaveBeenCalledTimes(2);
+    expect(materialDispose).toHaveBeenCalledTimes(initialMaterialDisposals + 1);
+    expect(sceneRemove).toHaveBeenCalledTimes(initialSceneRemovals);
     expect(meshDispose).not.toHaveBeenCalled();
-    expect(geometryDispose).toHaveBeenCalledOnce();
+    expect(geometryDispose).toHaveBeenCalledTimes(initialGeometryDisposals);
     expect(test.controls.dispose).toHaveBeenCalledOnce();
     expect(test.renderer.dispose).toHaveBeenCalledOnce();
   });

@@ -2,6 +2,8 @@ use std::fmt;
 
 use wasm_bindgen::prelude::*;
 
+pub mod topology;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RelativeL2Error {
     EmptyInput,

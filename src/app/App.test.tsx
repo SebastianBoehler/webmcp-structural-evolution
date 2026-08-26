@@ -13,7 +13,7 @@ test("shows the structural evolution foundation shell", () => {
   render(<App />);
 
   expect(screen.getByRole("heading", { name: /structural evolution/i })).toBeVisible();
-  expect(screen.getByRole("button", { name: /run baseline verification/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeDisabled();
 });
 
 test("does not treat CSS-hidden descendants as visible", () => {

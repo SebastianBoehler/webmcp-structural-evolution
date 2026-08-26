@@ -1,23 +1,17 @@
 import { revisionId } from "../domain/revisions";
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
-import { FOUNDATION_PROBE_DIMENSIONS, FOUNDATION_PROBE_WIDTH } from "../gpu/foundation-probe-config";
+import { TOPOLOGY_DIMENSIONS } from "../optimization/topology-config";
 import type { ProbeMeasurement, RunFoundationProbeInput } from "../webmcp/schemas";
 
 export function buildProbeInput(variant: RunFoundationProbeInput["variant"]): ProbeInput {
-  const width = FOUNDATION_PROBE_WIDTH;
-  const values = new Float32Array(width ** 3);
-  for (let index = 0; index < values.length; index += 1) {
-    const x = index % width;
-    const normalized = (index % 97) / 96;
-    const edge = Math.abs(x - (width - 1) / 2) / ((width - 1) / 2);
-    values[index] = Math.fround(variant === "baseline"
-      ? normalized
-      : variant === "edge-biased"
-        ? normalized * (0.5 + edge * 0.5)
-        : normalized * (1 - edge * 0.5));
-  }
-  return { dimensions: FOUNDATION_PROBE_DIMENSIONS, values };
+  const values = new Float32Array(TOPOLOGY_DIMENSIONS.width * TOPOLOGY_DIMENSIONS.height * TOPOLOGY_DIMENSIONS.depth);
+  return {
+    dimensions: TOPOLOGY_DIMENSIONS,
+    values,
+    topologyPreset: variant === "lightweight" ? "lightweight"
+      : variant === "stiffness" ? "stiffness" : "balanced",
+  };
 }
 
 export function storeProbeResult(result: ProbeResult): ProbeResult {
@@ -28,6 +22,7 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
       elapsedMs: result.elapsedMs,
       relativeL2: result.relativeL2,
       tolerance: result.tolerance,
+      ...(result.topology ? { topology: { ...result.topology } } : {}),
     };
   }
   if (result.status === "mismatch") {
@@ -73,6 +68,7 @@ export async function measuredProbe(result: ProbeResult): Promise<ProbeMeasureme
     ...(result.status === "verified" || result.status === "mismatch"
       ? { relativeL2: result.relativeL2 }
       : {}),
+    ...(result.status === "verified" && result.topology ? { topology: { ...result.topology } } : {}),
     resultDigest,
     ...(result.status !== "verified" ? { code: result.code, message: result.message } : {}),
   };

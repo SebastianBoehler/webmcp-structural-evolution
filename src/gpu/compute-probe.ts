@@ -29,8 +29,17 @@ interface ProbeMetrics {
   readonly tolerance: number;
 }
 
+export interface TopologyMetrics {
+  readonly solver: "sparse-simp-lattice-wasm";
+  readonly initialCompliance: number;
+  readonly finalCompliance: number;
+  readonly maxDisplacement: number;
+  readonly materialFraction: number;
+  readonly iterations: number;
+}
+
 export type ProbeResult =
-  | ({ readonly status: "verified"; readonly output: Float32Array } & ProbeMetrics)
+  | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics } & ProbeMetrics)
   | ({
       readonly status: "mismatch";
       readonly code: "verification-mismatch";
@@ -57,7 +66,7 @@ function canceled(startedAt: number): ProbeResult {
   return {
     status: "canceled",
     code: "canceled",
-    message: "Foundation probe canceled by the user.",
+    message: "Topology optimization canceled by the user.",
     elapsedMs: elapsedSince(startedAt),
   };
 }

@@ -24,7 +24,7 @@ export function FoundationTools({ services, state }: FoundationToolsProps) {
       <h2 id="webmcp-foundation-status">Agent tool status</h2>
       <p role="status">
         {supported
-          ? `${registered} of 3 foundation tools registered.`
+          ? `${registered} of 3 structural design tools registered.`
           : "WebMCP is unavailable in this browser context."}
       </p>
       {errors.map((error) => <p role="alert" key={error}>{error}</p>)}

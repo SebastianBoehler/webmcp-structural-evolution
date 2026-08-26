@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CadMesh } from "./step-import";
 
 const httpsUrl = z.string().url().refine((value) => new URL(value).protocol === "https:", "Use an HTTPS URL");
 
@@ -26,6 +27,7 @@ export interface ImportedComponent extends ComponentImport {
   readonly assetUrl: string;
   readonly stagedBy: "agent" | "human";
   readonly validation: "unverified-visual" | "manufacturer-dimensions";
+  readonly mesh?: CadMesh;
 }
 
 export const componentImportJsonSchema = {

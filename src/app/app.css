@@ -18,6 +18,12 @@ body {
   overflow: hidden;
 }
 
+#root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
 button, input, summary { font: inherit; }
 button, summary, label { -webkit-tap-highlight-color: transparent; }
 h1, h2, h3, p { margin: 0; }

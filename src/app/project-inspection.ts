@@ -37,6 +37,7 @@ function buildFacts(
         status: branch.measurement.status,
         elapsedMs: branch.measurement.elapsedMs,
         relativeL2: branch.measurement.relativeL2,
+        topology: branch.measurement.topology,
         resultDigest: branch.measurement.resultDigest,
       },
     })),
@@ -46,9 +47,9 @@ function buildFacts(
     stale: state.stagedBranches.some((branch) => branch.stale),
     nextActions: [
       ...(state.capability.status === "available" && state.operationStatus === "idle"
-        ? ["run_foundation_probe"]
+        ? ["generate_topology_candidate"]
         : []),
-      ...(hasComparableBranches(state.stagedBranches) ? ["compare_foundation_probes"] : []),
+      ...(hasComparableBranches(state.stagedBranches) ? ["compare_topology_candidates"] : []),
     ],
   };
 }

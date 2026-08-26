@@ -45,11 +45,11 @@ async function finalizeCancellation(
   dependencies: CancellationDependencies,
 ): Promise<FoundationBranch> {
   const { branchRevision, proposalRevision, attempt } = operation;
-  if (!branchRevision || !proposalRevision || !attempt) throw new Error("No foundation probe is running");
+  if (!branchRevision || !proposalRevision || !attempt) throw new Error("No topology optimization is running");
   const canceledResult: ProbeResult = {
     status: "canceled",
     code: "canceled",
-    message: operation.cancellationReason ?? "Foundation probe canceled by the user.",
+    message: operation.cancellationReason ?? "Topology optimization canceled by the user.",
     elapsedMs: performance.now() - operation.runStartedAt,
   };
   const measurement = await measuredProbe(canceledResult);
@@ -73,14 +73,14 @@ async function finalizeCancellation(
   const identity = { proposalRevision, attempt };
   try {
     await dependencies.addReceipt(
-      "run_foundation_probe",
+      "generate_topology_candidate",
       { ...operation.input, ...identity },
       branchRevision,
       { status: "canceled", reason: canceledResult.message },
       operation.runStartedAt,
     );
     await dependencies.addReceipt(
-      "cancel_foundation_probe",
+      "cancel_topology_optimization",
       { branchRevision, parentRevision: operation.input.parentRevision, ...identity },
       branchRevision,
       { status: "canceled", reason: canceledResult.message },

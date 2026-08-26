@@ -1,5 +1,104 @@
 /* @ts-self-types="./webmcp_reference.d.ts" */
 
+export class WasmTopologyResult {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmTopologyResult.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmTopologyResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmTopologyResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmtopologyresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get density() {
+        const ret = wasm.wasmtopologyresult_density(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get depth() {
+        const ret = wasm.wasmtopologyresult_depth(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get final_compliance() {
+        const ret = wasm.wasmtopologyresult_final_compliance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.wasmtopologyresult_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get initial_compliance() {
+        const ret = wasm.wasmtopologyresult_initial_compliance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get iterations() {
+        const ret = wasm.wasmtopologyresult_iterations(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get material_fraction() {
+        const ret = wasm.wasmtopologyresult_material_fraction(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get max_displacement() {
+        const ret = wasm.wasmtopologyresult_max_displacement(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.wasmtopologyresult_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) WasmTopologyResult.prototype[Symbol.dispose] = WasmTopologyResult.prototype.free;
+
+/**
+ * @param {string} preset
+ * @returns {WasmTopologyResult}
+ */
+export function optimize_demo_frame(preset) {
+    const ptr0 = passStringToWasm0(preset, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.optimize_demo_frame(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmTopologyResult.__wrap(ret[0]);
+}
+
 /**
  * @param {Float32Array} expected
  * @param {Float32Array} actual
@@ -60,6 +159,10 @@ function __wbg_get_imports() {
         "./webmcp_reference_bg.js": import0,
     };
 }
+
+const WasmTopologyResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmtopologyresult_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -130,6 +233,11 @@ function debugString(val) {
     }
     // TODO we could test for more things here, like `Set`s and `Map`s.
     return className;
+}
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 let cachedDataViewMemory0 = null;

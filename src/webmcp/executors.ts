@@ -83,7 +83,7 @@ export async function runFoundationProbe(
   try {
     parsed = RunFoundationProbeInputSchema.parse(input);
   } catch (error) {
-    return rejected("run_foundation_probe", input, error, services);
+    return rejected("generate_topology_candidate", input, error, services);
   }
   try {
     const branch = await services.runProbe(parsed, signal);
@@ -99,7 +99,7 @@ export async function runFoundationProbe(
       stale: branch.stale,
       measurement: branch.measurement,
       nextActions: services.canCompare()
-        ? ["inspect_design_context", "compare_foundation_probes"]
+        ? ["inspect_design_context", "compare_topology_candidates"]
         : ["inspect_design_context"],
     };
     return toolResponse(facts, branch.status !== "verified");
@@ -116,7 +116,7 @@ export async function compareFoundationProbes(
   try {
     parsed = CompareFoundationProbesInputSchema.parse(input);
   } catch (error) {
-    return rejected("compare_foundation_probes", input, error, services);
+    return rejected("compare_topology_candidates", input, error, services);
   }
   try {
     return toolResponse(await services.compareProbes(parsed));

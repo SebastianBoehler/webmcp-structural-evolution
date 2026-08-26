@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as THREE from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,7 @@ const part: AssemblyVisualPart = {
   center: [8, 0, 2],
   radius: 2,
   height: 4,
+  movable: true,
 };
 
 function renderedScene(test: ReturnType<typeof harness>): THREE.Scene {
@@ -53,11 +54,60 @@ describe("FieldViewer", () => {
     );
 
     expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-    expect(screen.getByText(/drag empty space to orbit.*drag a motor to move.*scroll to zoom/i)).toBeVisible();
+    expect(screen.getByText(/select a part.*use x\/y\/z to move.*orbit.*scroll to zoom/i)).toBeVisible();
     expect(screen.getByRole("status").textContent).toMatch(/assembly ready/i);
     const motor = renderedScene(test).getObjectByName("assembly-part:motor-envelope") as THREE.Mesh;
     expect(motor).toBeDefined();
     expect((motor.material as THREE.MeshStandardMaterial).emissiveIntensity).toBe(0.9);
+  });
+
+  it("renders a smooth isosurface while retaining hidden voxel evidence", () => {
+    const test = harness();
+    render(<FieldViewer
+      current={current}
+      alternatives={[]}
+      selectedRegion={region}
+      threshold={0.5}
+      mode="overlay"
+      environment={test.environment}
+    />);
+
+    const scene = renderedScene(test);
+    expect(scene.getObjectByName("verified-topology-surface")).toBeDefined();
+    expect((scene.getObjectByName("verified-current-field") as THREE.InstancedMesh).visible).toBe(false);
+  });
+
+  it("uses familiar CAD orientation, grid, coordinate-space, and snapping controls", () => {
+    const test = harness();
+    render(
+      <FieldViewer
+        current={null}
+        alternatives={[]}
+        selectedRegion={region}
+        threshold={0.5}
+        mode="overlay"
+        grid={grid}
+        assemblyParts={[part]}
+        selectedPart="motor"
+        environment={test.environment}
+      />,
+    );
+
+    expect(screen.getByRole("group", { name: "Viewport orientation" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Isometric view" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Toggle reference grid" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "World coordinates" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Snap 10 millimetres" }).getAttribute("aria-pressed")).toBe("true");
+    expect(renderedScene(test).getObjectByName("cad-world-grid")).toBeDefined();
+    expect(renderedScene(test).getObjectByName("cad-transform-gizmo")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Top view" }));
+    test.flushFrame();
+    const camera = test.renderer.render.mock.calls.at(-1)?.[1] as THREE.PerspectiveCamera;
+    const [targetX, targetY, targetZ] = test.controls.target.set.mock.calls.at(-1)!;
+    expect(camera.position.x).toBeCloseTo(targetX);
+    expect(camera.position.y).toBeCloseTo(targetY);
+    expect(camera.position.z).toBeGreaterThan(targetZ);
   });
 
   it("renders one solid field plus one ghost per compatible alternative", () => {

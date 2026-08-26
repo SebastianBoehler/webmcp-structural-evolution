@@ -13,6 +13,10 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
   );
   const stale = state.stagedBranches.some((branch) => branch.stale);
   const humanPromoted = state.acceptedBranchRevision !== initialAcceptedRevision;
+  const topology = latest?.measurement?.topology;
+  const complianceReduction = topology
+    ? (1 - topology.finalCompliance / topology.initialCompliance) * 100
+    : undefined;
 
   return (
     <section className="evidence-panel" aria-labelledby="evidence-title">
@@ -32,10 +36,12 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
           <p className="evidence-card__label">Measured evidence</p>
           {latest?.status === "verified" && latest.measurement
             ? <>
-                <p>Verified against the Wasm oracle.</p>
-                <small>
-                  {latest.measurement.elapsedMs.toFixed(2)} ms · relative L2 {latest.measurement.relativeL2 ?? "n/a"}
-                </small>
+                <p>{topology
+                  ? `${complianceReduction?.toFixed(1)}% lower compliance at ${(topology.materialFraction * 100).toFixed(1)}% material.`
+                  : "The candidate completed its output checks."}</p>
+                <small>{topology
+                  ? `${topology.iterations} iterations · displacement ${topology.maxDisplacement.toPrecision(3)} · ${latest.measurement.elapsedMs.toFixed(0)} ms`
+                  : `${latest.measurement.elapsedMs.toFixed(2)} ms`}</small>
               </>
             : latest && latest.measurement
               ? <p role="alert">{latest.measurement?.message ?? `${latest.status} probe result`}</p>
@@ -67,12 +73,13 @@ export function EvidencePanel({ state, comparison, initialAcceptedRevision }: Ev
           <p>Exact shared parent: <code>{comparison.parentRevision}</code></p>
           <dl>
             <div><dt>Timing delta</dt><dd>{comparison.timingDeltaMs.toFixed(2)} ms</dd></div>
-            <div><dt>Relative L2 delta</dt><dd>{comparison.relativeL2Delta}</dd></div>
+            {comparison.complianceDelta !== undefined && <div><dt>Compliance delta</dt><dd>{comparison.complianceDelta.toPrecision(4)}</dd></div>}
+            {comparison.materialFractionDelta !== undefined && <div><dt>Material delta</dt><dd>{(comparison.materialFractionDelta * 100).toFixed(1)}%</dd></div>}
           </dl>
         </article>
       )}
 
-      <p className="scope-boundary"><strong>Current foundation:</strong> browser compute, Wasm agreement, immutable evidence, and agent tooling are verified before the structural solver is connected.</p>
+      <p className="scope-boundary"><strong>Engineering scope:</strong> deterministic sparse SIMP lattice solve in Rust/Wasm with protected volumes, four load cases, connected load paths, and immutable candidate evidence.</p>
     </section>
   );
 }

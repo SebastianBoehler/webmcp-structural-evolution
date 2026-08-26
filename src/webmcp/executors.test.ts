@@ -32,16 +32,16 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
       omittedBranchCount: 0,
       capability: { status: "available" as const, message: "ready" },
       stale: false as const,
-      nextActions: ["run_foundation_probe"],
+      nextActions: ["generate_topology_candidate"],
     })),
     runProbe: vi.fn(async () => ({
       parentRevision: revisionA,
       proposalRevision: revisionB,
       branchRevision: revisionB,
       attempt: 1,
-      hypothesis: "Exercise the edge-biased field",
+      hypothesis: "Exercise the lightweight field",
       prediction: "Verification stays within the probe budget",
-      variant: "edge-biased" as const,
+      variant: "lightweight" as const,
       stale: false as const,
       status: "verified" as const,
       measurement: {
@@ -82,7 +82,7 @@ test("inspect validates exact scope and returns context facts without provenance
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
     capability: { status: "available" },
-    nextActions: ["run_foundation_probe"],
+    nextActions: ["generate_topology_candidate"],
   });
   expect(JSON.stringify(facts)).not.toMatch(/provenance|manufacturer|reference/i);
   expect(shared.inspectContext).toHaveBeenCalledWith({ scope: "current" });
@@ -106,8 +106,8 @@ test("run validates bounded intent and delegates only the deterministic variant"
   const shared = services({ runProbe });
   const input = {
     parentRevision: revisionA,
-    variant: "edge-biased",
-    hypothesis: "Exercise the edge-biased field",
+    variant: "lightweight",
+    hypothesis: "Exercise the lightweight field",
     prediction: "Verification stays within the probe budget",
   } as const;
 
@@ -131,14 +131,14 @@ test("run advertises comparison only when the latest state has an exact comparab
   const shared = services({ canCompare: vi.fn(() => true) });
   const response = await runFoundationProbe({
     parentRevision: revisionA,
-    variant: "baseline",
+    variant: "balanced",
     hypothesis: "Check the shipped probe",
     prediction: "Verification stays within the probe budget",
   }, shared);
 
   expect(responseJson(response).nextActions).toEqual([
     "inspect_design_context",
-    "compare_foundation_probes",
+    "compare_topology_candidates",
   ]);
 });
 
@@ -147,7 +147,7 @@ test.each(["canceled", "running"] as const)(
   async (status) => {
     const base = await services().runProbe({
       parentRevision: revisionA,
-      variant: "baseline",
+      variant: "balanced",
       hypothesis: "Check the shipped probe",
       prediction: "Verification stays within the probe budget",
     });
@@ -155,7 +155,7 @@ test.each(["canceled", "running"] as const)(
 
     const response = await runFoundationProbe({
       parentRevision: revisionA,
-      variant: "baseline",
+      variant: "balanced",
       hypothesis: "Check the shipped probe",
       prediction: "Verification stays within the probe budget",
     }, shared);
@@ -174,7 +174,7 @@ test("stale verified completion does not advertise unavailable comparison", asyn
       attempt: 1,
       hypothesis: "Check the shipped probe",
       prediction: "Verification stays within the probe budget",
-      variant: "baseline" as const,
+      variant: "balanced" as const,
       stale: true as const,
       status: "verified" as const,
       measurement: {
@@ -187,7 +187,7 @@ test("stale verified completion does not advertise unavailable comparison", asyn
   });
   const response = await runFoundationProbe({
     parentRevision: revisionA,
-    variant: "baseline",
+    variant: "balanced",
     hypothesis: "Check the shipped probe",
     prediction: "Verification stays within the probe budget",
   }, shared);
@@ -195,22 +195,18 @@ test("stale verified completion does not advertise unavailable comparison", asyn
   expect(responseJson(response).nextActions).toEqual(["inspect_design_context"]);
 });
 
-test("run rejects structural predictions and records a bounded failed receipt", async () => {
+test("run accepts bounded structural predictions for topology optimization", async () => {
   const shared = services();
   const response = await runFoundationProbe({
     parentRevision: revisionA,
-    variant: "baseline",
+    variant: "balanced",
     hypothesis: "Check the shipped probe",
     prediction: "This will reduce structural mass",
   }, shared);
 
-  expect(response.isError).toBe(true);
-  expect(shared.runProbe).not.toHaveBeenCalled();
-  expect(shared.recordRejectedCall).toHaveBeenCalledWith(
-    "run_foundation_probe",
-    revisionA,
-    expect.stringMatching(/prediction/i),
-  );
+  expect(response.isError).toBeUndefined();
+  expect(shared.runProbe).toHaveBeenCalledOnce();
+  expect(shared.recordRejectedCall).not.toHaveBeenCalled();
 });
 
 test("run rejects HTML, URLs, file paths, and code-shaped intent text", async () => {
@@ -220,7 +216,7 @@ test("run rejects HTML, URLs, file paths, and code-shaped intent text", async ()
   for (const hypothesis of unsafe) {
     const response = await runFoundationProbe({
       parentRevision: revisionA,
-      variant: "baseline",
+      variant: "balanced",
       hypothesis,
       prediction: "Verification stays within the probe budget",
     }, shared);

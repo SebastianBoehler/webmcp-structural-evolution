@@ -1,4 +1,5 @@
 import type { AlternativeLayer } from "./alternative-instances";
+import type { CadMesh } from "../assembly/step-import";
 import {
   assertFiniteF32,
   fieldInstanceCount,
@@ -19,6 +20,7 @@ export interface ViewerRenderModel {
   readonly currentInstances: PackedInstances;
   readonly alternativeLayers: readonly AlternativeLayer[];
   readonly assemblyParts?: readonly AssemblyVisualPart[];
+  readonly densityField?: Float32Array;
 }
 
 export type AssemblyVisualPart = Readonly<{
@@ -29,11 +31,13 @@ export type AssemblyVisualPart = Readonly<{
   rotation?: Vector3Tuple;
   dragGroup?: string;
   movable?: boolean;
-  appearance: "component" | "design-region" | "constraint";
+  appearance: "component" | "generated" | "design-region" | "constraint";
 }> & (
   | Readonly<{ kind: "box"; size: Vector3Tuple }>
   | Readonly<{ kind: "cylinder"; radius: number; height: number }>
+  | Readonly<{ kind: "motor-mount"; radius: number; height: number; boltCircle: number; boltRadius: number }>
   | Readonly<{ kind: "motor"; radius: number; height: number; shaftRadius: number; shaftHeight: number }>
+  | Readonly<{ kind: "flight-controller"; size: Vector3Tuple }>
   | Readonly<{ kind: "propeller"; radius: number; hubRadius: number; hubHeight: number; bladeCount: number }>
   | Readonly<{ kind: "guard"; radius: number; tubeRadius: number }>
   | Readonly<{
@@ -42,6 +46,7 @@ export type AssemblyVisualPart = Readonly<{
       assetUnits: "mm" | "m";
       size: Vector3Tuple;
     }>
+  | Readonly<{ kind: "mesh"; mesh: CadMesh; size: Vector3Tuple }>
 );
 
 export interface CameraEnvelope {
@@ -216,14 +221,14 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
   if (!part.id.trim() || !part.selectionId.trim() || !part.label.trim()) {
     throw new RangeError(`${label} requires an id, selection id, and label`);
   }
-  const extents = part.kind === "box" || part.kind === "model"
+  const extents = part.kind === "box" || part.kind === "model" || part.kind === "mesh" || part.kind === "flight-controller"
     ? part.size
     : part.kind === "guard"
       ? [part.radius + part.tubeRadius, part.radius + part.tubeRadius, part.tubeRadius]
       : part.kind === "propeller"
         ? [part.radius, part.radius, part.hubHeight / 2]
         : [part.radius, part.radius, (part.height + (part.kind === "motor" ? part.shaftHeight : 0)) / 2];
-  const half = (part.kind === "box" || part.kind === "model")
+  const half = (part.kind === "box" || part.kind === "model" || part.kind === "mesh" || part.kind === "flight-controller")
     ? extents.map((value, axis) => bounded(value / 2, `${label} half size[${axis}]`))
     : extents.map((value, axis) => bounded(value, `${label} half size[${axis}]`));
   part.center.forEach((value, axis) => {
@@ -253,6 +258,7 @@ export function prepareRenderModel(model: ViewerRenderModel): PreparedRenderMode
   return Object.freeze({
     grid,
     currentInstances: model.currentInstances,
+    densityField: model.densityField,
     alternativeLayers: Object.freeze(layers),
     assemblyParts: Object.freeze(assemblyParts),
     camera: cameraFor(grid, bounds, assemblyParts.length > 0),

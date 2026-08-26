@@ -269,10 +269,10 @@ export const DRONE_ARM_FOUNDATION_STUDY = freezeSnapshot({
 
 const foundationSelections: Readonly<Record<string, ContextSelection>> = {
   "motor-side-arm-span": {
-    id: "motor-side-arm-span", label: "Motor-side arm span", min: [16, 4, 0], maxExclusive: [32, 28, 32],
+    id: "motor-side-arm-span", label: "Complete quadrotor frame", min: [0, 0, 0], maxExclusive: [25, 25, 5],
   },
   "cable-clearance": {
-    id: "cable-clearance", label: "Cable clearance corridor", min: [12, 8, 4], maxExclusive: [26, 20, 26],
+    id: "cable-clearance", label: "Cable clearance corridor", min: [3, 11, 2], maxExclusive: [22, 14, 5],
   },
 };
 export const FOUNDATION_SELECTIONS = freezeSnapshot(foundationSelections);

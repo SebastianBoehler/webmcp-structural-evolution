@@ -11,6 +11,7 @@ export interface ProbeDimensions {
 export interface ProbeInput {
   readonly dimensions: ProbeDimensions;
   readonly values: Float32Array;
+  readonly topologyPreset?: "lightweight" | "balanced" | "stiffness";
 }
 
 type UnknownRecord = Record<PropertyKey, unknown>;

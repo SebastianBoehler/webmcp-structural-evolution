@@ -29,23 +29,23 @@ export function foundationToolDefinitions(
   return [
     {
       name: "inspect_design_context",
-      description: "Inspect the exact active foundation context, locks, branches, capability, stale state, and valid next actions.",
+      description: "Inspect the exact active assembly, component positions, protected volumes, locks, candidate revisions, and valid next actions.",
       inputSchema: inspectInputJsonSchema,
       annotations: { readOnlyHint: true, untrustedContentHint },
       execute: (input) => inspectDesignContext(input, services),
       enabled: true,
     },
     {
-      name: "run_foundation_probe",
-      description: "Stage and execute one bounded deterministic foundation compute probe from the exact current revision.",
+      name: "generate_topology_candidate",
+      description: "Generate a deterministic topology candidate for the exact current assembly using the selected material/compliance tradeoff. The result remains a reviewable branch.",
       inputSchema: runInputJsonSchema,
       annotations: { readOnlyHint: false, untrustedContentHint },
       execute: (input, options) => runFoundationProbe(input, services, options?.signal),
       enabled: state.capability.status === "available" && state.operationStatus === "idle",
     },
     {
-      name: "compare_foundation_probes",
-      description: "Compare measured verification and timing facts for two exact verified non-stale foundation probe branches.",
+      name: "compare_topology_candidates",
+      description: "Compare compliance, material fraction, displacement, timing, and identity for two exact non-stale topology candidates.",
       inputSchema: compareInputJsonSchema,
       annotations: { readOnlyHint: true, untrustedContentHint },
       execute: (input) => compareFoundationProbes(input, services),

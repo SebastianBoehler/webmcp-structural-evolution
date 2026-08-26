@@ -71,6 +71,41 @@
   color: var(--danger-text);
 }
 
+.cad-view-controls,
+.cad-transform-controls {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  gap: 1px;
+  padding: 0.2rem;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-float);
+}
+
+.cad-view-controls { inset: 3.5rem 0.75rem auto auto; }
+.cad-transform-controls { inset: 0.75rem auto auto 0.75rem; }
+
+.cad-view-controls button,
+.cad-transform-controls button {
+  min-width: 2.1rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-caption);
+}
+
+.cad-view-controls button[aria-pressed="true"],
+.cad-transform-controls button[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
 @media (max-width: 48rem) {
   .field-viewer__help {
     overflow: hidden;

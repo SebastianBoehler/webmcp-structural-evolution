@@ -30,7 +30,7 @@ export function WorkbenchHeader({
     <header className="workbench-header">
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true">SE</span>
-        <div><h1>Structural Evolution</h1><p>Quadrotor assembly · East-arm topology study</p></div>
+        <div><h1>Structural Evolution</h1><p>Agentic topology design · complete quadrotor frame</p></div>
       </div>
       <div className="header-status" role="status">
         <span className={`status-dot status-dot--${capability.status}`} aria-hidden="true" />
@@ -51,7 +51,7 @@ export function WorkbenchHeader({
         ))}
       </div>
       {cancelVisible ? (
-        <button className="secondary-action" type="button" onClick={onCancel}>Cancel probe</button>
+        <button className="secondary-action" type="button" onClick={onCancel}>Cancel optimization</button>
       ) : (
         <button className="primary-action" type="button" disabled={primaryDisabled} onClick={onPrimary}>
           {primaryLabel}

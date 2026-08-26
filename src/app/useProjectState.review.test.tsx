@@ -15,7 +15,7 @@ const verified = (value: number): ProbeResult => ({
   relativeL2: 0,
   tolerance: 0.000005,
 });
-const runInput = (variant: "baseline" | "edge-biased" | "center-biased", label: string) => ({
+const runInput = (variant: "balanced" | "lightweight" | "stiffness", label: string) => ({
   parentRevision: revisionA,
   variant,
   hypothesis: `Exercise ${label} field behavior`,
@@ -53,7 +53,7 @@ test("capability changes after detection update state and tool eligibility", asy
   rerender();
 
   await waitFor(() => expect(result.current.state.capability.status).toBe("available"));
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
   expect(compute).toHaveBeenCalledOnce();
 });
 
@@ -61,9 +61,9 @@ test("bounded inspect succeeds with many branches and records the same outcome",
   const compute = vi.fn(async (_input) => verified((compute.mock.calls.length + 1) / 10));
   const { result } = renderHook(() => useProjectState(availableOptions(compute)));
   await act(async () => {
-    await result.current.services.runProbe(runInput("baseline", "baseline"));
-    await result.current.services.runProbe(runInput("edge-biased", "edge-biased"));
-    await result.current.services.runProbe(runInput("center-biased", "center-biased"));
+    await result.current.services.runProbe(runInput("balanced", "balanced"));
+    await result.current.services.runProbe(runInput("lightweight", "lightweight"));
+    await result.current.services.runProbe(runInput("stiffness", "stiffness"));
   });
 
   let response!: Awaited<ReturnType<typeof inspectDesignContext>>;
@@ -86,7 +86,7 @@ test("bounded inspect succeeds with many branches and records the same outcome",
 test("mutating an exposed verified field cannot alter authoritative evidence", async () => {
   const compute = vi.fn(async () => verified(0.25));
   const { result } = renderHook(() => useProjectState(availableOptions(compute)));
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
   const branch = result.current.state.stagedBranches[0]!;
   if (branch.result?.status !== "verified") throw new Error("Expected verified branch");
   const digest = branch.measurement!.resultDigest;
@@ -103,7 +103,7 @@ test("mutating an exposed verified field cannot alter authoritative evidence", a
 test("typed-array callback methods never receive authoritative evidence", async () => {
   const compute = vi.fn(async () => verified(0.25));
   const { result } = renderHook(() => useProjectState(availableOptions(compute)));
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
   const branch = result.current.state.stagedBranches[0]!;
   if (branch.result?.status !== "verified") throw new Error("Expected verified branch");
   const output = branch.result.output;
@@ -133,10 +133,10 @@ test("keeps failed evidence immutable while a later exact retry succeeds", async
     : verified(0.6));
   const { result } = renderHook(() => useProjectState(availableOptions(compute)));
 
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
   const failedRevision = result.current.state.stagedBranches[0]!.branchRevision;
   const proposalRevision = result.current.state.stagedBranches[0]!.proposalRevision;
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
 
   expect(result.current.state.stagedBranches).toHaveLength(2);
   expect(result.current.state.stagedBranches[0]).toMatchObject({
@@ -150,7 +150,7 @@ test("keeps failed evidence immutable while a later exact retry succeeds", async
     { proposalRevision, attempt: 1 },
     { proposalRevision, attempt: 2 },
   ]);
-  expect(result.current.state.receipts.filter((receipt) => receipt.action === "run_foundation_probe")
+  expect(result.current.state.receipts.filter((receipt) => receipt.action === "generate_topology_candidate")
     .map((receipt) => receipt.validatedInputs)).toEqual([
     expect.objectContaining({ proposalRevision, attempt: 1 }),
     expect.objectContaining({ proposalRevision, attempt: 2 }),
@@ -159,7 +159,7 @@ test("keeps failed evidence immutable while a later exact retry succeeds", async
 
 test("normalizes lock ids and makes a repeated equivalent intervention a no-op", async () => {
   const { result } = renderHook(() => useProjectState(availableOptions()));
-  await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
+  await act(async () => { await result.current.services.runProbe(runInput("balanced", "balanced")); });
   const intervention = {
     selection: selection("cable-path", "Cable path"),
     locks: ["cable-clearance", "body-mount", "cable-clearance"],
@@ -192,13 +192,13 @@ test("post-intervention inspection stays within the tool output budget", async (
   }));
   await act(async () => {
     await result.current.services.runProbe({
-      parentRevision: revisionA, variant: "baseline",
+      parentRevision: revisionA, variant: "balanced",
       hypothesis: "Establish the deterministic reference field",
       prediction: "Verification should pass with zero L2 mismatch",
     });
     await result.current.services.runProbe({
-      parentRevision: revisionA, variant: "edge-biased",
-      hypothesis: "Exercise the edge-biased input distribution",
+      parentRevision: revisionA, variant: "lightweight",
+      hypothesis: "Exercise the lightweight input distribution",
       prediction: "Verification should pass within the timing budget",
     });
     await result.current.experimentRail.intervene({

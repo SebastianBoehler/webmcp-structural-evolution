@@ -14,8 +14,8 @@ const revisionA = "a".repeat(64);
 const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
 const runInput = {
   parentRevision: revisionA,
-  variant: "edge-biased" as const,
-  hypothesis: "Exercise the edge-biased field",
+  variant: "lightweight" as const,
+  hypothesis: "Exercise the lightweight field",
   prediction: "Verification stays within the probe budget",
 };
 
@@ -43,8 +43,8 @@ test("stages an exact immutable branch and stores prediction before measured out
   await waitFor(() => expect(result.current.state.stagedBranches).toHaveLength(1));
   expect(result.current.state.stagedBranches[0]).toMatchObject({
     parentRevision: revisionA,
-    proposalRevision: "9d15bfaf91cbb3d982a0dc8bd758587aa97c30a7c0fa8ef05a45f058d17adcf4",
-    branchRevision: "b93dead1458c6adf73075d3ac833d5033ee2d7d07b5f271fa5f22089d4667732",
+    proposalRevision: "e34790e81a295367d269e08807a56ded5c0a0b303ead6284831d138212cd1e8d",
+    branchRevision: "46b46dd6e6037f1e798d0322d48cc47f44c78a46ad98f82d71b1ab1ce72834d2",
     prediction: runInput.prediction,
     status: "running",
   });
@@ -65,8 +65,8 @@ test("stages an exact immutable branch and stores prediction before measured out
     measurement: { status: "verified", elapsedMs: 14, relativeL2: 0 },
   });
   expect(result.current.state.receipts.at(-1)).toMatchObject({
-    action: "run_foundation_probe",
-    affectedRevision: "b93dead1458c6adf73075d3ac833d5033ee2d7d07b5f271fa5f22089d4667732",
+    action: "generate_topology_candidate",
+    affectedRevision: "46b46dd6e6037f1e798d0322d48cc47f44c78a46ad98f82d71b1ab1ce72834d2",
     outcome: { status: "succeeded" },
   });
 });
@@ -106,10 +106,10 @@ test("human intervention marks staged branches stale and only the rail can promo
       <ReceiptLedger receipts={result.current.state.receipts} />
     </>,
   );
-  expect(screen.getByRole("table", { name: /experiment branches/i })).toBeVisible();
+  expect(screen.getByRole("list", { name: /experiment branches/i })).toBeVisible();
   expect(screen.getByText("Attempt 1")).toBeVisible();
-  expect(screen.getByText(new RegExp(`Proposal ${result.current.state.stagedBranches[0]!.proposalRevision}`))).toBeVisible();
-  expect(screen.getByRole("button", { name: /promote/i })).toBeDisabled();
+  expect(screen.getAllByText(result.current.state.stagedBranches[0]!.proposalRevision).length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: /use this frame/i })).toBeDisabled();
   expect(screen.getByRole("log", { name: /action receipts/i })).toBeVisible();
   expect(screen.getByText(/stale/i)).toBeVisible();
   expect(screen.getAllByText(/affected revision/i)).not.toHaveLength(0);

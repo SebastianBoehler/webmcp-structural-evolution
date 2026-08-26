@@ -12,8 +12,8 @@ const revisionA = "a".repeat(64);
 const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
 const baseInput = {
   parentRevision: revisionA,
-  variant: "edge-biased" as const,
-  hypothesis: "Exercise the edge-biased field",
+  variant: "lightweight" as const,
+  hypothesis: "Exercise the lightweight field",
   prediction: "Verification stays within the probe budget",
 };
 const verified = (value = 0.5): ProbeResult => ({
@@ -80,7 +80,7 @@ test("cancellation stays final when a signal-ignoring runner resolves late", asy
   expect(result.current.state.operationStatus).toBe("idle");
   expect(result.current.state.stagedBranches[0]).toMatchObject({ status: "canceled", stale: false });
   expect(result.current.state.receipts.at(-1)).toMatchObject({
-    action: "cancel_foundation_probe", outcome: { status: "canceled" },
+    action: "cancel_topology_optimization", outcome: { status: "canceled" },
   });
 
   await act(async () => {
@@ -125,8 +125,8 @@ test("an immediately aborting runner awaits canceled state and reports both term
   expect(result.current.state.receipts.slice(-2).map(({ action, outcome }) => ({
     action, status: outcome.status,
   }))).toEqual([
-    { action: "run_foundation_probe", status: "canceled" },
-    { action: "cancel_foundation_probe", status: "canceled" },
+    { action: "generate_topology_candidate", status: "canceled" },
+    { action: "cancel_topology_optimization", status: "canceled" },
   ]);
   expect(result.current.state.receipts.at(-2)?.validatedInputs).toMatchObject({
     proposalRevision: canceled.proposalRevision, attempt: 1,
@@ -216,8 +216,8 @@ test("simultaneous run calls reserve one operation before asynchronous hashing",
   const { result } = renderHook(() => useProjectState(options(compute)));
   const alternate = {
     ...baseInput,
-    variant: "center-biased" as const,
-    hypothesis: "Exercise the center-biased field",
+    variant: "stiffness" as const,
+    hypothesis: "Exercise the stiffness field",
   };
 
   const first = result.current.services.runProbe(baseInput);
@@ -247,7 +247,7 @@ test("identical branch identity is rejected and never enables comparison", async
   const definitions = foundationToolDefinitions(result.current.services, result.current.state);
   expect(definitions[2].enabled).toBe(false);
   const facts = await result.current.services.inspectContext({ scope: "current" });
-  expect(facts.nextActions).not.toContain("compare_foundation_probes");
+  expect(facts.nextActions).not.toContain("compare_topology_candidates");
 });
 
 test.each(["older-first", "newer-first"] as const)(

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { JsonValue } from "../domain/canonical-json";
 import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
-import { runComputeProbe, type ProbeResult } from "../gpu/compute-probe";
+import type { ProbeResult } from "../gpu/compute-probe";
+import { runTopologyProbe } from "../optimization/topology-probe";
 import type { FoundationServices } from "../webmcp/executors";
 import {
   CompareFoundationProbesInputSchema,
@@ -27,8 +28,8 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const stateRef = useRef<FoundationProjectState | null>(null);
   if (!stateRef.current) stateRef.current = createInitialProjectState(options);
   const [state, setState] = useState(stateRef.current);
-  const computeRef = useRef(options.compute ?? runComputeProbe);
-  computeRef.current = options.compute ?? runComputeProbe;
+  const computeRef = useRef(options.compute ?? runTopologyProbe);
+  computeRef.current = options.compute ?? runTopologyProbe;
   const sequenceRef = useRef(0);
   const operationRef = useRef<ActiveProbeOperation | null>(null);
   const interventionGenerationRef = useRef(0);
@@ -112,14 +113,14 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
       const parsed = RunFoundationProbeInputSchema.parse(input);
       const current = stateRef.current!;
       const reject = async (error: string, affectedRevision = stateRef.current!.contextRevision): Promise<never> => {
-        await addReceipt("run_foundation_probe", parsed, affectedRevision, {
+        await addReceipt("generate_topology_candidate", parsed, affectedRevision, {
           status: "failed", error,
         }, startedAt);
         throw new Error(error);
       };
       if (current.capability.status !== "available") return reject("WebGPU capability is not available");
       if (operationRef.current || current.operationStatus !== "idle") {
-        return reject("A foundation probe is already running");
+        return reject("A topology optimization is already running");
       }
       if (parsed.parentRevision !== current.contextRevision) return reject("Parent revision is not the exact current context");
       const sameIntent = current.stagedBranches.filter((branch) =>
@@ -128,7 +129,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         branch.hypothesis === parsed.hypothesis &&
         branch.prediction === parsed.prediction);
       if (sameIntent.some((branch) => branch.status === "running" || branch.status === "verified")) {
-        return reject("This exact foundation probe branch is already staged");
+        return reject("This exact topology candidate is already staged");
       }
       const operation: ActiveProbeOperation = {
         controller: new AbortController(),
@@ -145,7 +146,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
       };
       if (invocationSignal) {
         const abortFromInvocation = () => {
-          operation.cancellationReason = "Foundation probe canceled by the invoking client.";
+          operation.cancellationReason = "Topology optimization canceled by the invoking client.";
           operation.controller.abort();
           if (operation.branchRevision) {
             void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
@@ -174,7 +175,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
       }
       if (latest.stagedBranches.some((branch) => branch.branchRevision === branchRevision)) {
         release();
-        return reject("This exact foundation probe branch is already staged", branchRevision);
+        return reject("This exact topology candidate is already staged", branchRevision);
       }
       const staged: FoundationBranch = freezeValue({
         ...parsed, proposalRevision, branchRevision, attempt, stale: false, status: "running",
@@ -209,7 +210,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         branch.branchRevision === branchRevision);
       if (!latestBranch) {
         release();
-        return reject("The staged foundation probe branch is no longer available", branchRevision);
+        return reject("The staged topology candidate is no longer available", branchRevision);
       }
       const finished: FoundationBranch = freezeValue({
         ...latestBranch,
@@ -232,9 +233,9 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
             result: { proposalRevision, branchRevision, attempt, measurement: measured as unknown as JsonValue },
           }
         : storedResult.status === "canceled"
-          ? { status: "canceled", reason: measured.message ?? "Foundation probe canceled" }
+          ? { status: "canceled", reason: measured.message ?? "Topology optimization canceled" }
           : { status: "failed", error: measured.message ?? `${storedResult.status} probe result` };
-      await addReceipt("run_foundation_probe", {
+      await addReceipt("generate_topology_candidate", {
         ...parsed, proposalRevision, attempt,
       }, branchRevision, outcome, startedAt);
       return stateRef.current!.stagedBranches.find((branch) =>
@@ -242,7 +243,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     },
     async cancelProbe() {
       const operation = operationRef.current;
-      if (!operation?.branchRevision) throw new Error("No foundation probe is running");
+      if (!operation?.branchRevision) throw new Error("No topology optimization is running");
       return cancelActiveProbe(operation, cancellationDependencies());
     },
     async compareProbes(input) {
@@ -255,7 +256,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
       const valid = (branch: FoundationBranch | undefined): branch is FoundationBranch & { measurement: NonNullable<FoundationBranch["measurement"]> } =>
         branch?.status === "verified" && !branch.stale && branch.measurement !== undefined;
       if (!valid(left) || !valid(right) || left.parentRevision !== right.parentRevision) {
-        await addReceipt("compare_foundation_probes", parsed, current.contextRevision, {
+        await addReceipt("compare_topology_candidates", parsed, current.contextRevision, {
           status: "failed", error: "Branches must be verified, non-stale, and share an exact parent",
         }, startedAt);
         throw new Error("Branches must be verified, non-stale, and share an exact parent");
@@ -268,12 +269,16 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         rightStatus: "verified",
         timingDeltaMs: right.measurement.elapsedMs - left.measurement.elapsedMs,
         relativeL2Delta: (right.measurement.relativeL2 ?? 0) - (left.measurement.relativeL2 ?? 0),
+        ...(left.measurement.topology && right.measurement.topology ? {
+          complianceDelta: right.measurement.topology.finalCompliance - left.measurement.topology.finalCompliance,
+          materialFractionDelta: right.measurement.topology.materialFraction - left.measurement.topology.materialFraction,
+        } : {}),
         leftDigest: left.measurement.resultDigest,
         rightDigest: right.measurement.resultDigest,
         stale: false,
         nextActions: ["inspect_design_context"],
       };
-      await addReceipt("compare_foundation_probes", parsed, current.contextRevision, {
+      await addReceipt("compare_topology_candidates", parsed, current.contextRevision, {
         status: "succeeded", result: facts as unknown as JsonValue,
       }, startedAt);
       return facts;

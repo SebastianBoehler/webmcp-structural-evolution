@@ -96,6 +96,11 @@ function prepareViewer(
       model: {
         grid: current.grid,
         currentInstances,
+        densityField: mode === "audition"
+          ? alternatives.find((branch) => branch.branchRevision === selectedAlternative)?.result.status === "verified"
+            ? (alternatives.find((branch) => branch.branchRevision === selectedAlternative)!.result as { output: Float32Array }).output
+            : current.result.output
+          : current.result.output,
         alternativeLayers: mode === "audition" ? [] : extraction.layers,
         assemblyParts,
       },
@@ -133,6 +138,10 @@ export function FieldViewer({
   const sessionRef = useRef<FieldRendererSession | null>(null);
   const descriptionId = useId();
   const [renderError, setRenderError] = useState<string>();
+  const [view, setView] = useState<"isometric" | "top" | "front" | "right">("isometric");
+  const [gridVisible, setGridVisible] = useState(true);
+  const [worldCoordinates, setWorldCoordinates] = useState(true);
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const auditionSelection = mode === "audition" ? selectedAlternative : undefined;
   const prepared = useMemo(() => prepareViewer(
     current,
@@ -169,8 +178,12 @@ export function FieldViewer({
     }
   }, [environment, onPartDragState, onPartMove, onPartSelect, prepared.model]);
 
-  useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [selectedAlternative]);
-  useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [selectedPart]);
+  useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [prepared.model, selectedAlternative]);
+  useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [prepared.model, selectedPart]);
+  useEffect(() => sessionRef.current?.setReferenceGridVisible(gridVisible), [gridVisible, prepared.model]);
+  useEffect(() => sessionRef.current?.setView(view), [prepared.model, view]);
+  useEffect(() => sessionRef.current?.setTransformSpace(worldCoordinates ? "world" : "local"), [prepared.model, worldCoordinates]);
+  useEffect(() => sessionRef.current?.setTranslationSnap(snapEnabled ? 10 : null), [prepared.model, snapEnabled]);
 
   const issue = prepared.error ?? renderError;
   return (
@@ -183,12 +196,43 @@ export function FieldViewer({
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
-        Drag empty space to orbit · Drag a motor to move · Scroll to zoom
+        Select a part · use X/Y/Z to move · drag empty space to orbit · scroll to zoom
       </p>
+      <div className="cad-view-controls" role="group" aria-label="Viewport orientation">
+        {(["isometric", "top", "front", "right"] as const).map((preset) => (
+          <button
+            type="button"
+            key={preset}
+            aria-label={`${preset[0]!.toUpperCase()}${preset.slice(1)} view`}
+            aria-pressed={view === preset}
+            onClick={() => { setView(preset); sessionRef.current?.setView(preset); }}
+          >{preset === "isometric" ? "ISO" : preset[0]!.toUpperCase()}</button>
+        ))}
+      </div>
+      <div className="cad-transform-controls" role="group" aria-label="CAD display and transforms">
+        <button
+          type="button"
+          aria-label="Toggle reference grid"
+          aria-pressed={gridVisible}
+          onClick={() => setGridVisible((visible) => !visible)}
+        >Grid</button>
+        <button
+          type="button"
+          aria-label={worldCoordinates ? "World coordinates" : "Local coordinates"}
+          aria-pressed={worldCoordinates}
+          onClick={() => setWorldCoordinates((world) => !world)}
+        >{worldCoordinates ? "World" : "Local"}</button>
+        <button
+          type="button"
+          aria-label="Snap 10 millimetres"
+          aria-pressed={snapEnabled}
+          onClick={() => setSnapEnabled((enabled) => !enabled)}
+        >10 mm</button>
+      </div>
       <p className="field-viewer__field-status" role="status">
         {statusText ?? (current
           ? `Verified field · ${selectedRegion.label}`
-          : "Assembly ready · Run verification to add the density field")}
+          : "Assembly ready · Generate a frame to add the density field")}
       </p>
       {issue && <p className="field-viewer__message field-viewer__message--error" role="alert">{issue}</p>}
       {prepared.notice && <p className="field-viewer__message" role="status">{prepared.notice}</p>}
