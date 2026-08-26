@@ -6,6 +6,7 @@ import {
   highlightFieldMesh,
   type FieldMeshSet,
 } from "./field-meshes";
+import { createCleanupLedger, type CleanupToken } from "./cleanup-ledger";
 import {
   prepareRenderModel,
   type CameraEnvelope,
@@ -63,6 +64,16 @@ export interface FieldRendererSession {
   setHighlightedBranch(branchRevision: string | undefined): void;
 }
 
+export class FieldRendererMountError extends Error {
+  readonly cleanupSession: FieldRendererSession;
+
+  constructor(cause: unknown, cleanupSession: FieldRendererSession) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "FieldRendererMountError";
+    this.cleanupSession = cleanupSession;
+  }
+}
+
 const defaultEnvironment: FieldViewerEnvironment = {
   createRenderer: (canvas) => new THREE.WebGLRenderer({ antialias: true, canvas }),
   createControls: (camera, canvas) => new OrbitControls(camera, canvas),
@@ -86,103 +97,86 @@ function cameraFor(envelope: CameraEnvelope): THREE.PerspectiveCamera {
   return camera;
 }
 
-interface CleanupOwner {
-  complete: boolean;
-  readonly release: () => void;
-}
-
 export function mountFieldRenderer(
   canvas: HTMLCanvasElement,
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
 ): FieldRendererSession {
   const prepared = prepareRenderModel(model);
+  const ownership = createCleanupLedger();
   let renderer: RendererLike | undefined;
-  let controls: ControlsLike | undefined;
-  let observer: ObserverLike | undefined;
   let meshSet: FieldMeshSet | undefined;
+  let scene: THREE.Scene | undefined;
+  let camera: THREE.PerspectiveCamera | undefined;
   let frame: number | undefined;
-  let frameCleanupComplete = true;
+  let frameOwnership: CleanupToken | undefined;
   let inactive = false;
-  let disposing = false;
-  let cleanupComplete = false;
-  const cleanupOwners: CleanupOwner[] = [];
-  const scene = new THREE.Scene();
-  const camera = cameraFor(prepared.camera);
   let width = 1;
   let height = 1;
   const render = () => {
+    frameOwnership?.relinquish();
+    frameOwnership = undefined;
     frame = undefined;
-    frameCleanupComplete = true;
-    if (inactive || !renderer) return;
+    if (inactive || !renderer || !scene || !camera) return;
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.render(scene, camera);
   };
   const scheduleRender = () => {
     if (!inactive && frame === undefined) {
-      frame = environment.requestFrame(render);
-      frameCleanupComplete = false;
-    }
-  };
-  const own = (release: () => void) => cleanupOwners.push({ complete: false, release });
-  const attempt = (owner: CleanupOwner) => {
-    if (owner.complete) return;
-    try {
-      owner.release();
-      owner.complete = true;
-    } catch {
-      // The session has no teardown error channel; retain failed ownership for the next dispose().
-    }
-  };
-  const dispose = () => {
-    if (cleanupComplete || disposing) return;
-    inactive = true;
-    disposing = true;
-    try {
-      if (!frameCleanupComplete && frame !== undefined) {
-        try {
-          environment.cancelFrame(frame);
+      const handle = environment.requestFrame(render);
+      frame = handle;
+      frameOwnership = ownership.own(() => {
+        environment.cancelFrame(handle);
+        if (frame === handle) {
           frame = undefined;
-          frameCleanupComplete = true;
-        } catch {
-          // Keep the pending handle owned so a later dispose() retries cancellation.
+          frameOwnership = undefined;
         }
-      }
-      cleanupOwners.forEach(attempt);
-      cleanupComplete = frameCleanupComplete && cleanupOwners.every((owner) => owner.complete);
-    } finally {
-      disposing = false;
+      });
     }
+  };
+  const session: FieldRendererSession = {
+    dispose() {
+      inactive = true;
+      ownership.dispose();
+    },
+    setHighlightedBranch(branchRevision) {
+      if (inactive || !meshSet) return;
+      highlightFieldMesh(meshSet.ghostMaterials, branchRevision);
+      scheduleRender();
+    },
   };
 
   try {
-    renderer = environment.createRenderer(canvas);
-    own(() => renderer!.dispose());
-    controls = environment.createControls(camera, canvas);
-    own(() => controls!.dispose());
+    scene = new THREE.Scene();
+    camera = cameraFor(prepared.camera);
+    const createdRenderer = environment.createRenderer(canvas);
+    renderer = createdRenderer;
+    ownership.own(() => createdRenderer.dispose());
+    const createdControls = environment.createControls(camera, canvas);
+    ownership.own(() => createdControls.dispose());
     environment.prefersReducedMotion();
-    controls.enableDamping = false;
-    controls.target.set(...prepared.camera.target);
-    controls.update();
-    scene.add(new THREE.HemisphereLight(0xdcefff, 0x101724, 2.2));
+    createdControls.enableDamping = false;
+    createdControls.target.set(...prepared.camera.target);
+    createdControls.update();
+    const attach = (object: THREE.Object3D) => {
+      ownership.own(() => scene!.remove(object));
+      scene!.add(object);
+    };
+    attach(new THREE.HemisphereLight(0xdcefff, 0x101724, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(5, 8, 12);
-    scene.add(key);
+    attach(key);
     meshSet = createFieldMeshes(
       prepared.grid,
       prepared.currentInstances,
       prepared.alternativeLayers,
+      {
+        own: (release) => ownership.own(release),
+        attach,
+      },
     );
-    meshSet.meshes.forEach((mesh) => {
-      own(() => scene.remove(mesh));
-      own(() => mesh.dispose());
-      own(() => mesh.geometry.dispose());
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => own(() => material.dispose()));
-    });
-    scene.add(...meshSet.meshes);
-    observer = environment.createResizeObserver(([entry]) => {
+    const createdObserver = environment.createResizeObserver(([entry]) => {
       if (inactive || !entry || !renderer) return;
       const rawDpr = environment.devicePixelRatio();
       const validDpr = Number.isFinite(rawDpr) && rawDpr > 0;
@@ -195,27 +189,20 @@ export function mountFieldRenderer(
       renderer.setSize(width, height, false);
       scheduleRender();
     });
-    own(() => observer!.disconnect());
+    ownership.own(() => createdObserver.disconnect());
     try {
-      observer.observe(canvas, { box: "device-pixel-content-box" });
+      createdObserver.observe(canvas, { box: "device-pixel-content-box" });
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
-      observer.observe(canvas);
+      createdObserver.observe(canvas);
     }
-    controls.addEventListener("change", scheduleRender);
-    own(() => controls!.removeEventListener("change", scheduleRender));
+    ownership.own(() => createdControls.removeEventListener("change", scheduleRender));
+    createdControls.addEventListener("change", scheduleRender);
     scheduleRender();
   } catch (error) {
-    dispose();
-    throw error;
+    session.dispose();
+    throw new FieldRendererMountError(error, session);
   }
 
-  return {
-    dispose,
-    setHighlightedBranch(branchRevision) {
-      if (inactive || !meshSet) return;
-      highlightFieldMesh(meshSet.ghostMaterials, branchRevision);
-      scheduleRender();
-    },
-  };
+  return session;
 }

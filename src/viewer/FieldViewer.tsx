@@ -8,6 +8,7 @@ import {
   type ViewerBranch,
 } from "./alternative-instances";
 import {
+  FieldRendererMountError,
   mountFieldRenderer,
   viewerEnvironment,
   type FieldRendererSession,
@@ -144,7 +145,17 @@ export function FieldViewer({
         session.dispose();
       };
     } catch (error) {
+      const failedSession = error instanceof FieldRendererMountError
+        ? error.cleanupSession
+        : undefined;
+      if (failedSession) sessionRef.current = failedSession;
       setRenderError(`3D renderer failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (failedSession) {
+        return () => {
+          if (sessionRef.current === failedSession) sessionRef.current = null;
+          failedSession.dispose();
+        };
+      }
     }
   }, [environment, prepared.model]);
 

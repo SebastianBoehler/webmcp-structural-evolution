@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import type { AlternativeLayer } from "./alternative-instances";
+import type { CleanupLedger } from "./cleanup-ledger";
 import type { InstanceRecord, VoxelGrid } from "./field-instances";
 
 export interface FieldMeshSet {
@@ -8,12 +9,8 @@ export interface FieldMeshSet {
   readonly ghostMaterials: ReadonlyMap<string, THREE.MeshBasicMaterial>;
 }
 
-function safely(action: (() => void) | undefined): void {
-  try {
-    action?.();
-  } catch {
-    // Resource teardown must continue after a driver/object disposal failure.
-  }
+interface MeshOwnership extends Pick<CleanupLedger, "own"> {
+  attach(mesh: THREE.InstancedMesh): void;
 }
 
 function addInstances(
@@ -51,25 +48,24 @@ function buildMesh(
   count: number,
   materialFactory: () => THREE.Material,
   configure: (mesh: THREE.InstancedMesh) => void,
+  ownership: MeshOwnership,
 ): THREE.InstancedMesh {
-  let geometry: THREE.BoxGeometry | undefined;
-  let material: THREE.Material | undefined;
-  let mesh: THREE.InstancedMesh | undefined;
-  try {
-    geometry = new THREE.BoxGeometry(...grid.cellSize);
-    material = materialFactory();
-    mesh = new THREE.InstancedMesh(geometry, material, count);
-    configure(mesh);
-    return mesh;
-  } catch (error) {
-    safely(mesh ? () => mesh!.dispose() : undefined);
-    safely(material ? () => material!.dispose() : undefined);
-    safely(geometry ? () => geometry!.dispose() : undefined);
-    throw error;
-  }
+  const geometry = new THREE.BoxGeometry(...grid.cellSize);
+  ownership.own(() => geometry.dispose());
+  const material = materialFactory();
+  ownership.own(() => material.dispose());
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  ownership.own(() => mesh.dispose());
+  configure(mesh);
+  ownership.attach(mesh);
+  return mesh;
 }
 
-function currentMesh(grid: VoxelGrid, records: readonly InstanceRecord[]): THREE.InstancedMesh {
+function currentMesh(
+  grid: VoxelGrid,
+  records: readonly InstanceRecord[],
+  ownership: MeshOwnership,
+): THREE.InstancedMesh {
   return buildMesh(
     grid,
     records.length,
@@ -80,10 +76,11 @@ function currentMesh(grid: VoxelGrid, records: readonly InstanceRecord[]): THREE
       anchorMesh(mesh, grid, [0, 0, 0]);
       addInstances(mesh, records);
     },
+    ownership,
   );
 }
 
-function ghostMesh(layer: AlternativeLayer): THREE.InstancedMesh {
+function ghostMesh(layer: AlternativeLayer, ownership: MeshOwnership): THREE.InstancedMesh {
   return buildMesh(
     layer.grid,
     layer.added.length + layer.removed.length,
@@ -102,6 +99,7 @@ function ghostMesh(layer: AlternativeLayer): THREE.InstancedMesh {
       addInstances(mesh, layer.added, new THREE.Color(0x55d6be));
       addInstances(mesh, layer.removed, new THREE.Color(0xff8b6b), layer.added.length);
     },
+    ownership,
   );
 }
 
@@ -109,21 +107,17 @@ export function createFieldMeshes(
   grid: VoxelGrid,
   currentInstances: readonly InstanceRecord[],
   layers: readonly AlternativeLayer[],
+  ownership: MeshOwnership,
 ): FieldMeshSet {
   const meshes: THREE.InstancedMesh[] = [];
   const ghostMaterials = new Map<string, THREE.MeshBasicMaterial>();
-  try {
-    meshes.push(currentMesh(grid, currentInstances));
-    for (const layer of layers) {
-      const mesh = ghostMesh(layer);
-      meshes.push(mesh);
-      ghostMaterials.set(layer.branchRevision, mesh.material as THREE.MeshBasicMaterial);
-    }
-    return { meshes: Object.freeze(meshes), ghostMaterials };
-  } catch (error) {
-    disposeFieldMeshes(meshes);
-    throw error;
+  meshes.push(currentMesh(grid, currentInstances, ownership));
+  for (const layer of layers) {
+    const mesh = ghostMesh(layer, ownership);
+    meshes.push(mesh);
+    ghostMaterials.set(layer.branchRevision, mesh.material as THREE.MeshBasicMaterial);
   }
+  return { meshes: Object.freeze(meshes), ghostMaterials };
 }
 
 export function highlightFieldMesh(
@@ -133,14 +127,5 @@ export function highlightFieldMesh(
   for (const [revision, material] of materials) {
     material.opacity = branchRevision === undefined || revision === branchRevision ? 0.34 : 0.12;
     material.needsUpdate = true;
-  }
-}
-
-export function disposeFieldMeshes(meshes: readonly THREE.InstancedMesh[]): void {
-  for (const mesh of meshes) {
-    safely(() => mesh.dispose());
-    safely(() => mesh.geometry.dispose());
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    materials.forEach((material) => safely(() => material.dispose()));
   }
 }
