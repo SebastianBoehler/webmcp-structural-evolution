@@ -11,7 +11,7 @@ Verdict: **partially passed**. The real in-app browser passed the WebGPU/Wasm an
 - Default viewport: 1280 × 720 CSS pixels at DPR 2.
 - Browser console: no warnings or errors after the complete human journey.
 - The page reported WebGPU device acquisition success. The browser-control evaluation sandbox masks privileged globals, so the page's shipped capability detector and measured probe are the authoritative observations.
-- During the Important-finding rerun, the browser runtime returned `Browser is not available: iab`; discovery showed only a connected Chrome extension. The earlier in-app measurements below remain the last target-browser evidence, and no refreshed in-app pass is claimed.
+- During the final broad-review rerun, the browser runtime again returned `Browser is not available` for the in-app browser; discovery showed only a connected Chrome extension. The earlier in-app measurements below remain the last target-browser evidence, and no refreshed in-app pass is claimed.
 
 ## WebGPU and Wasm
 
@@ -49,15 +49,15 @@ These checks used local Chrome with `--enable-features=WebMCP` through GoogleChr
 | Mid-chain failure | compare was unavailable after only one verified branch: `no tool named "compare_foundation_probes" was found` |
 | Cancellation | protocol invocation returned `status: "Canceled"` |
 
-The protocol result confirms only the browser protocol outcome. `use-webmcp-tool` 0.2 still does not pass an invocation abort signal into the page callback, so protocol cancellation is not claimed to interrupt a GPU kernel.
+The obsolete `use-webmcp-tool` integration has been removed. The page now calls the current imperative API directly, awaits and catches `registerTool()` promises, uses a registration `AbortSignal` for unregistration, and forwards `execute(args, {signal})` into the project cancellation transaction. The official current API contract was verified against the [WebMCP specification](https://webmachinelearning.github.io/webmcp/) on 2026-08-26. The available supplemental Chrome implementation still omitted the callback options object, so the callback accepts that older omission without inventing a signal; the deterministic current-contract regression supplies the signal and verifies one terminal canceled transaction.
 
 Human cancellation is now a separate first-class application path. The project service owns an `AbortController`, passes its signal through the compute boundary, commits a canceled branch and receipt, and ignores any late runner result. A supplemental real Chrome run observed the visible cancel control, canceled copy, retry action, and no verified copy. The compute regression cancels a pending dispatch and verifies buffer/device cleanup; the state regression uses a deliberately signal-ignoring runner and verifies that its late verified result cannot commit or promote.
 
-The final review rerun added an immediate-abort race in which the signal-aware runner resolves canceled synchronously from the abort event. The original `run_foundation_probe` promise now waits for the terminal canceled commit, returns `isError: true` with `status: "canceled"`, and records both the original run cancellation and the human cancel action. This was verified deterministically, not re-observed through the unavailable in-app browser. Protocol cancellation is still not claimed to interrupt the GPU kernel.
+The final review rerun added an immediate-abort race in which the signal-aware runner resolves canceled synchronously from the abort event. The original `run_foundation_probe` promise waits for the terminal canceled commit, returns `isError: true` with `status: "canceled"`, and records both the original run cancellation and the cancel action. A direct fake-current-API invocation verifies that the protocol signal reaches the compute boundary, remains non-idle until both receipts and ownership release complete, suppresses dynamic retry registration during that window, and cannot promote. This is deterministic contract evidence; the available supplemental Chrome omitted callback options, so it is not claimed as a live protocol-to-kernel cancellation pass.
 
 After two verified probes, a supplemental Chrome state check observed all three tools before human intervention. Clicking `Lock cable clearance` changed registration to exactly `inspect_design_context` and `run_foundation_probe`; compare disappeared. The subsequent inspect succeeded with `stale: true`, two total branches, one newest stale branch included, and `omittedBranchCount: 1`, keeping the result inside the 1,500-character contract.
 
-Closing supplemental headless Chrome pages and changing dynamic registrations caused the Vite development client to log unhandled `AbortError: signal is aborted without reason` rejections from `use-webmcp-tool/useWebMCP.js:173`. The deterministic smoke and state checks still completed with their recorded results, but this third-party hook-cleanup warning is not hidden or counted as a clean supplemental-console pass.
+The final direct-integration smoke produced no Vite application errors after the compatibility rerun. An initial run exposed that this Chrome build omitted the callback options object (`options.signal` threw); the compatibility fix made options optional while preserving current-spec signal forwarding, and the rerun then passed 8/8. Expected registration-abort cleanup is caught in the direct integration, so the former third-party hook abort-rejection path no longer exists.
 
 ## Official WebMCP evals
 
@@ -69,7 +69,7 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 - The current smoke runner requires at least one successful required call per case and treats an intentional tool error as a smoke error. Running the complete file therefore stops on the required `expectedCall: null` case; this is a runner limitation, not a no-tool pass.
 - The five deterministic smoke-executable cases passed **8/8 required steps**: two inspections, baseline → edge-biased → compare, baseline → inspection when compare is not state-valid, and fresh inspection selection after an intervention prompt.
 - The isolated validation-error case called `inspect_design_context({scope:"all"})` and produced the expected `Invalid input: expected "current"`; the runner correctly reported that deliberate error as 0/1 rather than a pass.
-- The final deterministic rerun passed the same **8/8 required steps** after proposal/attempt identity was added. The baseline was 24.625 ms at relative L2 `3.7204763714271394e-8`; edge-biased was 10.080000042915344 ms at `2.8865247969633856e-8`. Their exact attempt revisions were `4612c20b9a1725fd9739d0046eb09c9e748d312c1434be2709ae31046e7f0fd1` and `0ce79a6d3c82e30cef3df63633b68d0806cee684bf5ef4f6a958e05319cf73d7`.
+- The final direct-API deterministic rerun passed **8/8 required steps**. Baseline measured 31.63 ms at relative L2 `3.7204763714271394e-8`; edge-biased measured 14.65 ms at `2.8865247969633856e-8`. Their exact attempt revisions were `4612c20b9a1725fd9739d0046eb09c9e748d312c1434be2709ae31046e7f0fd1` and `0ce79a6d3c82e30cef3df63633b68d0806cee684bf5ef4f6a958e05319cf73d7`.
 - A configured Anthropic backend existed, so one probabilistic browser-eval run was attempted with `anthropic:claude-sonnet-4-5`. It completed with **0/3** because the provider returned `Your credit balance is too low to access the Anthropic API`; no model-selection claim is made.
 - Direct, ambiguous, negative, validation, mid-chain, and post-intervention selection behavior has no probabilistic pass in this run. The deterministic smoke invokes authored calls directly and is not evidence of model selection quality.
 - No Google, OpenAI, or live Ollama backend was configured.
@@ -84,16 +84,23 @@ Dataset: `docs/testing/webmcp-foundation-evals.json`.
 - The newest measurement owns the primary evidence card. A preceding verification is shown only as explicitly labelled historical evidence, and a direct verified-then-mismatch regression confirms the mismatch cannot be promoted.
 - The journey regression actively selects an anchored alternative and operates peel and audition modes rather than only checking that their controls exist.
 - Semantic DOM retained the exact fixture revision, selection and voxel bounds, modes, parent/branch identities, local deltas, measurements, receipts, and stale state outside the canvas.
+- One revision-bound context snapshot supplies the agent, human facts, viewer, and context hash: exact selection bounds, assembly coordinate space, `mm`, 32³ dimensions, cell size, anchor, locks, interface counts, and bounded exact inventory shortages. Inspection returns that same snapshot within the 1,500-character budget.
+- Viewer extraction uses packed `Uint32Array` indices and fills instance matrices directly. Overlay and peel materialize only selected-region deltas; audition materializes only its selected verified field. A 64³ full-region extraction measured **4.212 ms** on this host against the 250 ms guard, so no off-thread path was added.
 - At 390 × 844, the main region measured `clientWidth === scrollWidth === 375`; both semantic tables and all three mode radios remained present.
 - Native keyboard traversal was confirmed in supplemental Chrome: primary action → intervention → comparison radio group → scrollable semantic table → protocol details. The in-app automation surface did not move focus when issuing Tab, so keyboard traversal was not independently confirmed there.
 - Reduced motion was emulated in supplemental Chrome: the media query matched and computed root `scroll-behavior` was `auto`. Viewer tests separately verify damping/animation suppression with the preference enabled.
 - The real target browser's system reduced-motion preference was off. No preference was overridden in that target.
 - Unsupported WebMCP copy was observed in the real in-app browser. An unsupported WebGPU browser was not available; deterministic capability tests cover the visible unavailable state.
 
+## Generated-code boundary
+
+`src/reference/pkg/webmcp_reference.js` and its adjacent Wasm artifacts are generated exclusively by `scripts/build-reference-wasm.sh`/`wasm-pack`. They are an explicit generated-code exemption from the 300-line soft source limit and must not be hand-edited. Hand-authored changed source files remain at or below 300 lines.
+
 ## Commands
 
 ```text
 PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm vitest run src/app/FoundationJourney.test.tsx
+PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH REPORT_VIEWER_BENCHMARK=1 pnpm exec vitest run src/viewer/alternative-instances.test.ts --reporter=verbose
 PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm check
 PATH=/Users/sebastianboehler/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH pnpm dev --host 127.0.0.1
 node dist/bin/webmcp-evals.js smoke -u http://127.0.0.1:5174 -e docs/testing/webmcp-foundation-evals.json --chrome-channel chrome -v
