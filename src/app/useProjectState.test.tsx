@@ -106,6 +106,8 @@ test("human intervention marks staged branches stale and only the rail can promo
   expect(screen.getByRole("log", { name: /action receipts/i })).toBeVisible();
   expect(screen.getByText(/stale/i)).toBeVisible();
   expect(screen.getAllByText(/affected revision/i)).not.toHaveLength(0);
+  expect(screen.getAllByText(/validated input/i)).not.toHaveLength(0);
+  expect(screen.getAllByText(/result:/i)).not.toHaveLength(0);
 });
 
 test("the human rail API promotes a verified exact branch and records its receipt", async () => {

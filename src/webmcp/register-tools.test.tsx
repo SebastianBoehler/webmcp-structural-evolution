@@ -31,6 +31,8 @@ function services(state: FoundationProjectState): FoundationServices {
   return {
     inspectContext: vi.fn(async () => ({
       ...state,
+      stagedBranchCount: state.stagedBranches.length,
+      omittedBranchCount: 0,
       stale: state.stagedBranches.some((branch) => branch.stale),
       nextActions: ["inspect_design_context"],
     })),

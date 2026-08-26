@@ -26,6 +26,8 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
       locks: ["body-mount"],
       acceptedBranchRevision: revisionA,
       stagedBranches: [],
+      stagedBranchCount: 0,
+      omittedBranchCount: 0,
       capability: { status: "available" as const, message: "ready" },
       stale: false as const,
       nextActions: ["run_foundation_probe"],

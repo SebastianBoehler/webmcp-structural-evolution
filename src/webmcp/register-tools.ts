@@ -12,6 +12,7 @@ import {
   runInputJsonSchema,
   type FoundationProjectState,
 } from "./schemas";
+import { hasComparableBranches } from "./comparability";
 
 export type FoundationToolDefinition = WebMCPOptions<unknown, unknown> & {
   readonly annotations: {
@@ -20,15 +21,6 @@ export type FoundationToolDefinition = WebMCPOptions<unknown, unknown> & {
   };
   readonly enabled: boolean;
 };
-
-function canCompare(state: FoundationProjectState): boolean {
-  const parents = new Map<string, number>();
-  for (const branch of state.stagedBranches) {
-    if (branch.status !== "verified" || branch.stale) continue;
-    parents.set(branch.parentRevision, (parents.get(branch.parentRevision) ?? 0) + 1);
-  }
-  return [...parents.values()].some((count) => count >= 2);
-}
 
 export function foundationToolDefinitions(
   services: FoundationServices,
@@ -58,7 +50,7 @@ export function foundationToolDefinitions(
       inputSchema: compareInputJsonSchema,
       annotations: { readOnlyHint: true, untrustedContentHint },
       execute: (input) => compareFoundationProbes(input, services),
-      enabled: canCompare(state),
+      enabled: hasComparableBranches(state.stagedBranches),
     },
   ];
 }

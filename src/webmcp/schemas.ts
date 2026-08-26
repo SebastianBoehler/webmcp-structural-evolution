@@ -85,6 +85,8 @@ export interface InspectContextFacts {
   readonly stagedBranches: readonly Pick<FoundationBranch,
     "parentRevision" | "branchRevision" | "hypothesis" | "prediction" | "status" | "stale" | "measurement"
   >[];
+  readonly stagedBranchCount: number;
+  readonly omittedBranchCount: number;
   readonly capability: GpuCapability;
   readonly stale: boolean;
   readonly nextActions: readonly string[];

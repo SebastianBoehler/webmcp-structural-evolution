@@ -12,8 +12,7 @@ import {
   type ProbeComparisonFacts,
   type RunFoundationProbeInput,
 } from "./schemas";
-
-const OUTPUT_LIMIT = 1500;
+import { serializeToolFacts, TOOL_OUTPUT_LIMIT } from "./tool-output";
 
 export interface FoundationServices {
   inspectContext(input: InspectContextInput): Promise<InspectContextFacts>;
@@ -34,8 +33,8 @@ function affectedRevision(input: unknown): string | null {
 }
 
 function toolResponse(value: unknown, isError = false): WebMCPToolResponse {
-  let text = JSON.stringify(value);
-  if (text.length > OUTPUT_LIMIT) {
+  let text = serializeToolFacts(value);
+  if (text.length > TOOL_OUTPUT_LIMIT) {
     text = JSON.stringify({ error: "Tool output exceeded the 1500 character safety limit." });
     isError = true;
   }
