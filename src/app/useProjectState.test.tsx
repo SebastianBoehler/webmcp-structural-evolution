@@ -8,8 +8,10 @@ import { ExperimentRail } from "./ExperimentRail";
 import { ReceiptLedger } from "./ReceiptLedger";
 import { useProjectState } from "./useProjectState";
 import { render, screen } from "@testing-library/react";
+import { testFoundationContext } from "../test/foundation-context";
 
 const revisionA = "a".repeat(64);
+const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
 const runInput = {
   parentRevision: revisionA,
   variant: "edge-biased" as const,
@@ -28,6 +30,7 @@ test("stages an exact immutable branch and stores prediction before measured out
   const compute = vi.fn((_input: ProbeInput) => new Promise<ProbeResult>(resolve => { resolveProbe = resolve; }));
   const { result } = renderHook(() => useProjectState({
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
@@ -78,6 +81,7 @@ test("human intervention marks staged branches stale and only the rail can promo
   }));
   const { result } = renderHook(() => useProjectState({
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
@@ -89,7 +93,7 @@ test("human intervention marks staged branches stale and only the rail can promo
 
   await act(async () => {
     await result.current.experimentRail.intervene({
-      selection: { id: "cable-path", label: "Cable path" },
+      selection: selection("cable-path", "Cable path"),
       locks: ["body-mount", "cable-clearance"],
     });
   });
@@ -123,6 +127,7 @@ test("the human rail API promotes a verified exact branch and records its receip
   }));
   const { result } = renderHook(() => useProjectState({
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
@@ -154,6 +159,7 @@ test("a mismatched branch strips any unexpected renderable output", async () => 
   }));
   const { result } = renderHook(() => useProjectState({
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],

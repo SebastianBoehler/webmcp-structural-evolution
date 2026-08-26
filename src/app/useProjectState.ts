@@ -18,23 +18,14 @@ import { hasComparableBranches } from "../webmcp/comparability";
 import { inspectProjectFacts } from "./project-inspection";
 import { createExperimentRail } from "./project-experiment-rail";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
-import {
-  cancelActiveProbe,
-  type ActiveProbeOperation,
-} from "./project-probe-cancellation";
+import { cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
 import type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
-import {
-  createInitialProjectState,
-  freezeValue,
-  publishProjectState,
-} from "./project-state-copy";
+import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
 
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
 export function useProjectState(options: ProjectStateOptions): {
-  readonly state: FoundationProjectState;
-  readonly services: FoundationServices;
-  readonly experimentRail: ExperimentRailApi;
+  readonly state: FoundationProjectState; readonly services: FoundationServices; readonly experimentRail: ExperimentRailApi;
 } {
   const stateRef = useRef<FoundationProjectState | null>(null);
   if (!stateRef.current) stateRef.current = createInitialProjectState(options);
@@ -82,6 +73,24 @@ export function useProjectState(options: ProjectStateOptions): {
     commit({ ...current, receipts: [...current.receipts, receipt] });
   };
 
+  const cancellationDependencies = () => ({
+    stateRef: stateRef as { current: FoundationProjectState },
+    operationRef,
+    commit,
+    addReceipt,
+  });
+
+  useEffect(() => () => {
+    const operation = operationRef.current;
+    if (!operation) return;
+    if (operation.branchRevision) {
+      void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
+    } else {
+      operation.controller.abort();
+      operationRef.current = null;
+    }
+  }, []);
+
   const services = useMemo<FoundationServices>(() => ({
     async inspectContext(input) {
       const startedAt = performance.now();
@@ -99,7 +108,7 @@ export function useProjectState(options: ProjectStateOptions): {
       }, startedAt);
       return facts;
     },
-    async runProbe(input) {
+    async runProbe(input, invocationSignal) {
       const startedAt = performance.now();
       const parsed = RunFoundationProbeInputSchema.parse(input);
       const current = stateRef.current!;
@@ -130,10 +139,24 @@ export function useProjectState(options: ProjectStateOptions): {
       operationRef.current = operation;
       const release = () => {
         if (operationRef.current !== operation) return;
+        operation.detachExternalAbort?.();
         operationRef.current = null;
         const latest = stateRef.current!;
         if (latest.operationStatus !== "idle") commit({ ...latest, operationStatus: "idle" });
       };
+      if (invocationSignal) {
+        const abortFromInvocation = () => {
+          operation.cancellationReason = "Foundation probe canceled by the invoking client.";
+          operation.controller.abort();
+          if (operation.branchRevision) {
+            void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
+          }
+        };
+        invocationSignal.addEventListener("abort", abortFromInvocation, { once: true });
+        operation.detachExternalAbort = () =>
+          invocationSignal.removeEventListener("abort", abortFromInvocation);
+        if (invocationSignal.aborted) abortFromInvocation();
+      }
       const attempt = sameIntent.length + 1;
       let proposalRevision: string;
       let branchRevision: string;
@@ -160,6 +183,9 @@ export function useProjectState(options: ProjectStateOptions): {
       operation.proposalRevision = proposalRevision;
       operation.attempt = attempt;
       commit({ ...latest, operationStatus: "running", stagedBranches: [...latest.stagedBranches, staged] });
+      if (invocationSignal?.aborted) {
+        return cancelActiveProbe(operation, cancellationDependencies());
+      }
       let result: ProbeResult;
       try {
         result = await computeRef.current(buildProbeInput(parsed.variant), operation.controller.signal);
@@ -193,6 +219,7 @@ export function useProjectState(options: ProjectStateOptions): {
         result: storedResult,
       });
       operationRef.current = null;
+      operation.detachExternalAbort?.();
       commit({
         ...latest,
         operationStatus: "idle",
@@ -216,12 +243,7 @@ export function useProjectState(options: ProjectStateOptions): {
     async cancelProbe() {
       const operation = operationRef.current;
       if (!operation?.branchRevision) throw new Error("No foundation probe is running");
-      return cancelActiveProbe(operation, {
-        stateRef: stateRef as { current: FoundationProjectState },
-        operationRef,
-        commit,
-        addReceipt,
-      });
+      return cancelActiveProbe(operation, cancellationDependencies());
     },
     async compareProbes(input) {
       const startedAt = performance.now();

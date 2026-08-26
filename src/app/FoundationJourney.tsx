@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 
-import { evaluateInventory } from "../domain/design";
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
-import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
+import {
+  DRONE_ARM_FOUNDATION_CONTEXT,
+  DRONE_ARM_FOUNDATION_STUDY,
+  FOUNDATION_SELECTIONS,
+} from "../samples/drone-arm-foundation";
 import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer";
-import type { AlternativeMode, SelectedSemanticRegion, ViewerBranch } from "../viewer/alternative-instances";
-import type { VoxelGrid } from "../viewer/field-instances";
+import type { AlternativeMode, ViewerBranch } from "../viewer/alternative-instances";
 import { FoundationTools } from "../webmcp/FoundationTools";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
 import { EvidencePanel } from "./EvidencePanel";
@@ -16,27 +18,8 @@ import { ReceiptLedger } from "./ReceiptLedger";
 import { useProjectState } from "./useProjectState";
 
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
-const inventoryEvaluation = evaluateInventory(fixture.inventory, fixture.assembly);
-const initialSelection = { id: "motor-side-arm-span", label: "Motor-side arm span" };
-const initialLocks = ["body-fixed-region"];
+const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
 const initialAcceptedRevision = fixture.assembly.revision;
-
-const regions: Record<string, SelectedSemanticRegion> = {
-  "motor-side-arm-span": {
-    id: "motor-side-arm-span", label: "Motor-side arm span",
-    min: [16, 4, 0], maxExclusive: [32, 28, 32],
-  },
-  "cable-clearance": {
-    id: "cable-clearance", label: "Cable clearance corridor",
-    min: [12, 8, 4], maxExclusive: [26, 20, 26],
-  },
-};
-
-const grid: VoxelGrid = {
-  dimensions: { width: 32, height: 32, depth: 32 },
-  cellSize: [110 / 32, 42 / 32, 18 / 32],
-  anchor: { position: [-14, -21, -6], orientation: [0, 0, 0, 1] },
-};
 
 const probeCopy: Record<ProbeVariant, { hypothesis: string; prediction: string }> = {
   baseline: {
@@ -62,9 +45,10 @@ export interface FoundationJourneyProps {
 export function FoundationJourney({ capability, compute, viewerEnvironment }: FoundationJourneyProps) {
   const { state, services, experimentRail } = useProjectState({
     contextRevision: fixture.study.revision,
+    context: initialContext,
     acceptedBranchRevision: initialAcceptedRevision,
-    selection: initialSelection,
-    locks: initialLocks,
+    selection: initialContext.selection,
+    locks: initialContext.locks,
     capability,
     compute,
   });
@@ -80,15 +64,22 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     (branch) => branch.branchRevision !== state.acceptedBranchRevision && branch.result?.status === "verified",
   );
   const viewerCurrent: ViewerBranch | null = accepted?.result?.status === "verified"
-    ? { branchRevision: state.contextRevision, parentRevision: accepted.parentRevision, grid, result: accepted.result }
+    ? {
+        branchRevision: accepted.branchRevision,
+        contextRevision: state.contextRevision,
+        parentRevision: accepted.parentRevision,
+        grid: state.context.grid,
+        result: accepted.result,
+      }
     : null;
   const viewerAlternatives: readonly ViewerBranch[] = alternatives.map((branch) => ({
     branchRevision: branch.branchRevision,
+    contextRevision: branch.parentRevision,
     parentRevision: branch.parentRevision,
-    grid,
+    grid: state.context.grid,
     result: branch.result!,
   }));
-  const selectedRegion = regions[state.selection.id] ?? regions["motor-side-arm-span"]!;
+  const selectedRegion = state.context.selection;
 
   const currentVerified = alternatives.filter(
     (branch) => branch.parentRevision === state.contextRevision && !branch.stale && branch.status === "verified",
@@ -145,8 +136,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     setError(undefined);
     try {
       await experimentRail.intervene({
-        selection: { id: "cable-clearance", label: "Cable clearance corridor" },
-        locks: [...state.locks, "cable-clearance"],
+        selection: FOUNDATION_SELECTIONS["cable-clearance"]!,
+        locks: [...state.context.locks, "cable-clearance"],
       });
       setComparison(undefined);
     } catch (cause) {
@@ -176,9 +167,11 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           <button
             className="primary-action"
             type="button"
-            disabled={!nextVariant || capability.status !== "available" || state.operationStatus === "running"}
+            disabled={!nextVariant || capability.status !== "available" || state.operationStatus !== "idle"}
             onClick={() => nextVariant && void runVariant(nextVariant)}
-          >{state.operationStatus === "running" ? "Probe running…" : primaryLabel}</button>
+          >{state.operationStatus === "running"
+              ? "Probe running…"
+              : state.operationStatus === "canceling" ? "Probe canceling…" : primaryLabel}</button>
           {state.operationStatus === "running" && (
             <button className="cancel-action" type="button" onClick={() => void cancel()}>
               Cancel running probe
@@ -200,16 +193,20 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           <h2>Drone motor-arm foundation study</h2>
           <dl className="fact-list">
             <div><dt>Study revision</dt><dd><code>{fixture.study.revision}</code></dd></div>
-            <div><dt>Selection</dt><dd>{state.selection.label} <code>{state.selection.id}</code></dd></div>
-            <div><dt>Constraint handshake</dt><dd>{state.locks.join(", ")}</dd></div>
-            <div><dt>Interfaces</dt><dd>{fixture.assembly.preservedMounts.length} preserved mounts · {fixture.assembly.obstacleVolumes.length} keep-outs</dd></div>
-            <div><dt>Inventory</dt><dd>{inventoryEvaluation.status}; {inventoryEvaluation.shortages.length} exact shortfall</dd></div>
+            <div><dt>Selection</dt><dd>{state.context.selection.label} <code>{state.context.selection.id}</code></dd></div>
+            <div><dt>Region bounds</dt><dd>{state.context.selection.min.join(",")} → {state.context.selection.maxExclusive.join(",")}</dd></div>
+            <div><dt>Coordinate space</dt><dd>{state.context.coordinateSpace} · {state.context.unit}</dd></div>
+            <div><dt>Grid</dt><dd>{Object.values(state.context.grid.dimensions).join(" × ")} · cell {state.context.grid.cellSize.join(" × ")} {state.context.unit}</dd></div>
+            <div><dt>Grid anchor</dt><dd>{state.context.grid.anchor.position.join(", ")} · {state.context.grid.anchor.orientation.join(", ")}</dd></div>
+            <div><dt>Constraint handshake</dt><dd>{state.context.locks.join(", ")}</dd></div>
+            <div><dt>Interfaces</dt><dd>{state.context.interfaces.preservedMounts} preserved mounts · {state.context.interfaces.keepOuts} keep-outs</dd></div>
+            <div><dt>Inventory</dt><dd>{state.context.inventory.status}; {state.context.inventory.shortageCount} exact shortfall</dd></div>
           </dl>
           <button
             type="button"
-            disabled={state.locks.includes("cable-clearance")}
+            disabled={state.context.locks.includes("cable-clearance")}
             onClick={() => void intervene()}
-          >{state.locks.includes("cable-clearance") ? "Cable clearance locked" : "Lock cable clearance"}</button>
+          >{state.context.locks.includes("cable-clearance") ? "Cable clearance locked" : "Lock cable clearance"}</button>
         </article>
 
         <div className="viewer-shell">

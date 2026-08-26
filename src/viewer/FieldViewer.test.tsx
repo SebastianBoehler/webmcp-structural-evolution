@@ -41,7 +41,8 @@ describe("FieldViewer", () => {
     expect(screen.getByText(/arm rib.*x 0–2.*y 0–2.*z 0–1/i)).toBeVisible();
     expect(screen.getByRole("group", { name: /comparison mode/i })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: /parent/i })).toBeVisible();
-    expect(screen.getAllByRole("cell", { name: "accepted" })).toHaveLength(2);
+    expect(screen.getByRole("cell", { name: "accepted" })).toBeVisible();
+    expect(screen.getAllByRole("cell", { name: "accepted-context" })).toHaveLength(3);
     expect(screen.getByRole("cell", { name: /1 added/i })).toBeVisible();
     expect(screen.getByRole("cell", { name: /1 removed/i })).toBeVisible();
     expect(test.controls.target.set).toHaveBeenCalledWith(5, 7, 11);

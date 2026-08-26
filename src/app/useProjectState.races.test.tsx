@@ -5,9 +5,11 @@ import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
 import { runFoundationProbe } from "../webmcp/executors";
 import { foundationToolDefinitions } from "../webmcp/register-tools";
+import { testFoundationContext } from "../test/foundation-context";
 import { useProjectState } from "./useProjectState";
 
 const revisionA = "a".repeat(64);
+const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
 const baseInput = {
   parentRevision: revisionA,
   variant: "edge-biased" as const,
@@ -25,6 +27,7 @@ const verified = (value = 0.5): ProbeResult => ({
 function options(compute: (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>) {
   return {
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
@@ -43,7 +46,7 @@ test("intervention during compute keeps the completed branch stale and unpromota
   await waitFor(() => expect(result.current.state.stagedBranches[0]?.status).toBe("running"));
   await act(async () => {
     await result.current.experimentRail.intervene({
-      selection: { id: "cable-path", label: "Cable path" },
+      selection: selection("cable-path", "Cable path"),
       locks: ["body-mount", "cable-clearance"],
     });
   });
@@ -131,6 +134,25 @@ test("an immediately aborting runner awaits canceled state and reports both term
   await expect(result.current.experimentRail.promoteBranch(canceled.branchRevision)).rejects.toThrow(/verified/i);
 });
 
+test("unmount aborts an active operation and its invocation resolves canceled", async () => {
+  let observedSignal: AbortSignal | undefined;
+  const compute = vi.fn((_input: ProbeInput, signal?: AbortSignal) => new Promise<ProbeResult>((resolve) => {
+    observedSignal = signal;
+    signal?.addEventListener("abort", () => resolve({
+      status: "canceled", code: "canceled", message: "unmounted", elapsedMs: 1,
+    }), { once: true });
+  }));
+  const hook = renderHook(() => useProjectState(options(compute)));
+  const invocation = hook.result.current.services.runProbe(baseInput);
+  await waitFor(() => expect(hook.result.current.state.operationStatus).toBe("running"));
+
+  hook.unmount();
+  const branch = await invocation;
+
+  expect(observedSignal?.aborted).toBe(true);
+  expect(branch.status).toBe("canceled");
+});
+
 test("intervention that completes during promotion is never overwritten", async () => {
   const compute = vi.fn(async () => verified());
   const { result } = renderHook(() => useProjectState(options(compute)));
@@ -150,7 +172,7 @@ test("intervention that completes during promotion is never overwritten", async 
   await waitFor(() => expect(digestCalls).toBe(1));
   await act(async () => {
     await result.current.experimentRail.intervene({
-      selection: { id: "cable-path", label: "Cable path" },
+      selection: selection("cable-path", "Cable path"),
       locks: ["body-mount", "cable-clearance"],
     });
   });
@@ -216,11 +238,11 @@ test.each(["older-first", "newer-first"] as const)(
       return originalDigest(algorithm, data);
     });
     const olderInput = {
-      selection: { id: "older-selection", label: "Older selection" },
+      selection: selection("older-selection", "Older selection"),
       locks: ["older-lock"],
     };
     const newerInput = {
-      selection: { id: "newer-selection", label: "Newer selection" },
+      selection: selection("newer-selection", "Newer selection"),
       locks: ["newer-lock"],
     };
 

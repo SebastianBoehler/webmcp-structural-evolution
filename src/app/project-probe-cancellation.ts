@@ -21,6 +21,8 @@ export interface ActiveProbeOperation {
   proposalRevision?: string;
   attempt?: number;
   cancellation?: Promise<FoundationBranch>;
+  cancellationReason?: string;
+  detachExternalAbort?: () => void;
 }
 
 interface CancellationDependencies {
@@ -46,7 +48,7 @@ async function finalizeCancellation(
   const canceledResult: ProbeResult = {
     status: "canceled",
     code: "canceled",
-    message: "Foundation probe canceled by the user.",
+    message: operation.cancellationReason ?? "Foundation probe canceled by the user.",
     elapsedMs: performance.now() - operation.runStartedAt,
   };
   const measurement = await measuredProbe(canceledResult);
@@ -63,7 +65,7 @@ async function finalizeCancellation(
   });
   dependencies.commit({
     ...latest,
-    operationStatus: "idle",
+    operationStatus: "canceling",
     stagedBranches: latest.stagedBranches.map((branch) =>
       branch.branchRevision === branchRevision ? canceled : branch),
   });
@@ -78,13 +80,18 @@ async function finalizeCancellation(
     );
     await dependencies.addReceipt(
       "cancel_foundation_probe",
-      { branchRevision, ...identity },
+      { branchRevision, parentRevision: operation.input.parentRevision, ...identity },
       branchRevision,
       { status: "canceled", reason: canceledResult.message },
       cancelStartedAt,
     );
   } finally {
-    if (dependencies.operationRef.current === operation) dependencies.operationRef.current = null;
+    operation.detachExternalAbort?.();
+    if (dependencies.operationRef.current === operation) {
+      dependencies.operationRef.current = null;
+      const current = dependencies.stateRef.current;
+      dependencies.commit({ ...current, operationStatus: "idle" });
+    }
   }
   return dependencies.stateRef.current.stagedBranches.find((branch) =>
     branch.branchRevision === branchRevision) ?? canceled;

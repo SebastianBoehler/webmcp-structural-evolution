@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
+import { testFoundationContext } from "../test/foundation-context";
 import {
   compareFoundationProbes,
   inspectDesignContext,
@@ -22,6 +23,7 @@ function services(overrides: Partial<FoundationServices> = {}): FoundationServic
   return {
     inspectContext: vi.fn(async () => ({
       contextRevision: revisionA,
+      context: testFoundationContext(),
       selection: { id: "motor-arm", label: "Motor arm" },
       locks: ["body-mount"],
       acceptedBranchRevision: revisionA,
@@ -112,7 +114,7 @@ test("run validates bounded intent and delegates only the deterministic variant"
   const response = await runFoundationProbe(input, shared);
   const facts = responseJson(response);
 
-  expect(runProbe).toHaveBeenCalledWith(input);
+  expect(runProbe).toHaveBeenCalledWith(input, undefined);
   expect(facts).toMatchObject({
     parentRevision: revisionA,
     proposalRevision: revisionB,

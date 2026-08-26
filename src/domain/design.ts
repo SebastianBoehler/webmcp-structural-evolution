@@ -18,6 +18,10 @@ export const LengthSchema = z.discriminatedUnion("unit", [
   unitValue("mm"),
   unitValue("m"),
 ]);
+export const PositiveLengthSchema = z.discriminatedUnion("unit", [
+  unitValue("mm", positive),
+  unitValue("m", positive),
+]);
 export const MassSchema = z.discriminatedUnion("unit", [
   unitValue("g", positive),
   unitValue("kg", positive),
@@ -32,6 +36,9 @@ export const DensitySchema = unitValue("g/cm^3", positive);
 
 const LengthVectorSchema = z
   .object({ x: LengthSchema, y: LengthSchema, z: LengthSchema })
+  .strict();
+const PositiveLengthVectorSchema = z
+  .object({ x: PositiveLengthSchema, y: PositiveLengthSchema, z: PositiveLengthSchema })
   .strict();
 const ForceVectorSchema = z
   .object({ x: ForceSchema, y: ForceSchema, z: ForceSchema })
@@ -49,7 +56,7 @@ export const VolumeSchema = z.discriminatedUnion("kind", [
       kind: z.literal("box"),
       id: z.string().min(1),
       center: LengthVectorSchema,
-      size: LengthVectorSchema,
+      size: PositiveLengthVectorSchema,
     })
     .strict(),
   z
@@ -57,8 +64,8 @@ export const VolumeSchema = z.discriminatedUnion("kind", [
       kind: z.literal("cylinder"),
       id: z.string().min(1),
       center: LengthVectorSchema,
-      radius: LengthSchema,
-      height: LengthSchema,
+      radius: PositiveLengthSchema,
+      height: PositiveLengthSchema,
       orientation: OrientationSchema,
     })
     .strict(),
@@ -69,7 +76,7 @@ export const MountInterfaceSchema = z
     id: z.string().min(1),
     position: LengthVectorSchema,
     orientation: OrientationSchema,
-    diameter: LengthSchema,
+    diameter: PositiveLengthSchema,
     fastenerType: z.string().min(1),
   })
   .strict();

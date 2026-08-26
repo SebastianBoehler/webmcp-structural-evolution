@@ -1,4 +1,4 @@
-import type { JsonValue } from "../domain/canonical-json";
+import { canonicalJson, type JsonValue } from "../domain/canonical-json";
 import type { ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
 import type { FoundationProjectState } from "../webmcp/schemas";
@@ -37,12 +37,8 @@ export function createExperimentRail({
       let contextRevision: string;
       while (true) {
         const base = stateRef.current;
-        if (
-          base.selection.id === input.selection.id &&
-          base.selection.label === input.selection.label &&
-          base.locks.length === locks.length &&
-          base.locks.every((lock, index) => lock === locks[index])
-        ) {
+        const context = { ...base.context, selection: input.selection, locks };
+        if (canonicalJson(base.context as unknown as JsonValue) === canonicalJson(context as unknown as JsonValue)) {
           await addReceipt("human_intervention", normalizedInput as unknown as JsonValue, base.contextRevision, {
             status: "succeeded", result: { contextRevision: base.contextRevision, unchanged: true },
           }, startedAt);
@@ -50,8 +46,7 @@ export function createExperimentRail({
         }
         contextRevision = await revisionId({
           acceptedBranchRevision: base.acceptedBranchRevision,
-          selection: input.selection,
-          locks,
+          context,
         });
         const latest = stateRef.current;
         if (generation !== generationRef.current) {
@@ -65,6 +60,7 @@ export function createExperimentRail({
         commit({
           ...latest,
           contextRevision,
+          context,
           selection: { ...input.selection },
           locks,
           stagedBranches: latest.stagedBranches.map((branch) => ({ ...branch, stale: true })),
@@ -89,8 +85,7 @@ export function createExperimentRail({
       const expectedContextRevision = current.contextRevision;
       const contextRevision = await revisionId({
         acceptedBranchRevision: branchRevision,
-        selection: current.selection,
-        locks: current.locks,
+        context: current.context,
       });
       const latest = stateRef.current;
       const latestBranch = latest.stagedBranches.find((item) => item.branchRevision === branchRevision);

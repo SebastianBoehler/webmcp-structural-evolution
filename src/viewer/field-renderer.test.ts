@@ -11,7 +11,7 @@ import {
   region,
   renderedMeshes,
 } from "./field-viewer-test-support";
-import type { InstanceRecord, VoxelGrid } from "./field-instances";
+import type { VoxelGrid } from "./field-instances";
 
 function model() {
   if (current.result.status !== "verified") throw new Error("fixture must be verified");
@@ -196,7 +196,7 @@ describe("mountFieldRenderer", () => {
         ...current.grid,
         cellSize: [1e100, 1, 1] as const,
       },
-      currentInstances: [],
+      currentInstances: new Uint32Array(),
       alternativeLayers: [],
     };
     const oversizedPeel = {
@@ -239,27 +239,22 @@ describe("mountFieldRenderer", () => {
       [3.4028e38, 0, 0],
     ],
   ])("rejects a %s outside the assembly world envelope before allocation", (_name, grid, position) => {
-    const record: InstanceRecord = {
-      index: 0,
-      x: 0,
-      y: 0,
-      z: 0,
-      localPosition: position as unknown as InstanceRecord["localPosition"],
-      density: 1,
-    };
     const test = harness();
 
     expect(() =>
       mountFieldRenderer(
         document.createElement("canvas"),
         {
-          grid: grid as unknown as VoxelGrid,
-          currentInstances: [record],
+          grid: {
+            ...grid,
+            anchor: { ...grid.anchor, position },
+          } as unknown as VoxelGrid,
+          currentInstances: new Uint32Array([0]),
           alternativeLayers: [],
         },
         test.environment,
       ),
-    ).toThrow(/world envelope/i);
+    ).toThrow(/world envelope|finite f32/i);
     expect(test.environment.createRenderer).not.toHaveBeenCalled();
   });
 

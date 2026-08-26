@@ -2,7 +2,7 @@ import type { AlternativeLayer } from "./alternative-instances";
 import {
   assertFiniteF32,
   fieldInstanceCount,
-  type InstanceRecord,
+  type PackedInstances,
   type QuaternionTuple,
   type Vector3Tuple,
   type VoxelGrid,
@@ -16,7 +16,7 @@ const ZERO_OFFSET = [0, 0, 0] as const;
 
 export interface ViewerRenderModel {
   readonly grid: VoxelGrid;
-  readonly currentInstances: readonly InstanceRecord[];
+  readonly currentInstances: PackedInstances;
   readonly alternativeLayers: readonly AlternativeLayer[];
 }
 
@@ -107,80 +107,58 @@ function translation(grid: VoxelGrid, offset: readonly number[], label: string):
 }
 
 function includeInstances(
-  records: readonly InstanceRecord[],
+  indices: PackedInstances,
   grid: VoxelGrid,
   offset: readonly number[],
   bounds: Bounds,
   label: string,
 ): void {
+  if (indices.length === 0) return;
   const matrix = rotationMatrix(grid.anchor.orientation);
+  const gridVolume = fieldInstanceCount(grid);
   const meshTranslation = translation(grid, offset, label);
   const half = grid.cellSize.map((size, axis) => bounded(
     f32Multiply(size / 2, INSTANCE_SCALE, `${label} half extent[${axis}]`),
     `${label} half extent[${axis}]`,
   ));
-  records.forEach((record, recordIndex) => {
-    if (!Array.isArray(record.localPosition) || record.localPosition.length !== 3) {
-      throw new RangeError(`${label} instance[${recordIndex}] local position must contain exactly 3 values`);
+  const localMin = new Float64Array([Infinity, Infinity, Infinity]);
+  const localMax = new Float64Array([-Infinity, -Infinity, -Infinity]);
+  indices.forEach((fieldIndex, recordIndex) => {
+    if (fieldIndex >= gridVolume) {
+      throw new RangeError(`${label} instance[${recordIndex}] index exceeds the grid`);
     }
-    const maxLocal = record.localPosition.map((value, axis) => {
-      const center = bounded(value, `${label} instance[${recordIndex}] local position[${axis}]`);
-      const low = bounded(
-        f32Add(center, -half[axis]!, `${label} local corner low[${axis}]`),
-        `${label} local corner low[${axis}]`,
-      );
-      const high = bounded(
-        f32Add(center, half[axis]!, `${label} local corner high[${axis}]`),
-        `${label} local corner high[${axis}]`,
-      );
-      return Math.max(Math.abs(low), Math.abs(high));
-    });
-    for (let worldAxis = 0; worldAxis < 3; worldAxis += 1) {
-      let cornerReach = Math.abs(meshTranslation[worldAxis]!);
-      let center = meshTranslation[worldAxis]!;
-      let radius = 0;
-      for (let localAxis = 0; localAxis < 3; localAxis += 1) {
-        const coefficient = matrix[worldAxis * 3 + localAxis]!;
-        const term = Math.abs(f32Multiply(
-          coefficient,
-          maxLocal[localAxis]!,
-          `${label} corner term`,
-        ));
-        cornerReach = bounded(
-          f32Add(cornerReach, term, `${label} corner reach`),
-          `${label} corner reach`,
-        );
-        center = bounded(f32Add(
-          center,
-          f32Multiply(
-            coefficient,
-            record.localPosition[localAxis]!,
-            `${label} center term`,
-          ),
-          `${label} world center`,
-        ), `${label} world center`);
-        radius = bounded(f32Add(
-          radius,
-          Math.abs(f32Multiply(
-            coefficient,
-            half[localAxis]!,
-            `${label} radius term`,
-          )),
-          `${label} world radius`,
-        ), `${label} world radius`);
-      }
-      const minimum = bounded(
-        f32Add(center, -radius, `${label} world minimum`),
-        `${label} world minimum`,
-      );
-      const maximum = bounded(
-        f32Add(center, radius, `${label} world maximum`),
-        `${label} world maximum`,
-      );
-      bounds.min[worldAxis] = Math.min(bounds.min[worldAxis], minimum);
-      bounds.max[worldAxis] = Math.max(bounds.max[worldAxis], maximum);
-    }
+    const { width, height } = grid.dimensions;
+    const x = bounded((fieldIndex % width + 0.5) * grid.cellSize[0], `${label} instance[${recordIndex}] x`);
+    const y = bounded((Math.floor(fieldIndex / width) % height + 0.5) * grid.cellSize[1], `${label} instance[${recordIndex}] y`);
+    const z = bounded((Math.floor(fieldIndex / (width * height)) + 0.5) * grid.cellSize[2], `${label} instance[${recordIndex}] z`);
+    localMin[0] = Math.min(localMin[0]!, x);
+    localMin[1] = Math.min(localMin[1]!, y);
+    localMin[2] = Math.min(localMin[2]!, z);
+    localMax[0] = Math.max(localMax[0]!, x);
+    localMax[1] = Math.max(localMax[1]!, y);
+    localMax[2] = Math.max(localMax[2]!, z);
   });
+  for (let worldAxis = 0; worldAxis < 3; worldAxis += 1) {
+    let minimum = meshTranslation[worldAxis]!;
+    let maximum = meshTranslation[worldAxis]!;
+    let radius = 0;
+    for (let localAxis = 0; localAxis < 3; localAxis += 1) {
+      const coefficient = matrix[worldAxis * 3 + localAxis]!;
+      const first = f32Multiply(coefficient, localMin[localAxis]!, `${label} bound term`);
+      const second = f32Multiply(coefficient, localMax[localAxis]!, `${label} bound term`);
+      minimum = f32Add(minimum, Math.min(first, second), `${label} world minimum`);
+      maximum = f32Add(maximum, Math.max(first, second), `${label} world maximum`);
+      radius = f32Add(
+        radius,
+        Math.abs(f32Multiply(coefficient, half[localAxis]!, `${label} radius term`)),
+        `${label} world radius`,
+      );
+    }
+    minimum = bounded(f32Add(minimum, -radius, `${label} world minimum`), `${label} world minimum`);
+    maximum = bounded(f32Add(maximum, radius, `${label} world maximum`), `${label} world maximum`);
+    bounds.min[worldAxis] = Math.min(bounds.min[worldAxis], minimum);
+    bounds.max[worldAxis] = Math.max(bounds.max[worldAxis], maximum);
+  }
 }
 
 function cameraFor(grid: VoxelGrid, bounds: Bounds): CameraEnvelope {
@@ -216,7 +194,9 @@ export function prepareRenderModel(model: ViewerRenderModel): PreparedRenderMode
     const prefix = `alternative[${index}]`;
     includeInstances(layer.added, layerGrid, layer.displayOffset, bounds, `${prefix} added`);
     includeInstances(layer.removed, layerGrid, layer.displayOffset, bounds, `${prefix} removed`);
-    includeInstances(layer.auditionInstances, layerGrid, ZERO_OFFSET, bounds, `${prefix} audition`);
+    if (layer.auditionInstances) {
+      includeInstances(layer.auditionInstances, layerGrid, ZERO_OFFSET, bounds, `${prefix} audition`);
+    }
     return Object.freeze({ ...layer, grid: layerGrid });
   });
   return Object.freeze({

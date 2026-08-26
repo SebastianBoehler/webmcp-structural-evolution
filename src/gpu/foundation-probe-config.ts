@@ -1,0 +1,6 @@
+export const FOUNDATION_PROBE_WIDTH = 32;
+export const FOUNDATION_PROBE_DIMENSIONS = Object.freeze({
+  width: FOUNDATION_PROBE_WIDTH,
+  height: FOUNDATION_PROBE_WIDTH,
+  depth: FOUNDATION_PROBE_WIDTH,
+});

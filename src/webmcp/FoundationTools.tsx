@@ -1,8 +1,10 @@
-import { useWebMCP } from "use-webmcp-tool";
+import { useMemo } from "react";
 
 import type { FoundationServices } from "./executors";
 import { foundationToolDefinitions } from "./register-tools";
 import type { FoundationProjectState } from "./schemas";
+import { hasComparableBranches } from "./comparability";
+import { useFoundationTools } from "./use-foundation-tools";
 
 export interface FoundationToolsProps {
   readonly services: FoundationServices;
@@ -10,14 +12,12 @@ export interface FoundationToolsProps {
 }
 
 export function FoundationTools({ services, state }: FoundationToolsProps) {
-  const [inspect, run, compare] = foundationToolDefinitions(services, state);
-  const inspectState = useWebMCP(inspect);
-  const runState = useWebMCP(run);
-  const compareState = useWebMCP(compare);
-  const toolStates = [inspectState, runState, compareState];
-  const supported = toolStates.some((tool) => tool.supported);
-  const registered = toolStates.filter((tool) => tool.registered).length;
-  const errors = toolStates.flatMap((tool) => tool.error ? [tool.error.message] : []);
+  const eligibility = `${state.capability.status}:${state.operationStatus}:${hasComparableBranches(state.stagedBranches)}`;
+  const definitions = useMemo(
+    () => foundationToolDefinitions(services, state),
+    [services, eligibility],
+  );
+  const { supported, registered, errors } = useFoundationTools(definitions);
 
   return (
     <section aria-labelledby="webmcp-foundation-status">

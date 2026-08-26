@@ -1,17 +1,35 @@
 import { z } from "zod";
 
 import type { ActionReceipt } from "../domain/receipts";
+import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import { RevisionSchema, type DeepReadonly } from "../domain/snapshots";
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ProbeResult } from "../gpu/compute-probe";
 
-const unsafeIntent = /https?:\/\/|<|>|(?:^|\s)\/[\w.-]|[A-Za-z]:\\|```|=>|\bfunction\s*\(/i;
+const caseInsensitiveWord = (word: string) => [...word]
+  .map((character) => `[${character.toLowerCase()}${character.toUpperCase()}]`)
+  .join("");
+const wordPattern = (words: readonly string[]) =>
+  `\\b(?:${words.map(caseInsensitiveWord).join("|")})\\b`;
+const unsafeIntentPattern = `${caseInsensitiveWord("http")}${caseInsensitiveWord("s")}?:\\/\\/|<|>|(?:^|\\s)\\/[\\w.-]|[A-Za-z]:\\\\|\`\`\`|=>|${wordPattern(["function"])}\\s*\\(`;
+export const unsafeIntent = new RegExp(unsafeIntentPattern);
 const boundedText = z.string().trim().min(1).max(120).refine(
   (value) => !unsafeIntent.test(value),
   "Intent text cannot contain HTML, URLs, file paths, or code",
 );
-const structuralClaim = /\b(mass|weight|light(?:er)?|heavy|stiffness|rigid|flexible|compliance|stress|displacement|strength|load|force)\b/i;
-const foundationPrediction = /\b(verif(?:y|ied|ication)|tim(?:e|ing)|budget|field|value|distribution|l2|mismatch|pass|fail)\b/i;
+const structuralClaimPattern = wordPattern([
+  "mass", "weight", "light", "lighter", "heavy", "stiffness", "rigid", "flexible",
+  "compliance", "stress", "displacement", "strength", "load", "force",
+]);
+const foundationPredictionPattern = wordPattern([
+  "verify", "verified", "verification", "time", "timing", "budget", "field", "value",
+  "distribution", "l2", "mismatch", "pass", "fail",
+]);
+export const structuralClaim = new RegExp(structuralClaimPattern);
+export const foundationPrediction = new RegExp(foundationPredictionPattern);
+
+const boundedIntentPattern = `^(?!.*(?:${unsafeIntentPattern})).+$`;
+const foundationOnlyPattern = `(?=.*(?:${foundationPredictionPattern}))(?!.*(?:${structuralClaimPattern})).+`;
 
 export const InspectContextInputSchema = z.object({
   scope: z.literal("current"),
@@ -68,12 +86,13 @@ export interface SemanticSelection {
 
 export interface FoundationProjectState {
   readonly contextRevision: string;
+  readonly context: FoundationContextSnapshot;
   readonly selection: SemanticSelection;
   readonly locks: readonly string[];
   readonly acceptedBranchRevision: string;
   readonly stagedBranches: readonly FoundationBranch[];
   readonly capability: GpuCapability;
-  readonly operationStatus: "idle" | "running";
+  readonly operationStatus: "idle" | "running" | "canceling";
   readonly receipts: readonly ActionReceipt[];
 }
 
@@ -81,8 +100,7 @@ export type FrozenFoundationProjectState = DeepReadonly<FoundationProjectState>;
 
 export interface InspectContextFacts {
   readonly contextRevision: string;
-  readonly selection: SemanticSelection;
-  readonly locks: readonly string[];
+  readonly context: FoundationContextSnapshot;
   readonly acceptedBranchRevision: string;
   readonly stagedBranches: readonly Pick<FoundationBranch,
     "parentRevision" | "proposalRevision" | "branchRevision" | "attempt" | "hypothesis" | "prediction" | "status" | "stale" | "measurement"
@@ -122,8 +140,8 @@ export const runInputJsonSchema = {
   properties: {
     parentRevision: { type: "string", pattern: "^[0-9a-f]{64}$", description: "Exact current context revision." },
     variant: { type: "string", enum: ["baseline", "edge-biased", "center-biased"], description: "Bounded deterministic input field." },
-    hypothesis: { type: "string", minLength: 1, maxLength: 120, pattern: "^(?!.*(?:https?://|<|>|```|=>|/[^ ]+)).+$", description: "Short reason for this probe branch." },
-    prediction: { type: "string", minLength: 1, maxLength: 120, pattern: "^(?!.*(?:https?://|<|>|```|=>|/[^ ]+)).+$", description: "Expected verification, timing, or field behavior." },
+    hypothesis: { type: "string", minLength: 1, maxLength: 120, pattern: boundedIntentPattern, description: "Short reason for this probe branch." },
+    prediction: { type: "string", minLength: 1, maxLength: 120, allOf: [{ pattern: boundedIntentPattern }, { pattern: foundationOnlyPattern }], description: "Expected verification, timing, or field behavior." },
   },
   required: ["parentRevision", "variant", "hypothesis", "prediction"],
   additionalProperties: false,

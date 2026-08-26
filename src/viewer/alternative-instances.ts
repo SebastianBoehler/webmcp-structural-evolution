@@ -1,10 +1,9 @@
 import type { ProbeResult } from "../gpu/compute-probe";
 import {
   assertFiniteF32,
-  instanceAt,
   validateField,
   visibleInstances,
-  type InstanceRecord,
+  type PackedInstances,
   type Vector3Tuple,
   type VoxelGrid,
 } from "./field-instances";
@@ -21,6 +20,7 @@ export interface SelectedSemanticRegion {
 
 export interface ViewerBranch {
   readonly branchRevision: string;
+  readonly contextRevision: string;
   readonly parentRevision: string;
   readonly grid: VoxelGrid;
   readonly result: ProbeResult;
@@ -28,16 +28,18 @@ export interface ViewerBranch {
 
 export interface AlternativeLayer {
   readonly branchRevision: string;
+  readonly contextRevision: string;
   readonly parentRevision: string;
   readonly grid: VoxelGrid;
-  readonly added: readonly InstanceRecord[];
-  readonly removed: readonly InstanceRecord[];
-  readonly auditionInstances: readonly InstanceRecord[];
+  readonly added: PackedInstances;
+  readonly removed: PackedInstances;
+  readonly auditionInstances?: PackedInstances;
   readonly displayOffset: Vector3Tuple;
 }
 
 export interface AlternativeComparison {
   readonly branchRevision: string;
+  readonly contextRevision: string;
   readonly parentRevision: string;
   readonly sourceIndex: number;
   readonly status: "renderable" | "unverified" | "incompatible" | "invalid" | "limited";
@@ -104,6 +106,7 @@ function comparison(
   return Object.freeze({
     sourceIndex,
     branchRevision: branch.branchRevision,
+    contextRevision: branch.contextRevision,
     parentRevision: branch.parentRevision,
     status,
     reason,
@@ -118,12 +121,13 @@ export function extractAlternativeLayers(
   region: SelectedSemanticRegion,
   threshold: number,
   mode: AlternativeMode,
+  selectedAlternative?: string,
 ): AlternativeExtraction {
   if (current.result.status !== "verified") {
     throw new Error("current branch must contain verified probe output");
   }
-  if (!current.branchRevision.trim() || !current.parentRevision.trim()) {
-    throw new Error("current branch and parent revisions must be exact non-empty IDs");
+  if (!current.branchRevision.trim() || !current.contextRevision.trim() || !current.parentRevision.trim()) {
+    throw new Error("current branch, context, and parent revisions must be exact non-empty IDs");
   }
   validateField(current.result.output, current.grid);
   validateRegion(region, current.grid);
@@ -157,7 +161,7 @@ export function extractAlternativeLayers(
       );
       continue;
     }
-    if (branch.parentRevision !== current.branchRevision || !gridsEqual(branch.grid, current.grid)) {
+    if (branch.parentRevision !== current.contextRevision || !gridsEqual(branch.grid, current.grid)) {
       comparisons.push(comparison(branch, sourceIndex, "incompatible", "incompatible grid, anchor, or parent: not rendered"));
       continue;
     }
@@ -168,8 +172,11 @@ export function extractAlternativeLayers(
       continue;
     }
     const withinLayerBudget = layers.length < MAX_VISIBLE_ALTERNATIVES;
-    const added: InstanceRecord[] = [];
-    const removed: InstanceRecord[] = [];
+    const regionVolume = (region.maxExclusive[0] - region.min[0])
+      * (region.maxExclusive[1] - region.min[1])
+      * (region.maxExclusive[2] - region.min[2]);
+    const added = withinLayerBudget ? new Uint32Array(regionVolume) : undefined;
+    const removed = withinLayerBudget ? new Uint32Array(regionVolume) : undefined;
     let addedCount = 0;
     let removedCount = 0;
     const { width, height } = current.grid.dimensions;
@@ -181,11 +188,11 @@ export function extractAlternativeLayers(
           const isVisible = branch.result.output[index]! >= threshold;
           if (!wasVisible && isVisible) {
             addedCount += 1;
-            if (withinLayerBudget) added.push(instanceAt(branch.result.output, current.grid, index));
+            if (added) added[addedCount - 1] = index;
           }
           if (wasVisible && !isVisible) {
             removedCount += 1;
-            if (withinLayerBudget) removed.push(instanceAt(current.result.output, current.grid, index));
+            if (removed) removed[removedCount - 1] = index;
           }
         }
       }
@@ -199,11 +206,14 @@ export function extractAlternativeLayers(
     }
     const layer: AlternativeLayer = Object.freeze({
       branchRevision: branch.branchRevision,
+      contextRevision: branch.contextRevision,
       parentRevision: branch.parentRevision,
       grid: current.grid,
-      added: Object.freeze(added),
-      removed: Object.freeze(removed),
-      auditionInstances: visibleInstances(branch.result.output, current.grid, threshold),
+      added: added!.slice(0, addedCount),
+      removed: removed!.slice(0, removedCount),
+      auditionInstances: mode === "audition" && selectedAlternative === branch.branchRevision
+        ? visibleInstances(branch.result.output, current.grid, threshold)
+        : undefined,
       displayOffset: mode === "peel" ? peelOffset(layers.length, current.grid) : ([0, 0, 0] as const),
     });
     layers.push(layer);

@@ -3,12 +3,14 @@ import { expect, test } from "vitest";
 
 import type { FoundationProjectState } from "../webmcp/schemas";
 import { EvidencePanel } from "./EvidencePanel";
+import { testFoundationContext } from "../test/foundation-context";
 
 const revision = (value: string) => value.repeat(64);
 
 test("shows a newest mismatch before separately labelled historical verification", () => {
   const state: FoundationProjectState = {
     contextRevision: revision("a"),
+    context: testFoundationContext({ id: "arm", label: "Arm" }, ["body"]),
     acceptedBranchRevision: revision("a"),
     selection: { id: "arm", label: "Arm" },
     locks: ["body"],

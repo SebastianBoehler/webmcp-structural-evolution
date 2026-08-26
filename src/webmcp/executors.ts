@@ -1,4 +1,3 @@
-import type { WebMCPToolResponse } from "use-webmcp-tool";
 import { ZodError } from "zod";
 
 import {
@@ -13,10 +12,11 @@ import {
   type RunFoundationProbeInput,
 } from "./schemas";
 import { serializeToolFacts, TOOL_OUTPUT_LIMIT } from "./tool-output";
+import type { WebMCPToolResponse } from "./protocol";
 
 export interface FoundationServices {
   inspectContext(input: InspectContextInput): Promise<InspectContextFacts>;
-  runProbe(input: RunFoundationProbeInput): Promise<FoundationBranch>;
+  runProbe(input: RunFoundationProbeInput, signal?: AbortSignal): Promise<FoundationBranch>;
   cancelProbe(): Promise<FoundationBranch>;
   compareProbes(input: CompareFoundationProbesInput): Promise<ProbeComparisonFacts>;
   canCompare(): boolean;
@@ -77,6 +77,7 @@ export async function inspectDesignContext(
 export async function runFoundationProbe(
   input: unknown,
   services: FoundationServices,
+  signal?: AbortSignal,
 ): Promise<WebMCPToolResponse> {
   let parsed: RunFoundationProbeInput;
   try {
@@ -85,7 +86,7 @@ export async function runFoundationProbe(
     return rejected("run_foundation_probe", input, error, services);
   }
   try {
-    const branch = await services.runProbe(parsed);
+    const branch = await services.runProbe(parsed, signal);
     const facts = {
       parentRevision: branch.parentRevision,
       proposalRevision: branch.proposalRevision,

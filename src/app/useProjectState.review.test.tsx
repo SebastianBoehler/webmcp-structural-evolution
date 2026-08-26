@@ -3,9 +3,11 @@ import { expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
 import { inspectDesignContext } from "../webmcp/executors";
+import { testFoundationContext } from "../test/foundation-context";
 import { useProjectState, type ProjectStateOptions } from "./useProjectState";
 
 const revisionA = "a".repeat(64);
+const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
 const verified = (value: number): ProbeResult => ({
   status: "verified",
   output: new Float32Array(32 ** 3).fill(value),
@@ -25,6 +27,7 @@ function availableOptions(
 ): ProjectStateOptions {
   return {
     contextRevision: revisionA,
+    context: testFoundationContext(),
     acceptedBranchRevision: revisionA,
     selection: { id: "motor-arm", label: "Motor arm" },
     locks: ["body-mount"],
@@ -158,7 +161,7 @@ test("normalizes lock ids and makes a repeated equivalent intervention a no-op",
   const { result } = renderHook(() => useProjectState(availableOptions()));
   await act(async () => { await result.current.services.runProbe(runInput("baseline", "baseline")); });
   const intervention = {
-    selection: { id: "cable-path", label: "Cable path" },
+    selection: selection("cable-path", "Cable path"),
     locks: ["cable-clearance", "body-mount", "cable-clearance"],
   };
 
@@ -199,7 +202,7 @@ test("post-intervention inspection stays within the tool output budget", async (
       prediction: "Verification should pass within the timing budget",
     });
     await result.current.experimentRail.intervene({
-      selection: { id: "cable-clearance", label: "Cable clearance corridor" },
+      selection: selection("cable-clearance", "Cable clearance corridor"),
       locks: ["body-fixed-region", "cable-clearance"],
     });
   });
@@ -210,6 +213,6 @@ test("post-intervention inspection stays within the tool output budget", async (
   if (!text) throw new Error("Expected inspection text");
   expect(text.length).toBeLessThanOrEqual(1500);
   expect(JSON.parse(text)).toMatchObject({
-    stale: true, stagedBranchCount: 2, omittedBranchCount: 1, stagedBranches: [{}],
+    stale: true, stagedBranchCount: 2, omittedBranchCount: 2, stagedBranches: [],
   });
 });

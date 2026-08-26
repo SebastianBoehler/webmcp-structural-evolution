@@ -17,9 +17,6 @@ importers:
       three:
         specifier: 0.185.1
         version: 0.185.1
-      use-webmcp-tool:
-        specifier: 0.2.0
-        version: 0.2.0(react@19.2.8)
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -766,11 +763,6 @@ packages:
     resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
     engines: {node: '>=22.19.0'}
 
-  use-webmcp-tool@0.2.0:
-    resolution: {integrity: sha512-kYUpV1xFmX3Wnq68KOM1MbedpRc6mbgWEcVFtWpFPBTGEcuc7Sva4bHjRxM3k8mkGshkwxnLKn9/I4/NP2bTBw==}
-    peerDependencies:
-      react: '>=18'
-
   vite@8.2.2:
     resolution: {integrity: sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1454,10 +1446,6 @@ snapshots:
   undici-types@8.3.0: {}
 
   undici@8.10.0: {}
-
-  use-webmcp-tool@0.2.0(react@19.2.8):
-    dependencies:
-      react: 19.2.8
 
   vite@8.2.2(@types/node@26.3.0):
     dependencies:

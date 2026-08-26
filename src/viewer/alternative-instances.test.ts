@@ -37,6 +37,7 @@ function branch(
 ): ViewerBranch {
   return {
     branchRevision,
+    contextRevision: "accepted-revision",
     parentRevision: "accepted-revision",
     grid,
     result: verified(values),
@@ -57,8 +58,9 @@ describe("extractAlternativeLayers", () => {
     const extraction = extractAlternativeLayers(current, [alternative], region, 0.5, "overlay");
 
     expect(extraction.layers).toHaveLength(1);
-    expect(extraction.layers[0]?.added.map((record) => record.index)).toEqual([2, 5]);
-    expect(extraction.layers[0]?.removed.map((record) => record.index)).toEqual([1, 4]);
+    expect(extraction.layers[0]?.added).toBeInstanceOf(Uint32Array);
+    expect(Array.from(extraction.layers[0]!.added)).toEqual([2, 5]);
+    expect(Array.from(extraction.layers[0]!.removed)).toEqual([1, 4]);
     expect(extraction.layers[0]?.displayOffset).toEqual([0, 0, 0]);
     expect(extraction.comparisons[0]).toMatchObject({
       branchRevision: "branch-a",
@@ -68,6 +70,63 @@ describe("extractAlternativeLayers", () => {
       removedCount: 2,
     });
     expect(Array.from(source)).toEqual(sourceBefore);
+    expect(extraction.layers[0]?.auditionInstances).toBeUndefined();
+  });
+
+  it("materializes only the selected audition field", () => {
+    const alternatives = [
+      branch("a", [1, 1, 0, 0, 1, 1]),
+      branch("b", [0, 1, 1, 0, 0, 1]),
+    ];
+
+    const extraction = extractAlternativeLayers(
+      current, alternatives, region, 0.5, "audition", "b",
+    );
+
+    expect(extraction.layers[0]?.auditionInstances).toBeUndefined();
+    expect(extraction.layers[1]?.auditionInstances).toBeInstanceOf(Uint32Array);
+    expect(Array.from(extraction.layers[1]!.auditionInstances!)).toEqual([1, 2, 5]);
+  });
+
+  it("extracts a packed 64-cubed comparison within the 250 ms main-thread budget", () => {
+    const dimension = 64;
+    const count = dimension ** 3;
+    const largeGrid: VoxelGrid = {
+      dimensions: { width: dimension, height: dimension, depth: dimension },
+      cellSize: [1, 1, 1],
+      anchor: { position: [0, 0, 0], orientation: [0, 0, 0, 1] },
+    };
+    const accepted = new Float32Array(count);
+    const candidate = new Float32Array(count);
+    accepted.fill(1);
+    candidate.fill(1);
+    candidate[count - 1] = 0;
+    const start = performance.now();
+    const extraction = extractAlternativeLayers(
+      branch("large-current", [], {
+        contextRevision: "large-context",
+        parentRevision: "large-parent",
+        grid: largeGrid,
+        result: verified(accepted),
+      }),
+      [branch("large-alternative", [], {
+        contextRevision: "large-context",
+        parentRevision: "large-context",
+        grid: largeGrid,
+        result: verified(candidate),
+      })],
+      { id: "all", label: "All", min: [0, 0, 0], maxExclusive: [64, 64, 64] },
+      0.5,
+      "overlay",
+    );
+    const duration = performance.now() - start;
+    if (process.env.REPORT_VIEWER_BENCHMARK === "1") {
+      process.stdout.write(`64^3 packed extraction: ${duration.toFixed(3)} ms\n`);
+    }
+
+    expect(extraction.layers[0]?.removed).toBeInstanceOf(Uint32Array);
+    expect(Array.from(extraction.layers[0]!.removed)).toEqual([count - 1]);
+    expect(duration).toBeLessThan(250);
   });
 
   it("caps renderable alternatives at three while reporting every alternative", () => {

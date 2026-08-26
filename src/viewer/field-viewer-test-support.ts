@@ -31,6 +31,7 @@ export function verified(values: ArrayLike<number>): ProbeResult {
 
 export const current: ViewerBranch = {
   branchRevision: "accepted",
+  contextRevision: "accepted-context",
   parentRevision: "root",
   grid,
   result: verified([1, 1, 0, 1]),
@@ -38,7 +39,8 @@ export const current: ViewerBranch = {
 
 export const alternative: ViewerBranch = {
   branchRevision: "lighter",
-  parentRevision: "accepted",
+  contextRevision: "accepted-context",
+  parentRevision: "accepted-context",
   grid,
   result: verified([1, 0, 1, 1]),
 };

@@ -1,5 +1,3 @@
-import type { WebMCPOptions } from "use-webmcp-tool";
-
 import {
   compareFoundationProbes,
   inspectDesignContext,
@@ -13,8 +11,9 @@ import {
   type FoundationProjectState,
 } from "./schemas";
 import { hasComparableBranches } from "./comparability";
+import type { ModelContextTool } from "./protocol";
 
-export type FoundationToolDefinition = WebMCPOptions<unknown, unknown> & {
+export type FoundationToolDefinition = ModelContextTool & {
   readonly annotations: {
     readonly readOnlyHint: boolean;
     readonly untrustedContentHint: true;
@@ -41,7 +40,7 @@ export function foundationToolDefinitions(
       description: "Stage and execute one bounded deterministic foundation compute probe from the exact current revision.",
       inputSchema: runInputJsonSchema,
       annotations: { readOnlyHint: false, untrustedContentHint },
-      execute: (input) => runFoundationProbe(input, services),
+      execute: (input, options) => runFoundationProbe(input, services, options?.signal),
       enabled: state.capability.status === "available" && state.operationStatus === "idle",
     },
     {

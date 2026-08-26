@@ -6,6 +6,8 @@ import {
   freezeSnapshot,
   type ComponentDefinition,
 } from "../domain/design";
+import type { ContextSelection } from "../domain/foundation-context";
+import { createFoundationContext } from "./foundation-context";
 
 const mm = (value: number) => ({ value, unit: "mm" as const });
 const deg = (value: number) => ({ value, unit: "deg" as const });
@@ -260,4 +262,18 @@ export const DRONE_ARM_FOUNDATION_STUDY = freezeSnapshot({
   inventory,
   assembly,
   study,
+});
+
+const foundationSelections: Readonly<Record<string, ContextSelection>> = {
+  "motor-side-arm-span": {
+    id: "motor-side-arm-span", label: "Motor-side arm span", min: [16, 4, 0], maxExclusive: [32, 28, 32],
+  },
+  "cable-clearance": {
+    id: "cable-clearance", label: "Cable clearance corridor", min: [12, 8, 4], maxExclusive: [26, 20, 26],
+  },
+};
+export const FOUNDATION_SELECTIONS = freezeSnapshot(foundationSelections);
+
+export const DRONE_ARM_FOUNDATION_CONTEXT = createFoundationContext({
+  assembly, inventory, study, selection: FOUNDATION_SELECTIONS["motor-side-arm-span"]!,
 });

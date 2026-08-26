@@ -20,14 +20,7 @@ export interface VoxelGrid {
   readonly anchor: AssemblySpaceAnchor;
 }
 
-export interface InstanceRecord {
-  readonly index: number;
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-  readonly localPosition: Vector3Tuple;
-  readonly density: number;
-}
+export type PackedInstances = Uint32Array;
 
 function exactTuple(values: readonly number[], length: number, name: string): void {
   if (!Array.isArray(values) || values.length !== length) {
@@ -103,33 +96,6 @@ export function fieldInstanceCount(grid: VoxelGrid): number {
   return count;
 }
 
-export function instanceAt(field: Float32Array, grid: VoxelGrid, index: number): InstanceRecord {
-  const { width, height } = grid.dimensions;
-  const x = index % width;
-  const y = Math.floor(index / width) % height;
-  const z = Math.floor(index / (width * height));
-  const localPosition: Vector3Tuple = [
-    (x + 0.5) * grid.cellSize[0],
-    (y + 0.5) * grid.cellSize[1],
-    (z + 0.5) * grid.cellSize[2],
-  ];
-  if (localPosition.some((value) => !Number.isFinite(value))) {
-    throw new RangeError(`field[${index}] produces a non-finite local position`);
-  }
-  localPosition.forEach((value, axis) => {
-    assertFiniteF32(value, `field[${index}] local position[${axis}]`);
-  });
-  const record: InstanceRecord = {
-    index,
-    x,
-    y,
-    z,
-    localPosition: Object.freeze(localPosition),
-    density: field[index]!,
-  };
-  return Object.freeze(record);
-}
-
 export function validateField(field: Float32Array, grid: VoxelGrid): number {
   const count = fieldInstanceCount(grid);
   if (!(field instanceof Float32Array)) {
@@ -150,16 +116,16 @@ export function visibleInstances(
   field: Float32Array,
   grid: VoxelGrid,
   threshold: number,
-): readonly InstanceRecord[] {
+): PackedInstances {
   if (!Number.isFinite(threshold)) {
     throw new RangeError("threshold must be finite");
   }
   const count = validateField(field, grid);
   const visibleCount = field.reduce((total, value) => total + Number(value >= threshold), 0);
-  const records = new Array<InstanceRecord>(visibleCount);
+  const indices = new Uint32Array(visibleCount);
   let cursor = 0;
   for (let index = 0; index < count; index += 1) {
-    if (field[index]! >= threshold) records[cursor++] = instanceAt(field, grid, index);
+    if (field[index]! >= threshold) indices[cursor++] = index;
   }
-  return Object.freeze(records);
+  return indices;
 }

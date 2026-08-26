@@ -29,16 +29,21 @@ function readonlyField(field: Float32Array): Float32Array {
 
 export function createInitialProjectState(options: {
   readonly contextRevision: string;
+  readonly context: FoundationProjectState["context"];
   readonly acceptedBranchRevision: string;
   readonly selection: SemanticSelection;
   readonly locks: readonly string[];
   readonly capability: FoundationProjectState["capability"];
 }): FoundationProjectState {
+  const locks = canonicalLockIds(options.context.locks);
+  const selection = { ...options.context.selection };
+  const context = { ...options.context, selection, locks };
   return freezeValue({
     contextRevision: options.contextRevision,
     acceptedBranchRevision: options.acceptedBranchRevision,
-    selection: { ...options.selection },
-    locks: canonicalLockIds(options.locks),
+    context,
+    selection,
+    locks,
     stagedBranches: [],
     capability: options.capability,
     operationStatus: "idle",

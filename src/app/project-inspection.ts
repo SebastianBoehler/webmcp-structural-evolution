@@ -22,8 +22,7 @@ function buildFacts(
 ): InspectContextFacts {
   return {
     contextRevision: state.contextRevision,
-    selection: state.selection,
-    locks: state.locks,
+    context: state.context,
     acceptedBranchRevision: state.acceptedBranchRevision,
     stagedBranches: selected.map((branch) => ({
       parentRevision: branch.parentRevision,

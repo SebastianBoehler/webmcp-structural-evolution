@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import type { AlternativeLayer } from "./alternative-instances";
 import type { CleanupLedger } from "./cleanup-ledger";
-import type { InstanceRecord, VoxelGrid } from "./field-instances";
+import type { PackedInstances, VoxelGrid } from "./field-instances";
 
 export interface FieldMeshSet {
   readonly meshes: readonly THREE.InstancedMesh[];
@@ -15,7 +15,8 @@ interface MeshOwnership extends Pick<CleanupLedger, "own"> {
 
 function addInstances(
   mesh: THREE.InstancedMesh,
-  records: readonly InstanceRecord[],
+  indices: PackedInstances,
+  grid: VoxelGrid,
   color?: THREE.Color,
   startIndex = 0,
 ): void {
@@ -23,8 +24,16 @@ function addInstances(
   const position = new THREE.Vector3();
   const orientation = new THREE.Quaternion();
   const scale = new THREE.Vector3(0.94, 0.94, 0.94);
-  records.forEach((record, offset) => {
-    position.fromArray(record.localPosition);
+  indices.forEach((fieldIndex, offset) => {
+    const { width, height } = grid.dimensions;
+    const x = fieldIndex % width;
+    const y = Math.floor(fieldIndex / width) % height;
+    const z = Math.floor(fieldIndex / (width * height));
+    position.set(
+      (x + 0.5) * grid.cellSize[0],
+      (y + 0.5) * grid.cellSize[1],
+      (z + 0.5) * grid.cellSize[2],
+    );
     matrix.compose(position, orientation, scale);
     const index = startIndex + offset;
     mesh.setMatrixAt(index, matrix);
@@ -63,7 +72,7 @@ function buildMesh(
 
 function currentMesh(
   grid: VoxelGrid,
-  records: readonly InstanceRecord[],
+  records: PackedInstances,
   ownership: MeshOwnership,
 ): THREE.InstancedMesh {
   return buildMesh(
@@ -74,7 +83,7 @@ function currentMesh(
       mesh.name = "verified-current-field";
       mesh.renderOrder = 1;
       anchorMesh(mesh, grid, [0, 0, 0]);
-      addInstances(mesh, records);
+      addInstances(mesh, records, grid);
     },
     ownership,
   );
@@ -96,8 +105,8 @@ function ghostMesh(layer: AlternativeLayer, ownership: MeshOwnership): THREE.Ins
       mesh.name = `verified-delta-${layer.branchRevision}`;
       mesh.renderOrder = 2;
       anchorMesh(mesh, layer.grid, layer.displayOffset);
-      addInstances(mesh, layer.added, new THREE.Color(0x55d6be));
-      addInstances(mesh, layer.removed, new THREE.Color(0xff8b6b), layer.added.length);
+      addInstances(mesh, layer.added, layer.grid, new THREE.Color(0x55d6be));
+      addInstances(mesh, layer.removed, layer.grid, new THREE.Color(0xff8b6b), layer.added.length);
     },
     ownership,
   );
@@ -105,7 +114,7 @@ function ghostMesh(layer: AlternativeLayer, ownership: MeshOwnership): THREE.Ins
 
 export function createFieldMeshes(
   grid: VoxelGrid,
-  currentInstances: readonly InstanceRecord[],
+  currentInstances: PackedInstances,
   layers: readonly AlternativeLayer[],
   ownership: MeshOwnership,
 ): FieldMeshSet {

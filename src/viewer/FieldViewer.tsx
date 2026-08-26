@@ -60,7 +60,9 @@ function prepareViewer(
     return { comparisons: [], omittedCount: 0, error: resultError(current) };
   }
   try {
-    const extraction = extractAlternativeLayers(current, alternatives, region, threshold, mode);
+    const extraction = extractAlternativeLayers(
+      current, alternatives, region, threshold, mode, selectedAlternative,
+    );
     let currentInstances = visibleInstances(current.result.output, current.grid, threshold);
     let notice: string | undefined;
     if (mode === "audition") {
@@ -68,7 +70,7 @@ function prepareViewer(
         (layer) => layer.branchRevision === selectedAlternative,
       );
       if (audition) {
-        currentInstances = audition.auditionInstances;
+        currentInstances = audition.auditionInstances!;
       } else {
         notice = "Select a verified compatible alternative to audition; the accepted field remains visible.";
       }
@@ -210,12 +212,12 @@ export function FieldViewer({
           <table>
             <caption>Verified branch comparison for {selectedRegion.label}</caption>
             <thead>
-              <tr><th>Branch</th><th>Parent</th><th>Delta</th><th>Status</th><th>Inspect</th></tr>
+              <tr><th>Branch</th><th>Context</th><th>Parent</th><th>Delta</th><th>Status</th><th>Inspect</th></tr>
             </thead>
             <tbody>
               {current && (
                 <tr>
-                  <td>{current.branchRevision}</td><td>{current.parentRevision}</td>
+                  <td>{current.branchRevision}</td><td>{current.contextRevision}</td><td>{current.parentRevision}</td>
                   <td>Accepted source</td><td>{current.result.status}</td><td>Current</td>
                 </tr>
               )}
@@ -224,6 +226,7 @@ export function FieldViewer({
                 return (
                   <tr key={comparison.sourceIndex} data-highlighted={highlightedBranch === comparison.branchRevision}>
                     <td>{branchLabel}</td>
+                    <td>{comparison.contextRevision}</td>
                     <td>{comparison.parentRevision}</td>
                     <td>{comparison.addedCount} added, {comparison.removedCount} removed</td>
                     <td>{statusText(comparison)}</td>

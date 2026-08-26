@@ -22,12 +22,8 @@ describe("visibleInstances", () => {
 
     const records = visibleInstances(field, grid, 0.5);
 
-    expect(records.map(({ index, density }) => [index, density])).toEqual([
-      [1, Math.fround(0.7)],
-      [2, 0.5],
-      [3, Math.fround(0.8)],
-      [6, Math.fround(0.9)],
-    ]);
+    expect(records).toBeInstanceOf(Uint32Array);
+    expect(Array.from(records)).toEqual([1, 2, 3, 6]);
     expect(Array.from(field)).toEqual(before);
   });
 
@@ -35,16 +31,7 @@ describe("visibleInstances", () => {
     const field = new Float32Array(8);
     field[6] = 1;
 
-    expect(visibleInstances(field, grid, 0.5)).toEqual([
-      {
-        index: 6,
-        x: 0,
-        y: 1,
-        z: 1,
-        localPosition: [1, 6, 9],
-        density: 1,
-      },
-    ]);
+    expect(Array.from(visibleInstances(field, grid, 0.5))).toEqual([6]);
   });
 
   it("rejects invalid dimensions, lengths, fields, and thresholds before extraction", () => {

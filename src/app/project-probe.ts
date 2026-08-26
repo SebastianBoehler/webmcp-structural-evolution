@@ -1,10 +1,11 @@
 import { revisionId } from "../domain/revisions";
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
+import { FOUNDATION_PROBE_DIMENSIONS, FOUNDATION_PROBE_WIDTH } from "../gpu/foundation-probe-config";
 import type { ProbeMeasurement, RunFoundationProbeInput } from "../webmcp/schemas";
 
 export function buildProbeInput(variant: RunFoundationProbeInput["variant"]): ProbeInput {
-  const width = 32;
+  const width = FOUNDATION_PROBE_WIDTH;
   const values = new Float32Array(width ** 3);
   for (let index = 0; index < values.length; index += 1) {
     const x = index % width;
@@ -16,7 +17,7 @@ export function buildProbeInput(variant: RunFoundationProbeInput["variant"]): Pr
         ? normalized * (0.5 + edge * 0.5)
         : normalized * (1 - edge * 0.5));
   }
-  return { dimensions: { width, height: width, depth: width }, values };
+  return { dimensions: FOUNDATION_PROBE_DIMENSIONS, values };
 }
 
 export function storeProbeResult(result: ProbeResult): ProbeResult {
