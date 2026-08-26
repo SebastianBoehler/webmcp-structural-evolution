@@ -70,7 +70,7 @@ describe("extractAlternativeLayers", () => {
     expect(Array.from(source)).toEqual(sourceBefore);
   });
 
-  it("caps renderable alternatives at three and reports omitted alternatives", () => {
+  it("caps renderable alternatives at three while reporting every alternative", () => {
     const alternatives = ["a", "b", "c", "d"].map((id) =>
       branch(id, [1, 1, 0, 0, 1, 1]),
     );
@@ -78,8 +78,57 @@ describe("extractAlternativeLayers", () => {
     const extraction = extractAlternativeLayers(current, alternatives, region, 0.5, "overlay");
 
     expect(extraction.layers.map((layer) => layer.branchRevision)).toEqual(["a", "b", "c"]);
-    expect(extraction.comparisons).toHaveLength(3);
+    expect(extraction.comparisons.map(({ branchRevision, status }) => [branchRevision, status])).toEqual([
+      ["a", "renderable"],
+      ["b", "renderable"],
+      ["c", "renderable"],
+      ["d", "limited"],
+    ]);
     expect(extraction.omittedCount).toBe(1);
+  });
+
+  it("applies the layer cap after validation so failures cannot hide a compatible branch", () => {
+    const failed = branch("failed", [], {
+      result: { status: "failed", code: "device-error", message: "lost", elapsedMs: 2 },
+    });
+    const shifted = branch("shifted", [1, 1, 0, 0, 1, 1], {
+      grid: { ...grid, anchor: { ...grid.anchor, position: [6, 7, 11] } },
+    });
+    const wrongParent = branch("wrong-parent", [1, 1, 0, 0, 1, 1], {
+      parentRevision: "other",
+    });
+    const valid = branch("valid-fourth", [1, 1, 0, 0, 1, 1]);
+
+    const extraction = extractAlternativeLayers(
+      current,
+      [failed, shifted, wrongParent, valid],
+      region,
+      0.5,
+      "overlay",
+    );
+
+    expect(extraction.comparisons).toHaveLength(4);
+    expect(extraction.layers.map(({ branchRevision }) => branchRevision)).toEqual(["valid-fourth"]);
+    expect(extraction.omittedCount).toBe(0);
+  });
+
+  it("rejects empty, colliding, and duplicate alternative branch revisions", () => {
+    const alternatives = [
+      branch("", [1, 1, 0, 0, 1, 1]),
+      branch("accepted-revision", [1, 1, 0, 0, 1, 1]),
+      branch("duplicate", [1, 1, 0, 0, 1, 1]),
+      branch("duplicate", [1, 1, 0, 0, 1, 1]),
+    ];
+
+    const extraction = extractAlternativeLayers(current, alternatives, region, 0.5, "overlay");
+
+    expect(extraction.layers).toEqual([]);
+    expect(extraction.comparisons.map(({ status }) => status)).toEqual([
+      "invalid",
+      "invalid",
+      "invalid",
+      "invalid",
+    ]);
   });
 
   it("keeps anchor and orientation exact while peel adds only a deterministic bounded offset", () => {

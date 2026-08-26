@@ -101,10 +101,11 @@ describe("FieldViewer", () => {
   it("highlights only the focused branch and synchronizes an externally selected branch", () => {
     const test = harness();
     const stiffer = { ...alternative, branchRevision: "stiffer" };
+    const alternatives = [alternative, stiffer] as const;
     const view = render(
       <FieldViewer
         current={current}
-        alternatives={[alternative, stiffer]}
+        alternatives={alternatives}
         selectedRegion={region}
         threshold={0.5}
         mode="overlay"
@@ -116,11 +117,12 @@ describe("FieldViewer", () => {
     let ghosts = renderedMeshes(test).filter((mesh) => mesh.name.startsWith("verified-delta"));
     expect((ghosts.find((mesh) => mesh.name.endsWith("lighter"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.34);
     expect((ghosts.find((mesh) => mesh.name.endsWith("stiffer"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.12);
+    expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
 
     view.rerender(
       <FieldViewer
         current={current}
-        alternatives={[alternative, stiffer]}
+        alternatives={alternatives}
         selectedRegion={region}
         threshold={0.5}
         mode="overlay"
@@ -131,10 +133,11 @@ describe("FieldViewer", () => {
     ghosts = renderedMeshes(test).filter((mesh) => mesh.name.startsWith("verified-delta"));
     expect((ghosts.find((mesh) => mesh.name.endsWith("stiffer"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.34);
     expect((ghosts.find((mesh) => mesh.name.endsWith("lighter"))?.material as THREE.Material & { opacity: number }).opacity).toBe(0.12);
+    expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
   });
 
   it("uses device-pixel resize data and the DPR fallback without creating frame-loop observers", () => {
-    const test = harness();
+    const test = harness({ dpr: 2 });
     render(
       <FieldViewer
         current={current}

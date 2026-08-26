@@ -29,6 +29,12 @@ export interface InstanceRecord {
   readonly density: number;
 }
 
+function exactTuple(values: readonly number[], length: number, name: string): void {
+  if (!Array.isArray(values) || values.length !== length) {
+    throw new RangeError(`${name} must contain exactly ${length} values`);
+  }
+}
+
 function finiteTuple(values: readonly number[], name: string, positive = false): void {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -46,16 +52,34 @@ export function fieldInstanceCount(grid: VoxelGrid): number {
     }
   }
 
+  exactTuple(grid.cellSize, 3, "grid cellSize");
+  exactTuple(grid.anchor.position, 3, "grid anchor position");
+  exactTuple(grid.anchor.orientation, 4, "grid anchor orientation");
   finiteTuple(grid.cellSize, "grid cellSize", true);
   finiteTuple(grid.anchor.position, "grid anchor position");
   finiteTuple(grid.anchor.orientation, "grid anchor orientation");
-  if (grid.anchor.orientation.every((value) => value === 0)) {
-    throw new RangeError("grid anchor orientation must be a non-zero quaternion");
+  const quaternionLength = Math.hypot(...grid.anchor.orientation);
+  if (Math.abs(quaternionLength - 1) > 1e-5) {
+    throw new RangeError("grid anchor orientation must be a near-unit quaternion");
   }
 
   const count = grid.dimensions.width * grid.dimensions.height * grid.dimensions.depth;
   if (!Number.isSafeInteger(count) || count > MAX_FIELD_INSTANCES) {
     throw new RangeError(`grid exceeds the ${MAX_FIELD_INSTANCES} instance budget`);
+  }
+  const extents = [
+    grid.dimensions.width * grid.cellSize[0],
+    grid.dimensions.height * grid.cellSize[1],
+    grid.dimensions.depth * grid.cellSize[2],
+  ];
+  const reach = extents.reduce((total, extent) => total + extent, 0);
+  const renderReach = reach * 20;
+  if (
+    !Number.isFinite(renderReach) ||
+    extents.some((extent) => !Number.isFinite(extent)) ||
+    grid.anchor.position.some((position) => !Number.isFinite(Math.abs(position) + reach * 2))
+  ) {
+    throw new RangeError("grid derived extents and assembly positions must remain finite");
   }
   return count;
 }
@@ -65,16 +89,20 @@ export function instanceAt(field: Float32Array, grid: VoxelGrid, index: number):
   const x = index % width;
   const y = Math.floor(index / width) % height;
   const z = Math.floor(index / (width * height));
+  const localPosition: Vector3Tuple = [
+    (x + 0.5) * grid.cellSize[0],
+    (y + 0.5) * grid.cellSize[1],
+    (z + 0.5) * grid.cellSize[2],
+  ];
+  if (localPosition.some((value) => !Number.isFinite(value))) {
+    throw new RangeError(`field[${index}] produces a non-finite local position`);
+  }
   const record: InstanceRecord = {
     index,
     x,
     y,
     z,
-    localPosition: Object.freeze([
-      (x + 0.5) * grid.cellSize[0],
-      (y + 0.5) * grid.cellSize[1],
-      (z + 0.5) * grid.cellSize[2],
-    ]),
+    localPosition: Object.freeze(localPosition),
     density: field[index]!,
   };
   return Object.freeze(record);

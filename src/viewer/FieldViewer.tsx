@@ -10,6 +10,7 @@ import {
 import {
   mountFieldRenderer,
   viewerEnvironment,
+  type FieldRendererSession,
   type FieldViewerEnvironment,
   type ResizeEntryLike,
   type ViewerRenderModel,
@@ -52,7 +53,6 @@ function prepareViewer(
   threshold: number,
   mode: AlternativeMode,
   selectedAlternative: string | undefined,
-  highlightedBranch: string | undefined,
 ): PreparedViewer {
   if (!current) return { comparisons: [], omittedCount: 0 };
   if (current.result.status !== "verified") {
@@ -63,14 +63,11 @@ function prepareViewer(
     let currentInstances = visibleInstances(current.result.output, current.grid, threshold);
     let notice: string | undefined;
     if (mode === "audition") {
-      const renderable = extraction.layers.some(
+      const audition = extraction.layers.find(
         (layer) => layer.branchRevision === selectedAlternative,
       );
-      const audition = renderable
-        ? alternatives.find((branch) => branch.branchRevision === selectedAlternative)
-        : undefined;
-      if (audition?.result.status === "verified") {
-        currentInstances = visibleInstances(audition.result.output, audition.grid, threshold);
+      if (audition) {
+        currentInstances = audition.auditionInstances;
       } else {
         notice = "Select a verified compatible alternative to audition; the accepted field remains visible.";
       }
@@ -80,7 +77,6 @@ function prepareViewer(
         grid: current.grid,
         currentInstances,
         alternativeLayers: mode === "audition" ? [] : extraction.layers,
-        highlightedBranch,
       },
       comparisons: extraction.comparisons,
       omittedCount: extraction.omittedCount,
@@ -100,8 +96,8 @@ function regionSummary(region: SelectedSemanticRegion): string {
 }
 
 function statusText(comparison: AlternativeComparison): string {
-  if (comparison.status === "renderable") return "Verified local delta";
-  return comparison.reason;
+  if (comparison.status === "renderable") return "Renderable: verified local delta";
+  return `${comparison.status}: ${comparison.reason}`;
 }
 
 export function FieldViewer({
@@ -117,9 +113,11 @@ export function FieldViewer({
   onAlternativeSelect,
 }: FieldViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sessionRef = useRef<FieldRendererSession | null>(null);
   const summaryId = useId();
   const [highlightedBranch, setHighlightedBranch] = useState<string | undefined>(selectedAlternative);
   const [renderError, setRenderError] = useState<string>();
+  const auditionSelection = mode === "audition" ? selectedAlternative : undefined;
   const prepared = useMemo(
     () => prepareViewer(
       current,
@@ -127,10 +125,9 @@ export function FieldViewer({
       selectedRegion,
       threshold,
       mode,
-      selectedAlternative,
-      highlightedBranch,
+      auditionSelection,
     ),
-    [current, alternatives, selectedRegion, threshold, mode, selectedAlternative, highlightedBranch],
+    [current, alternatives, selectedRegion, threshold, mode, auditionSelection],
   );
 
   useEffect(() => setHighlightedBranch(selectedAlternative), [selectedAlternative]);
@@ -140,11 +137,20 @@ export function FieldViewer({
     if (!canvas || !prepared.model) return;
     setRenderError(undefined);
     try {
-      return mountFieldRenderer(canvas, prepared.model, viewerEnvironment(environment));
+      const session = mountFieldRenderer(canvas, prepared.model, viewerEnvironment(environment));
+      sessionRef.current = session;
+      return () => {
+        if (sessionRef.current === session) sessionRef.current = null;
+        session.dispose();
+      };
     } catch (error) {
       setRenderError(`3D renderer failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, [environment, prepared.model]);
+
+  useEffect(() => {
+    sessionRef.current?.setHighlightedBranch(highlightedBranch);
+  }, [highlightedBranch]);
 
   const leaveAlternative = () => setHighlightedBranch(selectedAlternative);
   return (
@@ -187,7 +193,7 @@ export function FieldViewer({
         </fieldset>
 
         {prepared.omittedCount > 0 && (
-          <p role="status">{prepared.omittedCount} alternatives omitted by the three-branch display limit.</p>
+          <p role="status">{prepared.omittedCount} verified alternatives are listed but not rendered by the three-branch limit.</p>
         )}
         <div className="field-viewer__table-wrap">
           <table>
@@ -202,26 +208,29 @@ export function FieldViewer({
                   <td>Accepted source</td><td>{current.result.status}</td><td>Current</td>
                 </tr>
               )}
-              {prepared.comparisons.map((comparison) => (
-                <tr key={comparison.branchRevision} data-highlighted={highlightedBranch === comparison.branchRevision}>
-                  <td>{comparison.branchRevision}</td>
-                  <td>{comparison.parentRevision}</td>
-                  <td>{comparison.addedCount} added, {comparison.removedCount} removed</td>
-                  <td>{statusText(comparison)}</td>
-                  <td>
-                    <button
-                      type="button"
-                      aria-label={`Select ${comparison.branchRevision}`}
-                      disabled={comparison.status !== "renderable"}
-                      onClick={() => onAlternativeSelect?.(comparison.branchRevision)}
-                      onFocus={() => setHighlightedBranch(comparison.branchRevision)}
-                      onBlur={leaveAlternative}
-                      onMouseEnter={() => setHighlightedBranch(comparison.branchRevision)}
-                      onMouseLeave={leaveAlternative}
-                    >Inspect</button>
-                  </td>
-                </tr>
-              ))}
+              {prepared.comparisons.map((comparison) => {
+                const branchLabel = comparison.branchRevision.trim() || "Missing branch ID";
+                return (
+                  <tr key={comparison.sourceIndex} data-highlighted={highlightedBranch === comparison.branchRevision}>
+                    <td>{branchLabel}</td>
+                    <td>{comparison.parentRevision}</td>
+                    <td>{comparison.addedCount} added, {comparison.removedCount} removed</td>
+                    <td>{statusText(comparison)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        aria-label={`Select ${branchLabel}`}
+                        disabled={comparison.status !== "renderable"}
+                        onClick={() => onAlternativeSelect?.(comparison.branchRevision)}
+                        onFocus={() => setHighlightedBranch(comparison.branchRevision)}
+                        onBlur={leaveAlternative}
+                        onMouseEnter={() => setHighlightedBranch(comparison.branchRevision)}
+                        onMouseLeave={leaveAlternative}
+                      >Inspect</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

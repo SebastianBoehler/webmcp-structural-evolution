@@ -61,4 +61,42 @@ describe("visibleInstances", () => {
     };
     expect(() => visibleInstances(new Float32Array(0), oversized, 0.5)).toThrow(/instance budget/i);
   });
+
+  it.each([
+    ["cell size", { ...grid, cellSize: [1, 2] }],
+    ["anchor position", { ...grid, anchor: { ...grid.anchor, position: [1, 2] } }],
+    ["anchor orientation", { ...grid, anchor: { ...grid.anchor, orientation: [0, 0, 1] } }],
+  ])("rejects a malformed %s tuple", (_name, malformed) => {
+    expect(() =>
+      visibleInstances(new Float32Array(8), malformed as unknown as VoxelGrid, 0.5),
+    ).toThrow(/exactly/i);
+  });
+
+  it("rejects non-unit orientations and overflowing derived extents", () => {
+    const scaledQuaternion: VoxelGrid = {
+      ...grid,
+      anchor: { ...grid.anchor, orientation: [0, 0, 0, 2] },
+    };
+    expect(() => visibleInstances(new Float32Array(8), scaledQuaternion, 0.5)).toThrow(
+      /unit quaternion/i,
+    );
+
+    const overflowing: VoxelGrid = {
+      dimensions: { width: 2, height: 1, depth: 1 },
+      cellSize: [Number.MAX_VALUE, 1, 1],
+      anchor: grid.anchor,
+    };
+    expect(() => visibleInstances(new Float32Array(2), overflowing, 0.5)).toThrow(
+      /derived.*finite/i,
+    );
+
+    const rendererOverflow: VoxelGrid = {
+      dimensions: { width: 1, height: 1, depth: 1 },
+      cellSize: [Number.MAX_VALUE / 4, 1, 1],
+      anchor: grid.anchor,
+    };
+    expect(() => visibleInstances(new Float32Array(1), rendererOverflow, 0.5)).toThrow(
+      /derived.*finite/i,
+    );
+  });
 });

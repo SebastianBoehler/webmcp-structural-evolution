@@ -60,13 +60,24 @@ export interface TestHarness {
     target: { set: ReturnType<typeof vi.fn> };
   };
   emitResize(entry: ResizeEntryLike): void;
+  emitControlChange(): void;
   flushFrame(): void;
+  readonly observe: ReturnType<typeof vi.fn>;
   readonly disconnect: ReturnType<typeof vi.fn>;
   readonly cancelFrame: ReturnType<typeof vi.fn>;
 }
 
-export function harness(): TestHarness {
+interface HarnessOptions {
+  readonly dpr?: number;
+  readonly rejectDevicePixelObserve?: boolean;
+  readonly controlsFailure?: Error;
+  readonly observerFailure?: Error;
+  readonly frameFailure?: Error;
+}
+
+export function harness(options: HarnessOptions = {}): TestHarness {
   let resizeCallback: (entries: readonly ResizeEntryLike[]) => void = () => undefined;
+  let controlCallback: () => void = () => undefined;
   let frame: FrameRequestCallback | undefined;
   const renderer = {
     setPixelRatio: vi.fn(),
@@ -75,7 +86,9 @@ export function harness(): TestHarness {
     dispose: vi.fn(),
   };
   const controls = {
-    addEventListener: vi.fn(),
+    addEventListener: vi.fn((_type: "change", callback: () => void) => {
+      controlCallback = callback;
+    }),
     removeEventListener: vi.fn(),
     update: vi.fn(),
     dispose: vi.fn(),
@@ -84,27 +97,37 @@ export function harness(): TestHarness {
   };
   const disconnect = vi.fn();
   const cancelFrame = vi.fn();
+  const observe = vi.fn((_target: Element, observerOptions?: ResizeObserverOptions) => {
+    if (options.rejectDevicePixelObserve && observerOptions) throw new TypeError("box unsupported");
+  });
   return {
     renderer,
     controls,
     disconnect,
     cancelFrame,
+    observe,
     environment: {
       createRenderer: vi.fn(() => renderer),
-      createControls: vi.fn(() => controls),
+      createControls: vi.fn(() => {
+        if (options.controlsFailure) throw options.controlsFailure;
+        return controls;
+      }),
       createResizeObserver: vi.fn((callback) => {
+        if (options.observerFailure) throw options.observerFailure;
         resizeCallback = callback;
-        return { observe: vi.fn(), disconnect };
+        return { observe, disconnect };
       }),
       requestFrame: vi.fn((callback) => {
+        if (options.frameFailure) throw options.frameFailure;
         frame = callback;
         return 7;
       }),
       cancelFrame,
-      devicePixelRatio: () => 2,
+      devicePixelRatio: () => options.dpr ?? 2,
       prefersReducedMotion: () => true,
     },
     emitResize: (entry) => resizeCallback([entry]),
+    emitControlChange: () => controlCallback(),
     flushFrame: () => {
       const callback = frame;
       frame = undefined;

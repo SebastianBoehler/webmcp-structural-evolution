@@ -2,6 +2,7 @@ import type { ProbeResult } from "../gpu/compute-probe";
 import {
   instanceAt,
   validateField,
+  visibleInstances,
   type InstanceRecord,
   type Vector3Tuple,
   type VoxelGrid,
@@ -30,13 +31,15 @@ export interface AlternativeLayer {
   readonly grid: VoxelGrid;
   readonly added: readonly InstanceRecord[];
   readonly removed: readonly InstanceRecord[];
+  readonly auditionInstances: readonly InstanceRecord[];
   readonly displayOffset: Vector3Tuple;
 }
 
 export interface AlternativeComparison {
   readonly branchRevision: string;
   readonly parentRevision: string;
-  readonly status: "renderable" | "unverified" | "incompatible";
+  readonly sourceIndex: number;
+  readonly status: "renderable" | "unverified" | "incompatible" | "invalid" | "limited";
   readonly reason: string;
   readonly addedCount: number;
   readonly removedCount: number;
@@ -89,12 +92,14 @@ function peelOffset(index: number, grid: VoxelGrid): Vector3Tuple {
 
 function comparison(
   branch: ViewerBranch,
+  sourceIndex: number,
   status: AlternativeComparison["status"],
   reason: string,
   addedCount = 0,
   removedCount = 0,
 ): AlternativeComparison {
   return Object.freeze({
+    sourceIndex,
     branchRevision: branch.branchRevision,
     parentRevision: branch.parentRevision,
     status,
@@ -121,28 +126,49 @@ export function extractAlternativeLayers(
   validateRegion(region, current.grid);
   if (!Number.isFinite(threshold)) throw new RangeError("threshold must be finite");
 
-  const considered = alternatives.slice(0, MAX_VISIBLE_ALTERNATIVES);
+  const idCounts = new Map<string, number>();
+  for (const branch of alternatives) {
+    idCounts.set(branch.branchRevision, (idCounts.get(branch.branchRevision) ?? 0) + 1);
+  }
   const layers: AlternativeLayer[] = [];
   const comparisons: AlternativeComparison[] = [];
-  for (const branch of considered) {
+  let omittedCount = 0;
+  for (let sourceIndex = 0; sourceIndex < alternatives.length; sourceIndex += 1) {
+    const branch = alternatives[sourceIndex]!;
+    const invalidReason = !branch.branchRevision.trim()
+      ? "missing branch revision: not rendered"
+      : branch.branchRevision === current.branchRevision
+        ? "branch revision collides with current revision: not rendered"
+        : (idCounts.get(branch.branchRevision) ?? 0) > 1
+          ? "duplicate branch revision: not rendered"
+          : !branch.parentRevision.trim()
+            ? "missing parent revision: not rendered"
+            : undefined;
+    if (invalidReason) {
+      comparisons.push(comparison(branch, sourceIndex, "invalid", invalidReason));
+      continue;
+    }
     if (branch.result.status !== "verified") {
       comparisons.push(
-        comparison(branch, "unverified", `${branch.result.status}: ${branch.result.message}; not rendered`),
+        comparison(branch, sourceIndex, "unverified", `${branch.result.status}: ${branch.result.message}; not rendered`),
       );
       continue;
     }
     if (branch.parentRevision !== current.branchRevision || !gridsEqual(branch.grid, current.grid)) {
-      comparisons.push(comparison(branch, "incompatible", "incompatible grid, anchor, or parent: not rendered"));
+      comparisons.push(comparison(branch, sourceIndex, "incompatible", "incompatible grid, anchor, or parent: not rendered"));
       continue;
     }
     try {
       validateField(branch.result.output, branch.grid);
     } catch {
-      comparisons.push(comparison(branch, "incompatible", "invalid verified field metadata: not rendered"));
+      comparisons.push(comparison(branch, sourceIndex, "incompatible", "invalid verified field metadata: not rendered"));
       continue;
     }
+    const withinLayerBudget = layers.length < MAX_VISIBLE_ALTERNATIVES;
     const added: InstanceRecord[] = [];
     const removed: InstanceRecord[] = [];
+    let addedCount = 0;
+    let removedCount = 0;
     const { width, height } = current.grid.dimensions;
     for (let z = region.min[2]; z < region.maxExclusive[2]; z += 1) {
       for (let y = region.min[1]; y < region.maxExclusive[1]; y += 1) {
@@ -150,25 +176,39 @@ export function extractAlternativeLayers(
           const index = x + y * width + z * width * height;
           const wasVisible = current.result.output[index]! >= threshold;
           const isVisible = branch.result.output[index]! >= threshold;
-          if (!wasVisible && isVisible) added.push(instanceAt(branch.result.output, current.grid, index));
-          if (wasVisible && !isVisible) removed.push(instanceAt(current.result.output, current.grid, index));
+          if (!wasVisible && isVisible) {
+            addedCount += 1;
+            if (withinLayerBudget) added.push(instanceAt(branch.result.output, current.grid, index));
+          }
+          if (wasVisible && !isVisible) {
+            removedCount += 1;
+            if (withinLayerBudget) removed.push(instanceAt(current.result.output, current.grid, index));
+          }
         }
       }
     }
-    const layer = Object.freeze({
+    if (!withinLayerBudget) {
+      omittedCount += 1;
+      comparisons.push(
+        comparison(branch, sourceIndex, "limited", "verified but beyond the three-branch render limit", addedCount, removedCount),
+      );
+      continue;
+    }
+    const layer: AlternativeLayer = Object.freeze({
       branchRevision: branch.branchRevision,
       parentRevision: branch.parentRevision,
       grid: current.grid,
       added: Object.freeze(added),
       removed: Object.freeze(removed),
+      auditionInstances: visibleInstances(branch.result.output, current.grid, threshold),
       displayOffset: mode === "peel" ? peelOffset(layers.length, current.grid) : ([0, 0, 0] as const),
     });
     layers.push(layer);
-    comparisons.push(comparison(branch, "renderable", "verified local delta", added.length, removed.length));
+    comparisons.push(comparison(branch, sourceIndex, "renderable", "verified local delta", addedCount, removedCount));
   }
   return Object.freeze({
     layers: Object.freeze(layers),
     comparisons: Object.freeze(comparisons),
-    omittedCount: Math.max(0, alternatives.length - considered.length),
+    omittedCount,
   });
 }
