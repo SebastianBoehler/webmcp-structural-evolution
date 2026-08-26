@@ -37,6 +37,8 @@ export interface FieldViewerProps {
   readonly statusText?: string;
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
+  readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => void;
+  readonly onPartDragState?: (dragging: boolean, partId: string) => void;
 }
 
 interface PreparedViewer {
@@ -124,6 +126,8 @@ export function FieldViewer({
   statusText,
   environment,
   onPartSelect,
+  onPartMove,
+  onPartDragState,
 }: FieldViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<FieldRendererSession | null>(null);
@@ -150,7 +154,7 @@ export function FieldViewer({
         canvas,
         prepared.model,
         viewerEnvironment(environment),
-        onPartSelect,
+        { onSelect: onPartSelect, onMove: onPartMove, onDragState: onPartDragState },
       );
       sessionRef.current = session;
       return () => {
@@ -163,7 +167,7 @@ export function FieldViewer({
       setRenderError(`The 3D renderer failed. ${error instanceof Error ? error.message : String(error)}`);
       return failed ? () => failed.dispose() : undefined;
     }
-  }, [environment, onPartSelect, prepared.model]);
+  }, [environment, onPartDragState, onPartMove, onPartSelect, prepared.model]);
 
   useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [selectedAlternative]);
   useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [selectedPart]);
@@ -179,7 +183,7 @@ export function FieldViewer({
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
-        Drag to orbit · Scroll to zoom · Click a component to inspect
+        Drag empty space to orbit · Drag a motor to move · Scroll to zoom
       </p>
       <p className="field-viewer__field-status" role="status">
         {statusText ?? (current

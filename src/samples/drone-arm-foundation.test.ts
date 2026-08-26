@@ -91,8 +91,8 @@ describe("DRONE_ARM_FOUNDATION_STUDY", () => {
     expect(motor?.geometryCoordinates).toBe("component-local");
     expect(DRONE_ARM_FOUNDATION_STUDY.assembly.geometryCoordinates).toBe("assembly");
     expect(DRONE_ARM_FOUNDATION_STUDY.study.geometryCoordinates).toBe("assembly");
-    expect(motorMountX).toEqual([74, 74, 90, 90]);
-    expect(propellerKeepOut?.center.x).toEqual({ value: 82, unit: "mm" });
-    expect(loadRegion.center.x).toEqual({ value: 82, unit: "mm" });
+    expect(motorMountX).toEqual([99.343, 99.343, 110.657, 110.657]);
+    expect(propellerKeepOut?.center.x).toEqual({ value: 105, unit: "mm" });
+    expect(loadRegion.center.x).toEqual({ value: 105, unit: "mm" });
   });
 });

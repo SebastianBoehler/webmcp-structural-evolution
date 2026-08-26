@@ -1,35 +1,23 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
-import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
-
-const fixture = DRONE_ARM_FOUNDATION_STUDY;
-
-const componentNames: Readonly<Record<string, string>> = {
-  "motor-2207": "2207 brushless motor",
-  "m3-fastener": "M3 × 12 fasteners",
-  "body-interface": "Frame interface",
-};
+import type { AssemblyVisualPart } from "../viewer/render-envelope";
 
 export interface ComponentBrowserProps {
   readonly selectedId: string;
   readonly open: boolean;
+  readonly parts: readonly AssemblyVisualPart[];
   readonly onSelect: (componentId: string) => void;
+  readonly onImportFile: (file: File) => void;
   readonly onClose: () => void;
 }
 
-export function ComponentBrowser({ selectedId, open, onSelect, onClose }: ComponentBrowserProps) {
+export function ComponentBrowser({ selectedId, open, parts, onSelect, onImportFile, onClose }: ComponentBrowserProps) {
   const [query, setQuery] = useState("");
-  const components = useMemo(() => fixture.components.filter((component) => {
-    const name = componentNames[component.id] ?? component.id;
-    return `${name} ${component.category} ${component.partNumber}`.toLowerCase().includes(query.toLowerCase());
-  }), [query]);
-
-  const stockFor = (revision: string) => fixture.inventory.find(
-    (item) => item.componentRevision === revision,
-  )?.ownedQuantity ?? 0;
-  const requiredFor = (revision: string) => fixture.assembly.components.find(
-    (item) => item.componentRevision === revision,
-  )?.quantity ?? 0;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const components = useMemo(() => parts.filter((part) =>
+    part.appearance === "component" &&
+    !part.id.startsWith("reference-arm") &&
+    `${part.label} ${part.kind}`.toLowerCase().includes(query.toLowerCase())), [parts, query]);
 
   return (
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
@@ -58,32 +46,37 @@ export function ComponentBrowser({ selectedId, open, onSelect, onClose }: Compon
           <span><strong>Arm design region</strong><small>Generated structure</small></span>
           <span className="stock-badge stock-badge--ready">Ready</span>
         </button>
-        {components.map((component) => {
-          const stock = stockFor(component.revision);
-          const required = requiredFor(component.revision);
-          const enough = stock >= required;
-          return (
+        {components.map((component) => (
             <button
               className="component-row"
               type="button"
               key={component.id}
-              data-selected={selectedId === component.id}
-              aria-pressed={selectedId === component.id}
-              onClick={() => onSelect(component.id)}
+              data-selected={selectedId === component.selectionId}
+              aria-pressed={selectedId === component.selectionId}
+              onClick={() => onSelect(component.selectionId)}
             >
               <span className="part-mark" aria-hidden="true" />
-              <span><strong>{componentNames[component.id] ?? component.id}</strong><small>{component.category}</small></span>
-              <span className={`stock-badge ${enough ? "stock-badge--ready" : "stock-badge--short"}`}>
-                {stock}/{required}
-              </span>
+              <span><strong>{component.label}</strong><small>{component.kind}</small></span>
+              <span className="stock-badge stock-badge--ready">Placed</span>
             </button>
-          );
-        })}
+        ))}
       </nav>
       <div className="inventory-summary">
-        <span>Inventory</span>
-        <strong>{fixture.inventory.reduce((total, item) => total + item.ownedQuantity, 0)} parts</strong>
-        <p>One M3 fastener is required before this assembly is buildable.</p>
+        <span>Component library</span>
+        <strong>{components.length} placed</strong>
+        <p>Import a GLB or glTF reference model. Engineering metadata remains unverified until supplied.</p>
+        <button type="button" onClick={() => inputRef.current?.click()}>Import component file</button>
+        <input
+          ref={inputRef}
+          className="visually-hidden"
+          type="file"
+          accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onImportFile(file);
+            event.target.value = "";
+          }}
+        />
       </div>
     </aside>
   );

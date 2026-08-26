@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { installAssemblyInteractions, type PartInteractionHandlers } from "./assembly-interactions";
 
 import {
   createFieldMeshes,
@@ -9,7 +10,6 @@ import {
 import {
   createAssemblyMeshes,
   highlightAssemblyPart,
-  selectableAssemblyMeshes,
   type AssemblyMeshSet,
 } from "./assembly-meshes";
 import { createCleanupLedger, type CleanupToken } from "./cleanup-ledger";
@@ -41,6 +41,7 @@ interface RendererLike {
 
 interface ControlsLike {
   enableDamping: boolean;
+  enabled?: boolean;
   readonly target: { set(x: number, y: number, z: number): unknown };
   addEventListener(type: "change", listener: () => void): void;
   removeEventListener(type: "change", listener: () => void): void;
@@ -112,7 +113,7 @@ export function mountFieldRenderer(
   canvas: HTMLCanvasElement,
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
-  onPartSelect?: (partId: string) => void,
+  interactions: PartInteractionHandlers = {},
 ): FieldRendererSession {
   const prepared = prepareRenderModel(model);
   const ownership = createCleanupLedger();
@@ -188,7 +189,7 @@ export function mountFieldRenderer(
     assemblyMeshSet = createAssemblyMeshes(prepared.assemblyParts ?? [], {
       own: (release) => ownership.own(release),
       attach,
-    });
+    }, scheduleRender);
     meshSet = createFieldMeshes(
       prepared.grid,
       prepared.currentInstances,
@@ -220,31 +221,15 @@ export function mountFieldRenderer(
     }
     ownership.own(() => createdControls.removeEventListener("change", scheduleRender));
     createdControls.addEventListener("change", scheduleRender);
-    if (onPartSelect && assemblyMeshSet.meshes.length > 0) {
-      const raycaster = new THREE.Raycaster();
-      const pointer = new THREE.Vector2();
-      let press: readonly [number, number] | undefined;
-      const pointerDown = (event: PointerEvent) => { press = [event.clientX, event.clientY]; };
-      const pointerUp = (event: PointerEvent) => {
-        if (!press || Math.hypot(event.clientX - press[0], event.clientY - press[1]) > 5) return;
-        press = undefined;
-        const rect = canvas.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0 || !camera || !assemblyMeshSet) return;
-        pointer.set(
-          ((event.clientX - rect.left) / rect.width) * 2 - 1,
-          -((event.clientY - rect.top) / rect.height) * 2 + 1,
-        );
-        raycaster.setFromCamera(pointer, camera);
-        const selectable = selectableAssemblyMeshes(assemblyMeshSet.meshes);
-        const hit = raycaster.intersectObjects([...selectable], false)[0];
-        const partId = hit?.object.userData.partId;
-        if (typeof partId === "string") onPartSelect(partId);
-      };
-      canvas.addEventListener("pointerdown", pointerDown);
-      canvas.addEventListener("pointerup", pointerUp);
-      ownership.own(() => canvas.removeEventListener("pointerup", pointerUp));
-      ownership.own(() => canvas.removeEventListener("pointerdown", pointerDown));
-    }
+    installAssemblyInteractions({
+      canvas,
+      camera,
+      meshSet: assemblyMeshSet,
+      controls: createdControls,
+      handlers: interactions,
+      scheduleRender,
+      own: (release) => { ownership.own(release); },
+    });
     scheduleRender();
   } catch (error) {
     session.dispose();

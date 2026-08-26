@@ -53,7 +53,7 @@ describe("FieldViewer", () => {
     );
 
     expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-    expect(screen.getByText(/drag to orbit.*scroll to zoom.*click a component/i)).toBeVisible();
+    expect(screen.getByText(/drag empty space to orbit.*drag a motor to move.*scroll to zoom/i)).toBeVisible();
     expect(screen.getByRole("status").textContent).toMatch(/assembly ready/i);
     const motor = renderedScene(test).getObjectByName("assembly-part:motor-envelope") as THREE.Mesh;
     expect(motor).toBeDefined();

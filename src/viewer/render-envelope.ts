@@ -26,10 +26,22 @@ export type AssemblyVisualPart = Readonly<{
   selectionId: string;
   label: string;
   center: Vector3Tuple;
+  rotation?: Vector3Tuple;
+  dragGroup?: string;
+  movable?: boolean;
   appearance: "component" | "design-region" | "constraint";
 }> & (
   | Readonly<{ kind: "box"; size: Vector3Tuple }>
   | Readonly<{ kind: "cylinder"; radius: number; height: number }>
+  | Readonly<{ kind: "motor"; radius: number; height: number; shaftRadius: number; shaftHeight: number }>
+  | Readonly<{ kind: "propeller"; radius: number; hubRadius: number; hubHeight: number; bladeCount: number }>
+  | Readonly<{ kind: "guard"; radius: number; tubeRadius: number }>
+  | Readonly<{
+      kind: "model";
+      assetUrl: string;
+      assetUnits: "mm" | "m";
+      size: Vector3Tuple;
+    }>
 );
 
 export interface CameraEnvelope {
@@ -204,10 +216,16 @@ function includeAssemblyPart(part: AssemblyVisualPart, bounds: Bounds, index: nu
   if (!part.id.trim() || !part.selectionId.trim() || !part.label.trim()) {
     throw new RangeError(`${label} requires an id, selection id, and label`);
   }
-  const half = part.kind === "box"
-    ? part.size.map((value, axis) => bounded(value / 2, `${label} half size[${axis}]`))
-    : [part.radius, part.radius, part.height / 2].map((value, axis) =>
-        bounded(value, `${label} half size[${axis}]`));
+  const extents = part.kind === "box" || part.kind === "model"
+    ? part.size
+    : part.kind === "guard"
+      ? [part.radius + part.tubeRadius, part.radius + part.tubeRadius, part.tubeRadius]
+      : part.kind === "propeller"
+        ? [part.radius, part.radius, part.hubHeight / 2]
+        : [part.radius, part.radius, (part.height + (part.kind === "motor" ? part.shaftHeight : 0)) / 2];
+  const half = (part.kind === "box" || part.kind === "model")
+    ? extents.map((value, axis) => bounded(value / 2, `${label} half size[${axis}]`))
+    : extents.map((value, axis) => bounded(value, `${label} half size[${axis}]`));
   part.center.forEach((value, axis) => {
     const center = bounded(value, `${label} center[${axis}]`);
     bounds.min[axis] = Math.min(bounds.min[axis], bounded(center - half[axis]!, `${label} minimum[${axis}]`));

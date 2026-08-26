@@ -90,30 +90,33 @@ const placeVolumeInAssembly = (
   assemblyOrigin: ReturnType<typeof point>,
 ) => ({ ...local, center: translateMm(local.center, assemblyOrigin) });
 
-const motorAssemblyOrigin = point(82, 0, 0);
+const motorAssemblyOrigin = point(105, 0, 0);
 const bodyAssemblyOrigin = point(0, 0, 0);
 
 const motor = await defineComponent({
   id: "motor-2207",
   category: "motor",
   geometryCoordinates: "component-local",
-  manufacturer: "Generic",
-  partNumber: "2207-1750KV",
-  provenance: { kind: "generic", reference: "2207 motor dimensional profile rev 1" },
-  mass: { value: 34, unit: "g" },
-  centerOfMass: point(0, 0, 8.5),
-  envelope: cylinder("motor-envelope", [0, 0, 8.5], 14, 17),
+  manufacturer: "Hobbywing",
+  partNumber: "XRotor-2207.5SL-1780KV",
+  provenance: {
+    kind: "manufacturer-datasheet",
+    reference: "https://www.hobbywing.com/en/products/xrotor-22075",
+  },
+  mass: { value: 38, unit: "g" },
+  centerOfMass: point(0, 0, 9.95),
+  envelope: cylinder("motor-envelope", [0, 0, 9.95], 14, 19.9),
   mountInterfaces: [
-    mount("motor-mount-nw", -8, 8, 0),
-    mount("motor-mount-ne", 8, 8, 0),
-    mount("motor-mount-se", 8, -8, 0),
-    mount("motor-mount-sw", -8, -8, 0),
+    mount("motor-mount-nw", -5.657, 5.657, 0),
+    mount("motor-mount-ne", 5.657, 5.657, 0),
+    mount("motor-mount-se", 5.657, -5.657, 0),
+    mount("motor-mount-sw", -5.657, -5.657, 0),
   ],
-  keepOutVolumes: [cylinder("propeller-keep-out", [0, 0, 24], 65, 10)],
+  keepOutVolumes: [cylinder("propeller-keep-out", [0, 0, 30], 64.65, 6)],
   loadContributions: [
     {
       id: "motor-thrust-load",
-      force: { x: newtons(0), y: newtons(0), z: newtons(-20) },
+      force: { x: newtons(0), y: newtons(0), z: newtons(-18) },
     },
   ],
   allowedOrientations: [orientation()],
@@ -177,7 +180,7 @@ const assembly = await defineAssembly({
       transform: identityTransformAt(bodyAssemblyOrigin),
     },
   ],
-  targetEnvelope: box("arm-target-envelope", [41, 0, 3], [110, 42, 18]),
+  targetEnvelope: box("arm-target-envelope", [52.5, 0, 3], [125, 42, 18]),
   preservedMounts: [
     ...motor.mountInterfaces.map((item) =>
       placeMountInAssembly(item, motorAssemblyOrigin)),
@@ -200,7 +203,7 @@ const study = await defineStudy({
   id: "drone-arm-foundation-study",
   assemblyRevision: assembly.revision,
   geometryCoordinates: "assembly",
-  designRegion: box("arm-design-region", [41, 0, 3], [110, 42, 18]),
+  designRegion: box("arm-design-region", [52.5, 0, 3], [125, 42, 18]),
   voxelResolution: {
     x: { value: 48, unit: "voxels" },
     y: { value: 24, unit: "voxels" },
@@ -224,8 +227,8 @@ const study = await defineStudy({
       fixedRegions: [box("body-fixed-region", [0, 0, 3], [12, 34, 8])],
       forces: [
         {
-          region: cylinder("motor-load-region", [82, 0, 0], 14, 4),
-          vector: { x: newtons(0), y: newtons(0), z: newtons(-20) },
+          region: cylinder("motor-load-region", [105, 0, 0], 14, 4),
+          vector: { x: newtons(0), y: newtons(0), z: newtons(-18) },
         },
       ],
     },

@@ -43,11 +43,12 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByText(/webgpu available/i)).toBeVisible();
   expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-  expect(screen.getByText(/one m3 fastener is required/i)).toBeVisible();
+  expect(screen.getByText(/import a glb or gltf reference model/i)).toBeVisible();
+  expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
+  expect(screen.getByText(/^east motor$/i)).toBeVisible();
   expect(screen.getByText(/32 × 32 × 32/)).toBeVisible();
-  fireEvent.click(screen.getByText("Technical details"));
+  fireEvent.click(screen.getByText("Engineering details"));
   expect(screen.getByText("assembly · mm")).toBeVisible();
-  expect(screen.getByText(DRONE_ARM_FOUNDATION_STUDY.study.revision)).toBeVisible();
 
   await waitFor(() => expect(context.active.has("inspect_design_context")).toBe(true));
   const initialInspection = await context.execute("inspect_design_context", { scope: "current" }) as {
@@ -83,9 +84,9 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   fireEvent.click(audition);
   expect(audition.getAttribute("aria-pressed")).toBe("true");
 
-  fireEvent.click(screen.getByRole("button", { name: /lock clearance/i }));
+  fireEvent.click(screen.getByRole("button", { name: /protect route/i }));
   await waitFor(() => expect(screen.getByText(/prior experiment plan is stale/i)).toBeVisible());
-  expect(screen.getByRole("button", { name: /clearance locked/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /route protected/i })).toBeDisabled();
   const changedInspection = await context.execute("inspect_design_context", { scope: "current" }) as {
     content: readonly { text: string }[];
   };

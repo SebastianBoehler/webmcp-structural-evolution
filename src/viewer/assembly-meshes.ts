@@ -1,5 +1,6 @@
 import * as THREE from "three";
 
+import { geometryPieces } from "./assembly-geometries";
 import type { AssemblyVisualPart } from "./render-envelope";
 
 interface MeshOwnership {
@@ -8,8 +9,10 @@ interface MeshOwnership {
 }
 
 export interface AssemblyMeshSet {
-  readonly meshes: readonly THREE.Mesh[];
+  readonly meshes: THREE.Mesh[];
   readonly materials: ReadonlyMap<string, readonly THREE.MeshStandardMaterial[]>;
+  readonly roots: ReadonlyMap<string, THREE.Group>;
+  readonly parts: ReadonlyMap<string, AssemblyVisualPart>;
 }
 
 export function selectableAssemblyMeshes(
@@ -24,43 +27,85 @@ const appearance = {
   constraint: { color: 0xd98b5f, opacity: 0.16, wireframe: true },
 } as const;
 
-function geometryFor(part: AssemblyVisualPart): THREE.BufferGeometry {
-  if (part.kind === "box") return new THREE.BoxGeometry(...part.size);
-  const geometry = new THREE.CylinderGeometry(part.radius, part.radius, part.height, 48);
-  geometry.rotateX(Math.PI / 2);
-  return geometry;
-}
-
 export function createAssemblyMeshes(
   parts: readonly AssemblyVisualPart[],
   ownership: MeshOwnership,
+  onLoad?: () => void,
 ): AssemblyMeshSet {
   const meshes: THREE.Mesh[] = [];
   const materials = new Map<string, THREE.MeshStandardMaterial[]>();
-  for (const part of parts) {
-    const geometry = geometryFor(part);
-    ownership.own(() => geometry.dispose());
+  const roots = new Map<string, THREE.Group>();
+  const partMap = new Map<string, AssemblyVisualPart>();
+  const materialFor = (
+    part: AssemblyVisualPart,
+    color?: number,
+    opacity?: number,
+    metalness?: number,
+  ) => {
     const style = appearance[part.appearance];
     const material = new THREE.MeshStandardMaterial({
-      color: style.color,
-      metalness: part.appearance === "component" ? 0.24 : 0,
-      opacity: style.opacity,
-      roughness: 0.58,
-      transparent: style.opacity < 1,
+      color: color ?? style.color,
+      metalness: metalness ?? (part.appearance === "component" ? 0.24 : 0),
+      opacity: opacity ?? style.opacity,
+      roughness: 0.52,
+      transparent: (opacity ?? style.opacity) < 1,
       wireframe: style.wireframe,
     });
     ownership.own(() => material.dispose());
-    const mesh = new THREE.Mesh(geometry, material);
+    materials.set(part.selectionId, [...(materials.get(part.selectionId) ?? []), material]);
+    return material;
+  };
+  const ownMesh = (mesh: THREE.Mesh, part: AssemblyVisualPart) => {
     mesh.name = `assembly-part:${part.id}`;
     mesh.userData.partId = part.selectionId;
     mesh.userData.appearance = part.appearance;
-    mesh.position.set(...part.center);
+    mesh.userData.movable = part.movable === true;
+    mesh.userData.dragGroup = part.dragGroup;
     mesh.renderOrder = part.appearance === "component" ? 0 : 3;
-    ownership.attach(mesh);
     meshes.push(mesh);
-    materials.set(part.selectionId, [...(materials.get(part.selectionId) ?? []), material]);
+  };
+  for (const part of parts) {
+    const root = new THREE.Group();
+    root.name = `assembly-root:${part.id}`;
+    root.position.set(...part.center);
+    if (part.rotation) root.rotation.set(...part.rotation);
+    roots.set(part.id, root);
+    partMap.set(part.id, part);
+    ownership.attach(root);
+    if (part.kind === "model") {
+      void import("three/examples/jsm/loaders/GLTFLoader.js").then(({ GLTFLoader }) =>
+        new GLTFLoader().loadAsync(part.assetUrl)).then(({ scene }) => {
+        const scale = part.assetUnits === "m" ? 1000 : 1;
+        scene.scale.setScalar(scale);
+        scene.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          const mesh = object;
+          if (Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.map(() => materialFor(part));
+          } else {
+            mesh.material = materialFor(part);
+          }
+          ownership.own(() => mesh.geometry.dispose());
+          ownMesh(mesh, part);
+        });
+        root.add(scene);
+        onLoad?.();
+      }).catch(() => onLoad?.());
+      continue;
+    }
+    for (const piece of geometryPieces(part)) {
+      ownership.own(() => piece.geometry.dispose());
+      const mesh = new THREE.Mesh(
+        piece.geometry,
+        materialFor(part, piece.color, piece.opacity, piece.metalness),
+      );
+      if (piece.position) mesh.position.set(...piece.position);
+      if (piece.rotation) mesh.rotation.set(...piece.rotation);
+      ownMesh(mesh, part);
+      root.add(mesh);
+    }
   }
-  return { meshes: Object.freeze(meshes), materials };
+  return { meshes, materials, roots, parts: partMap };
 }
 
 export function highlightAssemblyPart(

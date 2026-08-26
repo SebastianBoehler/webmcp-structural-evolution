@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ProbeResult } from "../gpu/compute-probe";
 import type { ProbeInput } from "../gpu/probe-contract";
@@ -9,19 +10,21 @@ import {
   FOUNDATION_SELECTIONS,
 } from "../samples/drone-arm-foundation";
 import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer";
-import type { AlternativeMode, ViewerBranch } from "../viewer/alternative-instances";
-import { FoundationTools } from "../webmcp/FoundationTools";
+import type { AlternativeMode } from "../viewer/alternative-instances";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
 import { ComponentBrowser } from "./ComponentBrowser";
-import { DRONE_ARM_VISUALS } from "./drone-arm-visuals";
+import { AlternativeSelector } from "./AlternativeSelector";
 import { EvidencePanel } from "./EvidencePanel";
 import { ExperimentRail } from "./ExperimentRail";
 import { InspectorPanel } from "./InspectorPanel";
+import { ImportReview } from "./ImportReview";
 import { ReceiptLedger } from "./ReceiptLedger";
 import { useProjectState } from "./useProjectState";
 import { useTheme } from "./useTheme";
 import { WorkbenchDrawer, type DrawerView } from "./WorkbenchDrawer";
 import { WorkbenchHeader } from "./WorkbenchHeader";
+import { WorkbenchAgentTools } from "./WorkbenchAgentTools";
+import { foundationView } from "./foundation-view";
 
 const fixture = DRONE_ARM_FOUNDATION_STUDY;
 const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
@@ -59,6 +62,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     compute,
   });
   const { theme, setTheme } = useTheme();
+  const workspace = useAssemblyWorkspace();
   const [mode, setMode] = useState<AlternativeMode>("overlay");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
   const [selectedPart, setSelectedPart] = useState("arm-design-region");
@@ -69,32 +73,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
 
-  const accepted = state.stagedBranches.find(
-    (branch) => branch.branchRevision === state.acceptedBranchRevision && branch.result?.status === "verified",
-  );
-  const alternatives = state.stagedBranches.filter(
-    (branch) => branch.branchRevision !== state.acceptedBranchRevision && branch.result?.status === "verified",
-  );
-  const viewerCurrent: ViewerBranch | null = accepted?.result?.status === "verified" ? {
-    branchRevision: accepted.branchRevision,
-    contextRevision: state.contextRevision,
-    parentRevision: accepted.parentRevision,
-    grid: state.context.grid,
-    result: accepted.result,
-  } : null;
-  const viewerAlternatives: readonly ViewerBranch[] = alternatives.map((branch) => ({
-    branchRevision: branch.branchRevision,
-    contextRevision: branch.parentRevision,
-    parentRevision: branch.parentRevision,
-    grid: state.context.grid,
-    result: branch.result!,
-  }));
-  const currentVerified = alternatives.filter(
-    (branch) => branch.parentRevision === state.contextRevision && !branch.stale && branch.status === "verified",
-  );
-  const currentBranches = state.stagedBranches.filter(
-    (branch) => branch.parentRevision === state.contextRevision && !branch.stale,
-  );
+  const { accepted, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
   const latestVariant = (variant: ProbeVariant) => [...currentBranches].reverse().find(
     (branch) => branch.variant === variant,
   );
@@ -112,7 +91,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   );
   const readyToCompare = accepted && currentVerified.length >= 2;
   const retrying = nextVariant !== undefined && latestVariant(nextVariant) !== undefined;
-  const primaryLabel = state.operationStatus === "running" ? "Verification running…"
+  const primaryLabel = workspace.layoutState !== "verified" ? "Topology context needs rebuild"
+    : state.operationStatus === "running" ? "Verification running…"
     : state.operationStatus === "canceling" ? "Canceling…"
       : nextVariant === "baseline" ? `${retrying ? "Retry" : "Run"} baseline verification`
         : nextVariant === "edge-biased" ? `${retrying ? "Retry" : "Generate"} edge alternative`
@@ -165,9 +145,15 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     }
   };
   const visibleParts = useMemo(
-    () => DRONE_ARM_VISUALS.filter((part) => showConstraints || part.appearance !== "constraint"),
-    [showConstraints],
+    () => workspace.parts.filter((part) => showConstraints || part.appearance !== "constraint"),
+    [showConstraints, workspace.parts],
   );
+  const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
+    workspace.movePart(id, center);
+  }, [workspace.movePart]);
+  const handlePartDragState = useCallback((dragging: boolean) => {
+    workspace.setLayoutState(dragging ? "dragging" : "changed");
+  }, [workspace.setLayoutState]);
   const drawerItems = [
     {
       id: "evidence" as const,
@@ -189,7 +175,16 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     {
       id: "agents" as const,
       label: "Agent tools",
-      content: <FoundationTools state={state} services={services} />,
+      content: <WorkbenchAgentTools
+        state={state}
+        services={services}
+        imports={workspace.imports}
+        pending={workspace.pending}
+        parts={workspace.parts}
+        layoutVersion={workspace.layoutVersion}
+        onStage={workspace.stageImport}
+        onMove={workspace.movePart}
+      />,
     },
   ];
 
@@ -202,6 +197,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         primaryDisabled={
           capability.status !== "available"
           || state.operationStatus !== "idle"
+          || workspace.layoutState !== "verified"
           || (!nextVariant && !readyToCompare && !pendingPromotion)
         }
         cancelVisible={state.operationStatus === "running"}
@@ -216,7 +212,12 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         <ComponentBrowser
           selectedId={selectedPart}
           open={componentsOpen}
+          parts={workspace.parts}
           onSelect={(id) => { setSelectedPart(id); setComponentsOpen(false); }}
+          onImportFile={(file) => {
+            try { setSelectedPart(workspace.importFile(file)); }
+            catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+          }}
           onClose={() => setComponentsOpen(false)}
         />
         <section className="viewport-workspace" aria-labelledby="viewport-title">
@@ -240,7 +241,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
           </header>
           <div className="viewport-canvas">
             <FieldViewer
-              current={viewerCurrent}
+              current={workspace.layoutState === "verified" ? viewerCurrent : null}
               alternatives={viewerAlternatives}
               selectedRegion={state.context.selection}
               threshold={0.5}
@@ -250,31 +251,43 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
               statusText={viewerCurrent
-                ? undefined
+                ? workspace.layoutState === "dragging"
+                  ? "Moving component · rotor safety geometry follows"
+                  : workspace.layoutState === "changed"
+                    ? "Layout changed · previous topology evidence is stale"
+                    : undefined
                 : pendingPromotion
                   ? "Verified branch ready for human review"
                   : undefined}
               environment={viewerEnvironment}
               onPartSelect={setSelectedPart}
+              onPartMove={handlePartMove}
+              onPartDragState={handlePartDragState}
             />
-            {viewerCurrent && alternatives.length > 0 && (
-              <div className="alternative-selector" aria-label="Rendered alternatives">
-                {alternatives.map((branch, index) => (
-                  <button
-                    type="button"
-                    key={branch.branchRevision}
-                    aria-pressed={selectedAlternative === branch.branchRevision}
-                    onClick={() => setSelectedAlternative(branch.branchRevision)}
-                  >Alternative {index + 1}</button>
-                ))}
-              </div>
+            {workspace.pending && (
+              <ImportReview
+                pending={workspace.pending}
+                onApprove={() => {
+                  setSelectedPart(workspace.pending!.id);
+                  workspace.approveImport();
+                }}
+                onReject={workspace.rejectImport}
+              />
             )}
+            {viewerCurrent && <AlternativeSelector
+              alternatives={alternatives}
+              selected={selectedAlternative}
+              onSelect={setSelectedAlternative}
+            />}
           </div>
           <WorkbenchDrawer active={activeDrawer} items={drawerItems} onChange={setActiveDrawer} />
         </section>
         <InspectorPanel
           selectedId={selectedPart}
           context={state.context}
+          parts={workspace.parts}
+          imports={workspace.imports}
+          layoutState={workspace.layoutState}
           open={inspectorOpen}
           onClose={() => setInspectorOpen(false)}
           onLockCableClearance={() => void intervene()}

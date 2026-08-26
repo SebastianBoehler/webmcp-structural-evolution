@@ -30,7 +30,7 @@ export function WorkbenchHeader({
     <header className="workbench-header">
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true">SE</span>
-        <div><h1>Structural Evolution</h1><p>Drone motor arm · Foundation study</p></div>
+        <div><h1>Structural Evolution</h1><p>Quadrotor assembly · East-arm topology study</p></div>
       </div>
       <div className="header-status" role="status">
         <span className={`status-dot status-dot--${capability.status}`} aria-hidden="true" />
