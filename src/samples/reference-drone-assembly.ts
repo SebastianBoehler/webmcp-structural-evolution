@@ -33,6 +33,7 @@ export const REFERENCE_MOTOR_MOUNT_PLATE = Object.freeze({
   centerFromMotorAnchor: [0, 0, -0.003] as const,
 });
 const motorComponent = referenceComponent("motor-2207");
+const boardStackMounts = referenceComponent("flight-controller-30x30").mountInterfaces;
 const coordinate = (length: { readonly value: number; readonly unit: "m" | "mm" }) =>
   length.unit === "m" ? length.value : length.value / 1_000;
 const propellerSeat = motorComponent.interfaces.find(({ id }) => id === "propeller-shaft-seat");
@@ -59,9 +60,12 @@ const requirements = [
     ], yaw))),
   requirement("flight-controller", "flight-controller-30x30", [0, 0, 0.020]),
   requirement("esc", "esc-30x30", [0, 0, 0.010]),
+  ...boardStackMounts.map((mount, index) => requirement(`board-stack-mount-${index + 1}`, "board-stack-mount", [
+    coordinate(mount.position.x), coordinate(mount.position.y), 0,
+  ])),
   requirement("battery", "battery-6s-1550", [-0.001524, -0.001524, -0.032]),
-  requirement("battery-strap-front", "battery-retention-strap", [0.022476, -0.001524, -0.032]),
-  requirement("battery-strap-rear", "battery-retention-strap", [-0.025524, -0.001524, -0.032]),
+  requirement("battery-strap-front", "battery-retention-strap", [0, -0.001524, -0.032]),
+  requirement("battery-strap-rear", "battery-retention-strap", [-0.031524, -0.001524, -0.032]),
   requirement("battery-power-harness", "battery-power-harness", [0.048638, -0.006762, -0.004]),
   requirement("fpv-camera", "fpv-camera", [0.043, 0.043, 0.003], Math.PI / 4),
   requirement("wiring-east", "motor-wiring-corridor", [0.057, 0, 0.008]),

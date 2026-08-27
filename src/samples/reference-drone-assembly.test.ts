@@ -11,7 +11,7 @@ import { REFERENCE_DRONE_CATALOG } from "./reference-drone-catalog";
 describe("canonical reference drone assembly", () => {
   it("content-addresses every component and exact assembly instance", () => {
     expect(REFERENCE_DRONE_CATALOG.map(({ category }) => category).sort()).toEqual([
-      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "motor", "propeller", "retention", "wiring", "wiring",
+      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "fastener", "motor", "propeller", "retention", "wiring", "wiring",
     ]);
     expect(referenceDroneAssembly.revision).toMatch(/^[0-9a-f]{64}$/);
     expect(referenceDroneAssembly.components.every((instance) =>
@@ -38,6 +38,35 @@ describe("canonical reference drone assembly", () => {
     endpoint(escInstance, esc, "battery-power").forEach((value, axis) => {
       expect(value).toBeCloseTo(endpoint(harnessInstance, harness, "esc-side")[axis]!, 12);
     });
+  });
+
+  it("mounts the OpenESC and OpenFC stack on four physical 30.5 mm columns", () => {
+    const mounts = referenceDroneAssembly.components.filter(({ instanceId }) =>
+      instanceId.startsWith("board-stack-mount-"),
+    );
+    expect(mounts).toHaveLength(4);
+    expect(mounts.map(({ transform }) => [
+      transform.position.x.value,
+      transform.position.y.value,
+      transform.position.z.value,
+    ])).toEqual([
+      [0.01525, 0.01525, 0],
+      [-0.01525, 0.01525, 0],
+      [-0.01525, -0.01525, 0],
+      [0.01525, -0.01525, 0],
+    ]);
+    const mount = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "board-stack-mount")!;
+    expect(mount.interfaces.some(({ kind, id }) => kind === "mate" && id === "frame-through-hole")).toBe(true);
+    expect(mount.interfaces.filter(({ kind }) => kind === "mate").map(({ id, position }) => [
+      id,
+      position.z.value,
+    ])).toEqual([
+      ["frame-through-hole", 0],
+      ["openesc-bearing-plane", 0.006835],
+      ["openfc-bearing-plane", 0.01731],
+    ]);
+    expect(mount.envelope.kind).toBe("cylinder");
+    if (mount.envelope.kind === "cylinder") expect(mount.envelope.height.value).toBe(0.0281);
   });
 
   it("mates the trimmed motor pigtail to the routed harness without overlap or a loose end", () => {

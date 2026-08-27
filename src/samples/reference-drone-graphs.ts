@@ -46,6 +46,20 @@ export const FASTENER_GRAPH: ParametricGraph = { nodes: [
   { kind: "subtraction", id: "m3x8-with-drive", left: "m3x8-solid", right: "socket-recess" },
 ] };
 
+export const BOARD_STACK_MOUNT_GRAPH: ParametricGraph = { nodes: [
+  cylinder("m3-thread-envelope", [0, 0, 0.0125], 0.0015, 0.025),
+  cylinder("socket-head", [0, 0, -0.0015], 0.00284, 0.003),
+  { kind: "union", id: "board-stack-bolt", left: "m3-thread-envelope", right: "socket-head" },
+  box("socket-recess", [0, 0, -0.00235], [0.0025, 0.0025, 0.0013]),
+  { kind: "subtraction", id: "board-stack-bolt-with-drive", left: "board-stack-bolt", right: "socket-recess" },
+  cylinder("lower-stack-spacer", [0, 0, 0.0034175], 0.0025, 0.006835),
+  cylinder("inter-board-spacer", [0, 0, 0.0152375], 0.0025, 0.004145),
+  cylinder("top-locknut", [0, 0, 0.0239], 0.003, 0.0024),
+  { kind: "union", id: "board-stack-lower", left: "board-stack-bolt-with-drive", right: "lower-stack-spacer" },
+  { kind: "union", id: "board-stack-spaced", left: "board-stack-lower", right: "inter-board-spacer" },
+  { kind: "union", id: "board-stack-mount", left: "board-stack-spaced", right: "top-locknut" },
+] };
+
 export const OPEN_FC_GRAPH: ParametricGraph = { nodes: [
   box("openfc-lite-rev3.3-envelope", [0, 0, 0], [0.037942302, 0.037942302, 0.00538]),
 ] };

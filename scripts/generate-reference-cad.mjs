@@ -251,6 +251,20 @@ function fastener() {
   return group;
 }
 
+function boardStackMount() {
+  const group = new THREE.Group();
+  group.name = "Sunderlabs_M3_Open30_board_stack_mount_rev1";
+  const zinc = material(0x737b83, 0.94, 0.18);
+  const spacer = material(0x1e242a, 0.18, 0.54);
+  mesh(group, cylinder(0.00125, 0.025, 48), zinc, [0, 0, 0.0125], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.00284, 0.003, 64), zinc, [0, 0, -0.0015], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.00125, 0.0013, 6), black, [0, 0, -0.00235], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.0025, 0.006835, 48), spacer, [0, 0, 0.0034175], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.0025, 0.004145, 48), spacer, [0, 0, 0.0152375], [Math.PI / 2, 0, 0]);
+  mesh(group, cylinder(0.003, 0.0024, 6), zinc, [0, 0, 0.0239], [Math.PI / 2, 0, 0]);
+  return group;
+}
+
 async function save(name, scene) {
   scene.traverse((object) => {
     if (object.isMesh) {
@@ -274,4 +288,5 @@ await Promise.all([
   save("motor-to-esc-3x20awg.glb", motorHarness()),
   save("runcam-phoenix-2.glb", fpvCamera()),
   save("accu-m3x8-din912.glb", fastener()),
+  save("sunderlabs-open30-stack-mount.glb", boardStackMount()),
 ]);

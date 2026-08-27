@@ -102,7 +102,8 @@ describe("drone assembly workspace", () => {
     const solverVolumes = referenceDroneAssembly.obstacleVolumes.map((volume) => ({
       id: volume.id,
       kind: volume.kind,
-      center: [volume.center.x.value, volume.center.y.value, volume.center.z.value].map((value) => value * 1_000),
+      center: [volume.center.x.value, volume.center.y.value, volume.center.z.value]
+        .map((value) => Math.round(value * 1e9) / 1e6),
       ...(volume.kind === "box" ? {
         size: [volume.size.x.value, volume.size.y.value, volume.size.z.value]
           .map((value) => Math.round(value * 1e12) / 1e9),

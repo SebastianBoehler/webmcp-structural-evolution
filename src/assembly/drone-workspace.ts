@@ -140,7 +140,7 @@ function equipmentParts(equipment: Readonly<Record<string, Point3>>): readonly A
     { id: "battery", selectionId: "battery", label: "Tattu R-Line V5 1550mAh 6S battery", appearance: "component", kind: "box", center: batteryCenter, size: viewerPoint(batteryDisplay.size), movable: true, dragGroup: "battery" },
     boxConstraint("battery", "Battery protected volume", batteryCenter, batteryComponent, "battery"),
     { id: "fpv-camera", selectionId: "fpv-camera", label: "RunCam Phoenix 2 FPV camera", appearance: "component", kind: "box", center: cameraCenter, size: [31, 20, 19] },
-    { id: "fpv-camera-camera-keepout", selectionId: "fpv-camera-camera-keepout", label: "FPV camera protected volume", appearance: "constraint", kind: "box", center: [49.363961031, 49.363961031, 3], rotation: [0, 0, Math.PI / 4], size: [40, 24, 23], dragGroup: "fpv-camera" },
+    { id: "fpv-camera-camera-keepout", selectionId: "fpv-camera-camera-keepout", label: "FPV camera protected volume", appearance: "constraint", kind: "box", center: [49.363961, 49.363961, 3], rotation: [0, 0, Math.PI / 4], size: [40, 24, 23], dragGroup: "fpv-camera" },
   ];
 }
 

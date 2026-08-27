@@ -210,6 +210,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
   const requiredSolids: SolverVolume[] = [];
   const protectedVoids: SolverVolume[] = [];
   const accessVoids: SolverVolume[] = [];
+  const boardMountLocations = new Set<string>();
   let assemblyMassKg = 0;
   const weightedCenter = [0, 0, 0];
   const inertialMasses: AssemblyTopologyInput["inertialMasses"][number][] = [];
@@ -270,12 +271,34 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
         requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], -0.0015], sizeM: [0.084, 0.060, 0.003], yawRad });
       }
       accessVoids.push(...retentionAccessVoids(definition, centerM, yawRad, grid));
+      if (definition.id === "flight-controller-30x30" || definition.id === "esc-30x30") {
+        for (const mount of definition.mountInterfaces) {
+          const worldMount = add(centerM, rotateZ(point(mount.position), yawRad));
+          const key = `${worldMount[0].toFixed(9)}:${worldMount[1].toFixed(9)}`;
+          if (boardMountLocations.has(key)) continue;
+          boardMountLocations.add(key);
+          accessVoids.push({
+            kind: "cylinder",
+            centerM: [worldMount[0], worldMount[1], 0],
+            // Preserve the published 4 mm board hole with a conservative
+            // three-cell representation at the current 1.875 mm XY pitch.
+            radiusM: Math.max(metres(mount.diameter) / 2, grid.cellSizeM[0] * 1.5),
+            heightM: grid.cellSizeM[2] * grid.dimensions.depth,
+            yawRad,
+          });
+        }
+      }
       if (definition.id === "fpv-camera") {
-        requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], 0], sizeM: [0.035, 0.030, 0.005], yawRad });
+        const bridgeCenter = add(centerM, rotateZ([-0.038, 0, -0.004], yawRad));
+        requiredSolids.push({ kind: "box", centerM: bridgeCenter, sizeM: [0.008, 0.030, 0.020], yawRad });
         for (const side of [-1, 1]) {
-          const wallCenter = add(centerM, rotateZ([0, side * 0.0115, -0.004], yawRad));
-          requiredSolids.push({ kind: "box", centerM: wallCenter, sizeM: [0.028, 0.003, 0.020], yawRad });
-          accessVoids.push({ kind: "box", centerM: add(wallCenter, [0, 0, 0.004]), sizeM: [0.008, 0.005, 0.004], yawRad });
+          // The side rails sit outside the 24 mm camera keep-out and overlap
+          // the inboard bridge. This forms one U-bracket instead of leaving
+          // keep-out-clipped deck fragments around the camera housing.
+          const railCenter = add(centerM, rotateZ([-0.019, side * 0.0135, -0.004], yawRad));
+          requiredSolids.push({ kind: "box", centerM: railCenter, sizeM: [0.046, 0.003, 0.020], yawRad });
+          const screwCenter = add(centerM, rotateZ([0, side * 0.0135, 0], yawRad));
+          accessVoids.push({ kind: "box", centerM: screwCenter, sizeM: [0.006, 0.006, 0.006], yawRad });
         }
       }
       protectedVoids.push(

@@ -52,6 +52,12 @@ function collisionConflicts(components: readonly PositionedComponent[]) {
 }
 
 function intentionalAssemblyMate(left: PositionedComponent, right: PositionedComponent) {
+  const stackMount = left.component?.id === "board-stack-mount" ? left
+    : right.component?.id === "board-stack-mount" ? right : undefined;
+  const stackMate = stackMount === left ? right : left;
+  if (stackMount && stackMate.component && [
+    "flight-controller-30x30", "esc-30x30", "body-interface",
+  ].includes(stackMate.component.id)) return true;
   const motor = left.component?.category === "motor" ? left : right.component?.category === "motor" ? right : undefined;
   const attached = motor === left ? right : left;
   const motorDirection = motor?.instance.instanceId.replace("motor-", "");

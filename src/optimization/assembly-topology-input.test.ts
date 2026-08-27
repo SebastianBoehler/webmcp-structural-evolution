@@ -21,7 +21,7 @@ describe("compileLiveTopologyContext", () => {
       return count + definition.collisionVolumes.length + definition.protectedVolumes.length;
     }, 0);
     expect(context.input.protectedVoids).toHaveLength(expectedProtectedVolumes);
-    expect(context.input.accessVoids).toHaveLength(22);
+    expect(context.input.accessVoids).toHaveLength(26);
     expect(context.input.accessVoids.slice(0, 16).every((volume) =>
       volume.kind === "cylinder" && volume.radiusM === 0.00334 && volume.heightM === 0.024,
     )).toBe(true);
@@ -37,23 +37,40 @@ describe("compileLiveTopologyContext", () => {
     );
     expect(strapSlots).toHaveLength(4);
     const expectedSlotCenters = [
-      [0.022476, -0.023024],
-      [0.022476, 0.019976],
-      [-0.025524, -0.023024],
-      [-0.025524, 0.019976],
+      [0, -0.023024],
+      [0, 0.019976],
+      [-0.031524, -0.023024],
+      [-0.031524, 0.019976],
     ];
     strapSlots.forEach(({ centerM }, index) => {
       expect(centerM[0]).toBeCloseTo(expectedSlotCenters[index]![0]!, 12);
       expect(centerM[1]).toBeCloseTo(expectedSlotCenters[index]![1]!, 12);
     });
     expect(strapSlots.every((slot) => slot.sizeM?.[2] === 0.024 && slot.centerM[2] === 0)).toBe(true);
-    const strapTopClearance = context.input.protectedVoids.find((volume) =>
-      volume.kind === "box" && volume.sizeM?.[0] === 0.022 && volume.centerM[0] > 0,
+    const boardStackHoles = context.input.accessVoids.filter((volume) =>
+      volume.kind === "cylinder"
+      && volume.centerM[2] === 0
+      && Math.abs(volume.centerM[0]) === 0.01525
+      && Math.abs(volume.centerM[1]) === 0.01525,
     );
-    expect(strapTopClearance?.centerM[0]).toBeCloseTo(0.022476, 9);
+    expect(boardStackHoles).toHaveLength(4);
+    expect(boardStackHoles.every((hole) =>
+      hole.radiusM === 0.0028125 && hole.heightM === 0.024,
+    )).toBe(true);
+    const cameraMountRails = context.input.requiredSolids.filter((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.046 && volume.sizeM[2] === 0.020,
+    );
+    expect(cameraMountRails).toHaveLength(2);
+    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({
+      kind: "box", sizeM: [0.008, 0.030, 0.020], yawRad: Math.PI / 4,
+    }));
+    const strapTopClearance = context.input.protectedVoids.find((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.022 && volume.centerM[0] === 0,
+    );
+    expect(strapTopClearance?.centerM[0]).toBeCloseTo(0, 9);
     expect(strapTopClearance?.centerM[1]).toBeCloseTo(-0.001524, 9);
     expect(strapTopClearance?.centerM[2]).toBeCloseTo(-0.0015, 9);
-    expect(context.input.assemblyMassKg).toBeCloseTo(0.515, 3);
+    expect(context.input.assemblyMassKg).toBeCloseTo(0.521, 3);
     expect(context.input.inertialMasses.reduce((sum, item) => sum + item.massKg, 0)).toBeCloseTo(context.input.assemblyMassKg, 12);
     const batteryMass = context.input.inertialMasses.find(({ id }) => id === "battery");
     expect(batteryMass?.massKg).toBeCloseTo(0.254, 12);
