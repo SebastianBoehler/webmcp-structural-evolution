@@ -3,11 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FlightSimulationPanel } from "./FlightSimulationPanel";
 
+const motors = [
+  { id: "motor-east", centerM: [0.105, 0, 0] as const },
+  { id: "motor-north", centerM: [0, 0.105, 0] as const },
+  { id: "motor-west", centerM: [-0.105, 0, 0] as const },
+  { id: "motor-south", centerM: [0, -0.105, 0] as const },
+];
+
 describe("FlightSimulationPanel", () => {
   afterEach(cleanup);
 
   it("exposes the four structural cases and their fidelity boundary", () => {
-    render(<FlightSimulationPanel motors={[]} massKg={0.515} componentCount={36} batteryMassKg={0.254}
+    render(<FlightSimulationPanel motors={motors} massKg={0.515} componentCount={36} batteryMassKg={0.254}
       onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Hover" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Aggressive roll" })).toBeVisible();
@@ -21,12 +28,7 @@ describe("FlightSimulationPanel", () => {
     const onActiveChange = vi.fn();
     const onComponentsVisibleChange = vi.fn();
     render(<FlightSimulationPanel
-      motors={[
-        { id: "motor-east", centerM: [0.105, 0, 0] },
-        { id: "motor-north", centerM: [0, 0.105, 0] },
-        { id: "motor-west", centerM: [-0.105, 0, 0] },
-        { id: "motor-south", centerM: [0, -0.105, 0] },
-      ]}
+      motors={motors}
       massKg={0.515}
       componentCount={36}
       batteryMassKg={0.254}
@@ -40,5 +42,14 @@ describe("FlightSimulationPanel", () => {
     expect(onActiveChange).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole("button", { name: "Frame only" }));
     expect(onComponentsVisibleChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("shows one clear prerequisite instead of unusable scenario controls", () => {
+    render(<FlightSimulationPanel motors={[]} massKg={0.515} componentCount={36} batteryMassKg={0.254}
+      onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()} />);
+
+    expect(screen.getByText(/generate a verified topology before replaying flight loads/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run flight replay" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Aggressive roll" })).toBeNull();
   });
 });

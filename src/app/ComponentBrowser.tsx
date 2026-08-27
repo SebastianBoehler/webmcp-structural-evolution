@@ -42,7 +42,7 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
   const selectedComponent = components.some(({ selectionId }) => selectionId === selectedId);
 
   return (
-    <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components">
+    <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components" hidden={!open}>
       <div className="panel-heading">
         <div><h2>Assembly</h2><p>{revision ? `Staged revision ${revision.slice(0, 8)}` : "Quadrotor frame"}</p></div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="Collapse components">×</button>

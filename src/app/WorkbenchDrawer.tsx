@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export type DrawerView = "evidence" | "branches" | "history" | "agents";
 
-interface DrawerItem {
+export interface DrawerItem {
   readonly id: DrawerView;
   readonly label: string;
   readonly count?: number;
@@ -16,34 +16,30 @@ export interface WorkbenchDrawerProps {
 }
 
 export function WorkbenchDrawer({ active, items, onChange }: WorkbenchDrawerProps) {
+  const selected = items.find(({ id }) => id === active) ?? items[0];
   return (
-    <div className="workbench-drawer" data-expanded={Boolean(active)}>
+    <div className="workbench-drawer">
       <nav className="drawer-tabs" aria-label="Workbench panels">
         {items.map((item) => (
           <button
             type="button"
             key={item.id}
-            aria-pressed={active === item.id}
-            onClick={() => onChange(active === item.id ? undefined : item.id)}
+            aria-pressed={selected?.id === item.id}
+            onClick={() => onChange(item.id)}
           >
             {item.label}{item.count !== undefined && <span>{item.count}</span>}
           </button>
         ))}
       </nav>
-      {items.map((item) => (
-        <section
-          className="drawer-content"
-          aria-label={item.label}
-          hidden={active !== item.id}
-          key={item.id}
-        >
-          <div className="drawer-heading">
-            <h2>{item.label}</h2>
-            <button className="icon-button" type="button" onClick={() => onChange(undefined)} aria-label={`Close ${item.label}`}>×</button>
-          </div>
-          <div className="drawer-scroll">{item.content}</div>
-        </section>
-      ))}
+      {items.map((item) => <section
+        className="drawer-content"
+        aria-label={item.label}
+        hidden={selected?.id !== item.id}
+        key={item.id}
+      >
+        <div className="drawer-heading"><h2>{item.label}</h2></div>
+        <div className="drawer-scroll">{item.content}</div>
+      </section>)}
     </div>
   );
 }

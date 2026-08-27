@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { App } from "./App";
@@ -13,6 +13,7 @@ test("shows the structural evolution foundation shell", () => {
   render(<App />);
 
   expect(screen.getByRole("heading", { name: /structural evolution/i })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeDisabled();
 });
 
@@ -30,7 +31,7 @@ test("shares one WebGPU capability acquisition across a StrictMode lifecycle", a
 
   render(<StrictMode><App /></StrictMode>);
 
-  await waitFor(() => expect(screen.getByText(/webgpu available/i)).toBeVisible());
+  await waitFor(() => expect(screen.getByText(/compute available/i)).toBeVisible());
   expect(requestAdapter).toHaveBeenCalledOnce();
   expect(adapter.requestDevice).toHaveBeenCalledOnce();
   expect(device.destroy).toHaveBeenCalledOnce();

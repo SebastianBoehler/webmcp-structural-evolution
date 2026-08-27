@@ -1,62 +1,49 @@
 import type { GpuCapability } from "../gpu/capabilities";
 import type { ThemePreference } from "./useTheme";
+import { WORKBENCH_MODES, type WorkbenchMode } from "./workbench-mode";
 
 export interface WorkbenchHeaderProps {
   readonly capability: GpuCapability;
   readonly theme: ThemePreference;
-  readonly primaryLabel: string;
-  readonly primaryDisabled: boolean;
-  readonly cancelVisible: boolean;
-  readonly onPrimary: () => void;
-  readonly onCancel: () => void;
+  readonly mode: WorkbenchMode;
+  readonly onModeChange: (mode: WorkbenchMode) => void;
   readonly onThemeChange: (theme: ThemePreference) => void;
-  readonly onOpenComponents: () => void;
-  readonly onOpenInspector: () => void;
 }
 
 export function WorkbenchHeader({
   capability,
   theme,
-  primaryLabel,
-  primaryDisabled,
-  cancelVisible,
-  onPrimary,
-  onCancel,
+  mode,
+  onModeChange,
   onThemeChange,
-  onOpenComponents,
-  onOpenInspector,
 }: WorkbenchHeaderProps) {
   return (
     <header className="workbench-header">
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true">SE</span>
-        <div><h1>Structural Evolution</h1><p>Agentic topology design · complete quadrotor frame</p></div>
+        <div><h1>Structural Evolution</h1><p>Agentic quadrotor engineering</p></div>
       </div>
+      <nav className="workflow-navigation" aria-label="Engineering workflow">
+        {WORKBENCH_MODES.map((item) => <button
+          type="button"
+          key={item.id}
+          aria-current={mode === item.id ? "step" : undefined}
+          onClick={() => onModeChange(item.id)}
+        ><span aria-hidden="true">{item.step}</span>{item.label}</button>)}
+      </nav>
       <div className="header-status" role="status">
         <span className={`status-dot status-dot--${capability.status}`} aria-hidden="true" />
-        <span>WebGPU {capability.status}</span>
+        <span>Compute {capability.status}</span>
       </div>
-      <div className="mobile-panel-actions mobile-only">
-        <button type="button" onClick={onOpenComponents}>Components</button>
-        <button type="button" onClick={onOpenInspector}>Inspector</button>
-      </div>
-      <div className="theme-switcher" aria-label="Appearance">
-        {(["system", "light", "dark"] as const).map((option) => (
-          <button
-            type="button"
-            key={option}
-            aria-pressed={theme === option}
-            onClick={() => onThemeChange(option)}
-          >{option}</button>
-        ))}
-      </div>
-      {cancelVisible ? (
-        <button className="secondary-action" type="button" onClick={onCancel}>Cancel optimization</button>
-      ) : (
-        <button className="primary-action" type="button" disabled={primaryDisabled} onClick={onPrimary}>
-          {primaryLabel}
-        </button>
-      )}
+      <label className="appearance-select"><span className="visually-hidden">Appearance</span><select
+        aria-label="Appearance"
+        value={theme}
+        onChange={(event) => onThemeChange(event.target.value as ThemePreference)}
+      >
+        <option value="system">System theme</option>
+        <option value="light">Light theme</option>
+        <option value="dark">Dark theme</option>
+      </select></label>
     </header>
   );
 }

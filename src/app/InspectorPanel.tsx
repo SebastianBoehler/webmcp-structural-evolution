@@ -115,10 +115,10 @@ export function InspectorPanel({
   const isConstraint = part?.appearance === "constraint";
 
   return (
-    <aside className="side-panel inspector-panel" data-open={open} aria-label="Selection inspector">
+    <aside className="side-panel inspector-panel" data-open={open} aria-label="Selection inspector" hidden={!open}>
       <div className="panel-heading">
         <div><h2>Inspector</h2><p>{layoutState === "verified" ? "Assembly aligned" : layoutState === "dragging" ? "Moving component" : "Verification required"}</p></div>
-        <button className="icon-button mobile-only" type="button" onClick={onClose} aria-label="Close inspector">×</button>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Close inspector">×</button>
       </div>
       <div className="selection-heading">
         <span className="selection-icon" aria-hidden="true" />

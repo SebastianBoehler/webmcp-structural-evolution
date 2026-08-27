@@ -65,6 +65,20 @@ export function FlightSimulationPanel({
     }
   };
 
+  if (motors.length !== 4) return (
+    <aside className="flight-simulation" aria-label="Flight load simulation">
+      <div className="flight-simulation__heading">
+        <div><strong>Flight load replay</strong><span>4 optimizer cases</span></div>
+      </div>
+      <p className="flight-simulation__empty" role="status">
+        Generate a verified topology before replaying flight loads.
+      </p>
+      <button className="flight-simulation__run" type="button" aria-label="Run flight replay" disabled>
+        Run replay
+      </button>
+    </aside>
+  );
+
   return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">

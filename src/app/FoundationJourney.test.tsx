@@ -28,6 +28,34 @@ function renderJourney(compute: (input: ProbeInput, signal?: AbortSignal) => Pro
   );
 }
 
+test("reveals only controls that belong to the current engineering step", () => {
+  renderJourney(async (input) => ({
+    status: "verified",
+    output: new Float32Array(input.values.length).fill(0.7),
+    elapsedMs: 8,
+    relativeL2: 0,
+    tolerance: 0.000005,
+  }));
+
+  expect(screen.getByRole("button", { name: /^parts$/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /^details$/i })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /^density$/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^evidence$/i })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /^parts$/i })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
+  expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
+  expect(screen.getByText(/generate a verified topology before replaying flight loads/i)).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
+  expect(screen.getByRole("button", { name: /^evidence$/i })).toBeVisible();
+  expect(screen.getByRole("button", { name: /^agents$/i })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /run flight replay/i })).toBeNull();
+});
+
 test("completes the exact prediction-to-evidence journey in the CAD workbench", async () => {
   const context = new FakeModelContext();
   browserCleanups.push(installFakeModelContext(context));
@@ -41,22 +69,13 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   renderJourney(compute);
 
   expect(screen.getByRole("heading", { name: /structural evolution/i })).toBeVisible();
-  expect(screen.getByText(/webgpu available/i)).toBeVisible();
+  expect(screen.getByText(/compute available/i)).toBeVisible();
   expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.getByRole("img", { name: /interactive 3d drone-arm assembly/i })).toBeVisible();
-  const stage = screen.getByRole("main").querySelector(".workbench-stage")!;
-  fireEvent.click(screen.getByRole("button", { name: /hide assembly/i }));
-  expect(stage.getAttribute("data-components-collapsed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: /show assembly/i }));
-  expect(stage.getAttribute("data-components-collapsed")).toBe("false");
-  const canvasLayout = screen.getByRole("main").querySelector(".viewport-canvas")!;
-  fireEvent.click(screen.getByRole("button", { name: /^analysis$/i }));
-  expect(canvasLayout.getAttribute("data-analysis-open")).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: /^analysis$/i }));
-  expect(canvasLayout.getAttribute("data-analysis-open")).toBe("true");
   expect(screen.getByText(/drop a trusted local zip package, step, stp, glb, or gltf/i)).toBeVisible();
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /^details$/i }));
   expect(screen.getByText(/128 × 128 × 32/)).toBeVisible();
   fireEvent.click(screen.getByText("Engineering details"));
   expect(screen.getByText("assembly · mm")).toBeVisible();
@@ -70,18 +89,19 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   };
   expect(initialFacts.context).toEqual(DRONE_ARM_FOUNDATION_CONTEXT);
 
-  fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
-  await waitFor(() => expect(screen.getByText(/candidate completed its output checks/i)).toBeVisible());
-  expect(screen.getByText(/agent prediction/i)).toBeVisible();
-  expect(screen.getByText(/measured evidence/i)).toBeVisible();
+  await screen.findByRole("button", { name: /review topology candidate/i });
 
   fireEvent.click(screen.getByRole("button", { name: /review topology candidate/i }));
   expect(screen.getByRole("list", { name: /experiment branches/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /use this frame/i }));
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
   await waitFor(() => expect(screen.getByText(/human-promoted configuration/i)).toBeVisible());
+  expect(screen.getByText(/agent prediction/i)).toBeVisible();
+  expect(screen.getByText(/measured evidence/i)).toBeVisible();
 
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /generate lightweight frame/i }));
   fireEvent.click(await screen.findByRole("button", { name: /generate stiffness-first frame/i }));
   fireEvent.click(await screen.findByRole("button", { name: /compare alternatives/i }));
@@ -91,13 +111,16 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   fireEvent.click(peel);
   expect(peel.getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: /alternative 1/i }));
-  const audition = screen.getByRole("button", { name: /^audition$/i });
+  const audition = screen.getByRole("button", { name: /^inspect one$/i });
   fireEvent.click(audition);
   expect(audition.getAttribute("aria-pressed")).toBe("true");
 
+  fireEvent.click(screen.getByRole("button", { name: /^assemble$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^details$/i }));
   fireEvent.click(screen.getByRole("button", { name: /protect route/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
   await waitFor(() => expect(screen.getByText(/prior experiment plan is stale/i)).toBeVisible());
-  expect(screen.getByRole("button", { name: /route protected/i })).toBeDisabled();
   const changedInspection = await context.execute("inspect_design_context", { scope: "current" }) as {
     content: readonly { text: string }[];
   };
@@ -134,7 +157,7 @@ test("recovers from failures without erasing their evidence", async () => {
     };
   });
   renderJourney(compute);
-  fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
   await screen.findByText("adapter reset during balanced");
@@ -143,11 +166,12 @@ test("recovers from failures without erasing their evidence", async () => {
   fireEvent.click(screen.getByRole("button", { name: /review topology candidate/i }));
   expect(screen.getByText("Attempt 2")).toBeVisible();
   fireEvent.click(screen.getAllByRole("button", { name: /use this frame/i }).at(-1)!);
-  await screen.findByRole("button", { name: /generate lightweight frame/i });
-  fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
-  fireEvent.click(screen.getByRole("button", { name: /generate lightweight frame/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /generate lightweight frame/i }));
   expect((await screen.findAllByText("lightweight frame failed output checks")).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
   expect(screen.getByText(/historical verification: balanced/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /retry lightweight frame/i }));
   await screen.findByRole("button", { name: /generate stiffness-first frame/i });
   expect(compute).toHaveBeenCalledTimes(4);
@@ -158,12 +182,13 @@ test("shows cancellation as immutable evidence and ignores a late result", async
   const compute = vi.fn((_input: ProbeInput, _signal?: AbortSignal) =>
     new Promise<ProbeResult>((resolve) => { resolveProbe = resolve; }));
   renderJourney(compute);
-  fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
   fireEvent.click(await screen.findByRole("button", { name: /cancel optimization/i }));
   await screen.findByText(/topology optimization canceled by the user/i);
   expect(await screen.findByRole("button", { name: /retry balanced frame/i })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
   fireEvent.click(screen.getByRole("button", { name: /^history/i }));
   expect(screen.getByRole("log", { name: /action receipts/i }).textContent).toContain("Canceled");
 
@@ -200,6 +225,7 @@ test("forwards WebMCP cancellation to one terminal transaction", async () => {
   expect(response.isError).toBe(true);
   expect(output.status).toBe("canceled");
 
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
   fireEvent.click(screen.getByRole("button", { name: /^evidence$/i }));
   expect((await screen.findAllByText(/topology optimization canceled by the invoking client/i)).length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button", { name: /^history/i }));

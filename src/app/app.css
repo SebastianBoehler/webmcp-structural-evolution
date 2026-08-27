@@ -40,7 +40,7 @@ code {
   background: var(--accent);
 }
 
-:where(button, input, summary, canvas):focus-visible {
+:where(button, input, select, summary, canvas):focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
