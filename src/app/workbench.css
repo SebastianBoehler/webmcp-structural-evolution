@@ -12,7 +12,7 @@
 .workbench-header {
   z-index: 20;
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto auto auto;
+  grid-template-columns: minmax(12rem, 1fr) auto auto auto auto;
   gap: 0.75rem;
   align-items: center;
   min-height: 3.75rem;
@@ -36,6 +36,8 @@
 }
 .brand-lockup h1 { font-size: var(--text-heading); line-height: 1.2; letter-spacing: -0.015em; text-wrap: balance; }
 .brand-lockup p { color: var(--text-secondary); font-size: var(--text-caption); line-height: 1.4; }
+.fixture-select { display: grid; gap: 0.15rem; color: var(--text-secondary); font-size: 0.68rem; }
+.fixture-select select { min-height: 2.1rem; max-width: 11rem; }
 
 .workflow-navigation {
   display: flex;
@@ -194,15 +196,16 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .alternative-selector button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 
 @media (max-width: 68rem) {
-  .workbench-header { grid-template-columns: minmax(11rem, 1fr) auto auto; }
+  .workbench-header { grid-template-columns: minmax(11rem, 1fr) auto auto auto; }
   .header-status { display: none; }
   .viewport-toolbar { grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 2fr); }
   .selection-context { display: none; }
 }
 
 @media (max-width: 52rem) {
-  .workbench-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .workbench-header { grid-template-columns: minmax(0, 1fr) auto auto; }
   .brand-lockup p { display: none; }
+  .fixture-select > span { display: none; }
   .workflow-navigation { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .workflow-navigation button { justify-content: center; }
   .viewport-toolbar { grid-template-columns: minmax(0, 1fr); gap: 0.65rem; }

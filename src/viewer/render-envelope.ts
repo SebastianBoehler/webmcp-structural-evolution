@@ -1,6 +1,5 @@
 import type { AlternativeLayer } from "./alternative-instances";
 import type { CadMesh } from "../assembly/step-import";
-import type { StructuralLoadCase } from "../optimization/structural-load-cases";
 import {
   assertFiniteF32,
   fieldInstanceCount,
@@ -29,7 +28,7 @@ export interface ScalarAnalysisField {
   readonly kind: "displacement" | "stress" | "safety";
   readonly values: Float32Array;
   readonly maximum: number;
-  readonly cases?: Readonly<Partial<Record<StructuralLoadCase, ScalarAnalysisCaseField>>>;
+  readonly cases?: Readonly<Record<string, ScalarAnalysisCaseField | undefined>>;
 }
 
 export interface ScalarAnalysisCaseField {

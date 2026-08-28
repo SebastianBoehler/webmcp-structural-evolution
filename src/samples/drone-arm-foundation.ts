@@ -73,6 +73,7 @@ const study = await defineStudy({
   material: {
     id: "pla-foundation-profile",
     youngsModulus: { value: 3500, unit: "MPa" },
+    failureStress: { value: 50, unit: "MPa" },
     poissonRatio: 0.36,
     density: { value: 1.24, unit: "g/cm^3" },
   },

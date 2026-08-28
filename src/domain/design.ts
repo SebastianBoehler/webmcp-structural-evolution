@@ -56,6 +56,7 @@ const StudySpecContentSchema = z.object({
   material: z.object({
     id: z.string().min(1),
     youngsModulus: PressureSchema,
+    failureStress: PressureSchema,
     poissonRatio: finite.gte(0).lt(0.5),
     density: DensitySchema,
   }).strict(),
@@ -81,6 +82,7 @@ export const defineStudy = async (value: unknown): Promise<StudySpec> =>
     material: {
       ...study.material,
       youngsModulus: normalizePressure(study.material.youngsModulus),
+      failureStress: normalizePressure(study.material.failureStress),
       density: normalizeDensity(study.material.density),
     },
     manufacturing: {

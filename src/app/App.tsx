@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ErrorInfo, type JSX, type ReactNode } from "react";
 
 import { detectWebGpuSingleFlight, type GpuCapability } from "../gpu/capabilities";
+import type { DemoFixtureId } from "../samples/demo-fixtures";
 import { FoundationJourney } from "./FoundationJourney";
 
 type ErrorBoundaryProps = { children: ReactNode };
@@ -25,6 +26,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export function App(): JSX.Element {
+  const [fixtureId, setFixtureId] = useState<DemoFixtureId>("reference-drone");
   const [capability, setCapability] = useState<GpuCapability>({
     status: "unavailable",
     code: "api-unavailable",
@@ -41,7 +43,12 @@ export function App(): JSX.Element {
 
   return (
     <ErrorBoundary>
-      <FoundationJourney capability={capability} />
+      <FoundationJourney
+        key={fixtureId}
+        capability={capability}
+        fixtureId={fixtureId}
+        onFixtureChange={setFixtureId}
+      />
     </ErrorBoundary>
   );
 }

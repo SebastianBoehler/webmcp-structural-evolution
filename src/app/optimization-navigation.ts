@@ -14,6 +14,7 @@ export function deriveOptimizationNavigation(
   accepted: boolean,
   currentVerifiedCount: number,
   layoutVerified: boolean,
+  topologySubject = "frame",
 ): OptimizationNavigation {
   const latestVariant = (variant: ProbeVariant) => [...currentBranches].reverse().find(
     (branch) => branch.variant === variant,
@@ -38,9 +39,9 @@ export function deriveOptimizationNavigation(
   const primaryLabel = !layoutVerified ? "Topology context needs rebuild"
     : state.operationStatus === "running" ? "Optimizing frame…"
       : state.operationStatus === "canceling" ? "Canceling…"
-        : nextVariant === "balanced" ? `${retrying ? "Retry" : "Generate"} balanced frame`
-          : nextVariant === "lightweight" ? `${retrying ? "Retry" : "Generate"} lightweight frame`
-            : nextVariant === "stiffness" ? `${retrying ? "Retry" : "Generate"} stiffness-first frame`
+        : nextVariant === "balanced" ? `${retrying ? "Retry" : "Generate"} balanced ${topologySubject}`
+          : nextVariant === "lightweight" ? `${retrying ? "Retry" : "Generate"} lightweight ${topologySubject}`
+            : nextVariant === "stiffness" ? `${retrying ? "Retry" : "Generate"} stiffness-first ${topologySubject}`
               : readyToCompare ? "Compare alternatives"
                 : pendingPromotion ? "Review topology candidate" : "No action available";
   return {

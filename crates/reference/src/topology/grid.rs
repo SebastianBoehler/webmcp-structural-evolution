@@ -1,6 +1,6 @@
 use super::inertial_relief::{apply_inertial_relief, set_kinematic_stabilizers};
 use super::raster::{
-    planar_segment_distance, volume_center, volume_contains, volume_overlaps_cell,
+    volume_contains, volume_overlaps_cell,
 };
 use super::{AssemblySolverInput, LoadPathGuideInput};
 
@@ -11,6 +11,7 @@ pub(crate) struct Grid {
     pub passive_solid: Vec<bool>,
     pub passive_void: Vec<bool>,
     pub fixed_dofs: Vec<bool>,
+    pub load_case_ids: Vec<String>,
     pub load_cases: Vec<Vec<f32>>,
     pub cell_size_m: [f32; 3],
     pub youngs_modulus_pa: f32,
@@ -43,7 +44,6 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
         || input.minimum_load_path_width_m < input.minimum_feature_m
         || !input.minimum_frame_thickness_m.is_finite()
         || input.minimum_frame_thickness_m < input.minimum_feature_m
-        || input.load_path_guides.is_empty()
         || input.load_path_guides.iter().any(|guide| {
             guide.id.is_empty()
                 || guide.points_m.len() < 2
@@ -62,17 +62,21 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
             "live assembly material and feature inputs must be positive finite SI values".into(),
         );
     }
-    if input.motor_mounts.len() != 4 || input.supports.is_empty() {
-        return Err(
-            "live FPV solve requires four motor mounts and at least one body support".into(),
-        );
+    if input.design_domain.is_empty() || input.load_cases.is_empty() || input.supports.is_empty() {
+        return Err("assembly solve requires a design domain, load case, and support".into());
+    }
+    if input.load_cases.iter().any(|case| {
+        case.id.is_empty()
+            || case.loads.is_empty()
+            || case.loads.iter().any(|load| load.force_n.iter().any(|value| !value.is_finite()))
+    }) {
+        return Err("assembly load cases require IDs and finite non-empty loads".into());
     }
     let mut coordinates = Vec::with_capacity(width * height * depth);
     let mut passive_solid = Vec::with_capacity(width * height * depth);
     let mut passive_void = Vec::with_capacity(width * height * depth);
     let mut fixed_dofs = vec![false; width * height * depth * 3];
     let mut support_nodes = Vec::new();
-    let frame_center = volume_center(&input.supports[0]);
     for z in 0..depth {
         for y in 0..height {
             for x in 0..width {
@@ -81,13 +85,8 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                     input.grid.origin_m[1] + (y as f32 + 0.5) * input.grid.cell_size_m[1],
                     input.grid.origin_m[2] + (z as f32 + 0.5) * input.grid.cell_size_m[2],
                 ];
-                let mount = input.motor_mounts.iter().any(|mount| {
-                    let dx = point[0] - mount.center_m[0];
-                    let dy = point[1] - mount.center_m[1];
-                    dx.mul_add(dx, dy * dy) <= mount.radius_m * mount.radius_m
-                        && (point[2] - mount.center_m[2]).abs()
-                            <= input.minimum_frame_thickness_m * 0.5
-                });
+                let loaded = input.load_cases.iter().flat_map(|case| &case.loads)
+                    .any(|load| volume_overlaps_cell(&load.region, point, input.grid.cell_size_m));
                 let supported = input
                     .supports
                     .iter()
@@ -104,18 +103,13 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                     .access_voids
                     .iter()
                     .any(|volume| volume_contains(volume, point));
-                let frame_layer = (point[2] - frame_center[2]).abs() <= 0.011;
-                let core = (point[0] - frame_center[0]).hypot(point[1] - frame_center[1]) <= 0.046;
-                let arm = input.motor_mounts.iter().any(|motor| {
-                    planar_segment_distance(point, frame_center, motor.center_m) <= 0.022
-                });
-                let inside_domain = frame_layer && (core || arm);
+                let inside_domain = input.design_domain.iter().any(|volume| volume_contains(volume, point));
                 coordinates.push(point);
-                // Access and component keep-outs win over generated/required deck material.
-                // Only the physical motor annulus and body fixture remain non-negotiable solids.
-                passive_solid.push(!access && (mount || supported || (required && !void)));
+                // Access and component keep-outs win over generated/required material.
+                // Loaded regions and supports remain non-negotiable structural interfaces.
+                passive_solid.push(!access && (loaded || supported || (required && !void)));
                 passive_void.push(
-                    access || (!mount && !supported && (void || (!inside_domain && !required))),
+                    access || (!loaded && !supported && (void || (!inside_domain && !required))),
                 );
                 let index = x + width * (y + height * z);
                 if supported && !access {
@@ -128,51 +122,22 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
         return Err("live assembly support does not intersect the topology grid".into());
     }
     set_kinematic_stabilizers(&mut fixed_dofs, &coordinates, &support_nodes)?;
-    let mut load_cases = vec![vec![0.0; coordinates.len() * 3]; 4];
-    for motor in &input.motor_mounts {
-        let nodes = coordinates
-            .iter()
-            .enumerate()
-            .filter_map(|(index, point)| {
-                let dx = point[0] - motor.center_m[0];
-                let dy = point[1] - motor.center_m[1];
-                (dx.mul_add(dx, dy * dy) <= motor.radius_m * motor.radius_m
-                    && (point[2] - motor.center_m[2]).abs() <= input.grid.cell_size_m[2] * 1.5
-                    && passive_solid[index])
-                    .then_some(index)
-            })
-            .collect::<Vec<_>>();
-        if nodes.is_empty() {
-            return Err("live motor mount does not intersect the topology grid".into());
-        }
-        let node_count = nodes.len() as f32;
-        for node in nodes {
-            for axis in 0..3 {
-                let force = motor.load_n[axis] / node_count;
-                load_cases[0][node * 3 + axis] += force;
-                let agility_sign = if motor.center_m[1] >= frame_center[1] {
-                    1.0
-                } else {
-                    -1.0
-                };
-                load_cases[1][node * 3 + axis] += force * agility_sign * 0.65;
-                let pitch_sign = if motor.center_m[0] >= frame_center[0] {
-                    1.0
-                } else {
-                    -1.0
-                };
-                load_cases[2][node * 3 + axis] += force * pitch_sign * 0.65;
+    let mut load_cases = vec![vec![0.0; coordinates.len() * 3]; input.load_cases.len()];
+    for (case_index, case) in input.load_cases.iter().enumerate() {
+        for applied in &case.loads {
+            let nodes = coordinates.iter().enumerate().filter_map(|(index, point)| {
+                (volume_overlaps_cell(&applied.region, *point, input.grid.cell_size_m)
+                    && passive_solid[index]).then_some(index)
+            }).collect::<Vec<_>>();
+            if nodes.is_empty() {
+                return Err(format!("load region does not intersect the topology grid: {}", case.id));
             }
-            let radial = [
-                motor.center_m[0] - frame_center[0],
-                motor.center_m[1] - frame_center[1],
-            ];
-            let radius = radial[0].hypot(radial[1]).max(1.0e-6);
-            let tangential_force = motor.load_n[2].abs() * 0.12 / node_count;
-            // A yaw command increases one counter-rotating pair and decreases the other.
-            // Their incremental reaction torques therefore add in the commanded direction.
-            load_cases[3][node * 3] += -radial[1] / radius * tangential_force;
-            load_cases[3][node * 3 + 1] += radial[0] / radius * tangential_force;
+            let node_count = nodes.len() as f32;
+            for node in nodes {
+                for axis in 0..3 {
+                    load_cases[case_index][node * 3 + axis] += applied.force_n[axis] / node_count;
+                }
+            }
         }
     }
     let solid_nodes = passive_solid
@@ -180,19 +145,22 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
         .enumerate()
         .filter_map(|(index, solid)| solid.then_some(index))
         .collect::<Vec<_>>();
-    apply_inertial_relief(
-        &mut load_cases,
-        &coordinates,
-        &solid_nodes,
-        &support_nodes,
-        &input.inertial_masses,
-    )?;
+    if input.inertial_relief {
+        apply_inertial_relief(
+            &mut load_cases,
+            &coordinates,
+            &solid_nodes,
+            &support_nodes,
+            &input.inertial_masses,
+        )?;
+    }
     Ok(Grid {
         dimensions,
         coordinates,
         passive_solid,
         passive_void,
         fixed_dofs,
+        load_case_ids: input.load_cases.iter().map(|case| case.id.clone()).collect(),
         load_cases,
         cell_size_m: input.grid.cell_size_m,
         youngs_modulus_pa: input.material.youngs_modulus_pa,
@@ -301,6 +269,7 @@ pub(crate) fn drone_grid() -> Grid {
         passive_solid,
         passive_void,
         fixed_dofs,
+        load_case_ids: vec!["hover".into(), "roll-differential".into(), "pitch-differential".into(), "yaw-torsion".into()],
         load_cases,
         cell_size_m: [0.01, 0.01, 0.005],
         youngs_modulus_pa: 3_500_000_000.0,

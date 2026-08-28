@@ -18,7 +18,8 @@ pub use optimize::optimize_drone_frame;
 #[serde(rename_all = "camelCase")]
 pub struct AssemblySolverInput {
     pub grid: SolverGridInput,
-    pub motor_mounts: Vec<MotorMountInput>,
+    pub design_domain: Vec<SolverVolume>,
+    pub load_cases: Vec<LoadCaseInput>,
     pub supports: Vec<SolverVolume>,
     pub required_solids: Vec<SolverVolume>,
     pub protected_voids: Vec<SolverVolume>,
@@ -28,7 +29,22 @@ pub struct AssemblySolverInput {
     pub minimum_feature_m: f32,
     pub minimum_load_path_width_m: f32,
     pub minimum_frame_thickness_m: f32,
+    pub inertial_relief: bool,
     pub inertial_masses: Vec<InertialMassInput>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadCaseInput {
+    pub id: String,
+    pub loads: Vec<LoadInput>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadInput {
+    pub region: SolverVolume,
+    pub force_n: [f32; 3],
 }
 
 #[derive(Clone, Deserialize)]
@@ -61,14 +77,6 @@ pub struct SolverDimensions {
     pub width: usize,
     pub height: usize,
     pub depth: usize,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MotorMountInput {
-    pub center_m: [f32; 3],
-    pub radius_m: f32,
-    pub load_n: [f32; 3],
 }
 
 #[derive(Clone, Deserialize)]
@@ -118,6 +126,7 @@ impl OptimizationPreset {
 #[derive(Clone, Debug)]
 pub struct TopologyResult {
     pub dimensions: [usize; 3],
+    pub case_ids: Vec<String>,
     pub density: Vec<f32>,
     pub displacement: Vec<f32>,
     pub stress: Vec<f32>,
@@ -152,6 +161,10 @@ impl WasmTopologyResult {
     #[wasm_bindgen(getter)]
     pub fn depth(&self) -> usize {
         self.inner.dimensions[2]
+    }
+    #[wasm_bindgen(getter)]
+    pub fn case_ids(&self) -> Vec<String> {
+        self.inner.case_ids.clone()
     }
     #[wasm_bindgen(getter)]
     pub fn density(&self) -> Vec<f32> {

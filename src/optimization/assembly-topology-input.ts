@@ -1,56 +1,14 @@
 import type { AssemblyAuthoringState } from "../assembly/assembly-authoring";
 import { solveAssemblyConstraints } from "../assembly/assembly-authoring";
 import type { ComponentDefinition } from "../domain/component-model";
-import type { VoxelGrid } from "../viewer/field-instances";
-import { branchingLoadPaths } from "./assembly-load-paths";
 import { componentFixtureVolumes, componentMountAccessVoids } from "./assembly-topology-fixtures";
+import { referenceDroneStudyFields } from "./reference-drone-study-fields";
+import type { AssemblyTopologyInput, LiveTopologyContext, SolverVolume } from "./topology-contract";
+
+export type { AssemblyTopologyInput, LiveTopologyContext, LoadPathGuide, SolverLoad, SolverLoadCase, SolverVolume } from "./topology-contract";
 
 type Point = readonly [number, number, number];
 type Tensor3 = readonly [Point, Point, Point];
-
-export interface SolverVolume {
-  readonly kind: "box" | "cylinder";
-  readonly centerM: Point;
-  readonly sizeM?: Point;
-  readonly radiusM?: number;
-  readonly heightM?: number;
-  readonly yawRad: number;
-}
-
-export interface LoadPathGuide {
-  readonly id: string;
-  readonly kind: "must-pass";
-  readonly pointsM: readonly Point[];
-  readonly memberWidthM: number;
-  readonly frameThicknessM: number;
-}
-
-export interface AssemblyTopologyInput {
-  readonly grid: { readonly dimensions: { readonly width: number; readonly height: number; readonly depth: number }; readonly originM: Point; readonly cellSizeM: Point };
-  readonly motorMounts: readonly { readonly centerM: Point; readonly radiusM: number; readonly loadN: Point }[];
-  readonly supports: readonly SolverVolume[];
-  readonly requiredSolids: readonly SolverVolume[];
-  readonly protectedVoids: readonly SolverVolume[];
-  readonly accessVoids: readonly SolverVolume[];
-  readonly loadPathGuides: readonly LoadPathGuide[];
-  readonly material: { readonly youngsModulusPa: number; readonly failureStressPa: number };
-  readonly minimumFeatureM: number;
-  readonly minimumLoadPathWidthM: number;
-  readonly minimumFrameThicknessM: number;
-  readonly assemblyMassKg: number;
-  readonly centerOfMassM: Point;
-  readonly inertialMasses: readonly {
-    readonly id: string;
-    readonly centerM: Point;
-    readonly massKg: number;
-    readonly inertiaTensorKgM2: Tensor3;
-  }[];
-}
-
-export interface LiveTopologyContext {
-  readonly input: AssemblyTopologyInput;
-  readonly grid: VoxelGrid;
-}
 
 const metres = (value: { readonly value: number; readonly unit: "m" | "mm" }) => value.unit === "m" ? value.value : value.value / 1_000;
 const point = (value: { readonly x: { readonly value: number; readonly unit: "m" | "mm" }; readonly y: { readonly value: number; readonly unit: "m" | "mm" }; readonly z: { readonly value: number; readonly unit: "m" | "mm" } }): Point => [metres(value.x), metres(value.y), metres(value.z)];
@@ -108,6 +66,7 @@ function componentClearanceM(category: ComponentDefinition["category"]) {
     case "battery": return 0.003;
     case "propeller": return 0.002;
     case "body-interface": return 0;
+    default: throw new Error(`Reference-drone clearance is not defined for category: ${category}`);
   }
 }
 
@@ -260,10 +219,12 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
   if (assemblyMassKg <= 0) throw new Error("The FPV reference solve requires positive accounted assembly mass.");
 
   const centerOfMassM = weightedCenter.map((value) => value / assemblyMassKg) as unknown as Point;
-  const loadPathGuides = branchingLoadPaths(motorMounts, supports[0]!);
+  const { designDomain, loadCases, loadPathGuides } = referenceDroneStudyFields(motorMounts, supports[0]!);
 
   const input: AssemblyTopologyInput = {
     grid,
+    designDomain,
+    loadCases,
     motorMounts,
     supports,
     requiredSolids,
@@ -274,6 +235,7 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
     minimumFeatureM: 0.001,
     minimumLoadPathWidthM: 0.005,
     minimumFrameThicknessM: 0.005,
+    inertialRelief: true,
     assemblyMassKg,
     centerOfMassM,
     inertialMasses,

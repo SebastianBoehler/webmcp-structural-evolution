@@ -1,4 +1,5 @@
 import type { GpuCapability } from "../gpu/capabilities";
+import { DEMO_FIXTURES, type DemoFixtureId } from "../samples/demo-fixtures";
 import type { ThemePreference } from "./useTheme";
 import { WORKBENCH_MODES, type WorkbenchMode } from "./workbench-mode";
 
@@ -23,7 +24,9 @@ export interface WorkbenchHeaderProps {
   readonly capability: GpuCapability;
   readonly theme: ThemePreference;
   readonly mode: WorkbenchMode;
+  readonly fixtureId: DemoFixtureId;
   readonly onModeChange: (mode: WorkbenchMode) => void;
+  readonly onFixtureChange: (fixture: DemoFixtureId) => void;
   readonly onThemeChange: (theme: ThemePreference) => void;
 }
 
@@ -31,15 +34,29 @@ export function WorkbenchHeader({
   capability,
   theme,
   mode,
+  fixtureId,
   onModeChange,
+  onFixtureChange,
   onThemeChange,
 }: WorkbenchHeaderProps) {
   return (
     <header className="workbench-header">
       <div className="brand-lockup">
         <span className="brand-mark" aria-hidden="true">SE</span>
-        <div><h1>Structural Evolution</h1><p>Agentic quadrotor engineering</p></div>
+        <div><h1>Structural Evolution</h1><p>{DEMO_FIXTURES[fixtureId].tagline}</p></div>
       </div>
+      <label className="fixture-select">
+        <span>Demo assembly</span>
+        <select
+          aria-label="Demo assembly"
+          value={fixtureId}
+          onChange={(event) => onFixtureChange(event.target.value as DemoFixtureId)}
+        >
+          {Object.values(DEMO_FIXTURES).map((fixture) => (
+            <option key={fixture.id} value={fixture.id}>{fixture.label}</option>
+          ))}
+        </select>
+      </label>
       <nav className="workflow-navigation" aria-label="Engineering workflow">
         {WORKBENCH_MODES.map((item) => <button
           type="button"

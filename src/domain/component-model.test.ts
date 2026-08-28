@@ -119,6 +119,14 @@ describe("component definitions", () => {
     },
   );
 
+  it("accepts a qualified domain category without changing the core schema", async () => {
+    await expect(defineComponent({
+      ...validComponent,
+      id: "robot-joint-interface",
+      category: "robotics/joint-interface",
+    })).resolves.toMatchObject({ category: "robotics/joint-interface" });
+  });
+
   it("rejects a component without a usable display representation", async () => {
     const { geometry: _geometry, ...withoutGeometry } = validComponent;
 

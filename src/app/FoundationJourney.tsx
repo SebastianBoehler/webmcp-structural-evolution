@@ -1,17 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
-import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { runTopologyProbeInWorker } from "../optimization/topology-probe-client";
-import {
-  DRONE_ARM_FOUNDATION_CONTEXT,
-  DRONE_ARM_FOUNDATION_STUDY,
-  FOUNDATION_SELECTIONS,
-} from "../samples/drone-arm-foundation";
+import { DEMO_FIXTURES } from "../samples/demo-fixtures";
+import { FOUNDATION_SELECTIONS } from "../samples/drone-arm-foundation";
 import { FieldViewer } from "../viewer/FieldViewer";
 import type { AlternativeMode } from "../viewer/alternative-instances";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
-import { FlightSimulationPanel } from "../simulation/FlightSimulationPanel";
 import { createFlightFrameChannel } from "../simulation/flight-frame-channel";
 import { ComponentBrowser } from "./ComponentBrowser";
 import { AlternativeSelector } from "./AlternativeSelector";
@@ -25,20 +20,30 @@ import { WorkbenchHeader } from "./WorkbenchHeader";
 import { WorkbenchReviewDock } from "./WorkbenchReviewDock";
 import { ViewportModeToolbar, type AnalysisLayer } from "./ViewportModeToolbar";
 import { foundationView } from "./foundation-view";
+import { FixtureSimulationDock } from "./FixtureSimulationDock";
+import { fixtureViewerStatus } from "./fixture-viewer-status";
 import type { FoundationJourneyProps } from "./foundation-journey-types";
 import { deriveOptimizationNavigation } from "./optimization-navigation";
 import { buildProbeInput } from "./project-probe";
 import { probeCopy } from "./probe-copy";
 import { useVisibleAssemblyParts } from "./use-visible-assembly-parts";
 import type { AssemblyPanel, WorkbenchMode } from "./workbench-mode";
-const fixture = DRONE_ARM_FOUNDATION_STUDY;
-const initialContext = DRONE_ARM_FOUNDATION_CONTEXT;
-const initialAcceptedRevision = fixture.assembly.revision;
-export function FoundationJourney({ capability, compute, viewerEnvironment }: FoundationJourneyProps) {
-  const workspace = useAssemblyWorkspace();
+export function FoundationJourney({
+  capability,
+  compute,
+  viewerEnvironment,
+  fixtureId = "reference-drone",
+  onFixtureChange = () => undefined,
+}: FoundationJourneyProps) {
+  const fixture = DEMO_FIXTURES[fixtureId];
+  const initialContext = fixture.context;
+  const initialAcceptedRevision = fixture.acceptedRevision;
+  const workspace = useAssemblyWorkspace(fixtureId === "reference-drone"
+    ? undefined
+    : { initialState: fixture.initialState, inventory: fixture.inventory });
   const liveTopology = useMemo(
-    () => compileLiveTopologyContext(workspace),
-    [workspace.revision],
+    () => fixture.compileTopology(workspace),
+    [fixture, workspace.revision],
   );
   const { state, services, experimentRail } = useProjectState({
     contextRevision: workspace.revision,
@@ -56,7 +61,11 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const [comparisonMode, setComparisonMode] = useState<AlternativeMode>("overlay");
   const [analysisLayer, setAnalysisLayer] = useState<AnalysisLayer>("density");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
-  const [selectedPart, setSelectedPart] = useState("arm-design-region");
+  const [selectedPart, setSelectedPart] = useState(
+    fixtureId === "reference-drone"
+      ? "arm-design-region"
+      : fixture.initialState.draft.components[0]?.instanceId ?? initialContext.selection.id,
+  );
   const [showConstraints, setShowConstraints] = useState(false);
   const [showComponents, setShowComponents] = useState(true);
   const [simulationActive, setSimulationActive] = useState(false);
@@ -72,6 +81,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
   const { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
   const { nextVariant, pendingPromotion, readyToCompare, primaryLabel, primaryDisabled } = deriveOptimizationNavigation(
     state, currentBranches, accepted !== undefined, currentVerified.length, workspace.layoutState === "verified",
+    fixture.topologySubject,
   );
 
   const runVariant = async (variant: ProbeVariant) => {
@@ -124,8 +134,10 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     setError(undefined);
     try {
       await experimentRail.intervene({
-        selection: FOUNDATION_SELECTIONS["cable-clearance"]!,
-        locks: [...state.context.locks, "cable-clearance"],
+        selection: fixtureId === "reference-drone"
+          ? FOUNDATION_SELECTIONS["cable-clearance"]!
+          : initialContext.selection,
+        locks: [...state.context.locks, fixtureId === "reference-drone" ? "cable-clearance" : initialContext.selection.id],
       });
       setComparison(undefined);
     } catch (cause) {
@@ -136,10 +148,10 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     mode: workspaceMode, analysisLayer, showComponents, showConstraints,
     simulationActive, hasTopology: viewerCurrent !== null,
   });
-  const flightMotors = useMemo(() => workspace.motors.map((motor, index) => ({
-    id: motor.id,
-    centerM: liveTopology.input.motorMounts[index]!.centerM,
-  })), [liveTopology, workspace.motors]);
+  const flightMotors = useMemo(() => workspace.motors.flatMap((motor, index) => {
+    const mount = liveTopology.input.motorMounts[index];
+    return mount ? [{ id: motor.id, centerM: mount.centerM }] : [];
+  }), [liveTopology, workspace.motors]);
   const handleFlightFrame = useCallback((frame: Parameters<typeof flightFrameChannel.emit>[0]) => flightFrameChannel.emit(frame), [flightFrameChannel]);
   const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
     workspace.movePart(id, center);
@@ -157,7 +169,9 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
         capability={capability}
         theme={theme}
         mode={workspaceMode}
+        fixtureId={fixtureId}
         onModeChange={changeWorkspaceMode}
+        onFixtureChange={onFixtureChange}
         onThemeChange={setTheme}
       />
       {error && <p className="global-error" role="alert">{error}</p>}
@@ -190,6 +204,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             cancelVisible={state.operationStatus === "running"}
             solverCellCount={liveTopology.grid.dimensions.width * liveTopology.grid.dimensions.height * liveTopology.grid.dimensions.depth}
             showConstraints={showConstraints}
+            topologySubject={fixture.topologySubject}
+            supportsFlightReplay={fixture.supportsFlightReplay}
             onAssemblyPanelChange={setAssemblyPanel}
             onAnalysisLayerChange={setAnalysisLayer}
             onComparisonModeChange={setComparisonMode}
@@ -210,15 +226,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
               analysisLayer={analysisLayer}
-              statusText={viewerCurrent
-                ? workspace.layoutState === "dragging"
-                  ? "Moving component · rotor safety geometry follows"
-                  : workspace.layoutState === "changed"
-                    ? "Layout changed · previous topology evidence is stale"
-                    : pendingPromotion ? "Candidate topology · verified and awaiting human acceptance" : undefined
-                : pendingPromotion
-                  ? "Verified branch ready for human review"
-                  : undefined}
+              statusText={fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
+                pendingPromotion: pendingPromotion !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
               flightFrameSource={flightFrameChannel}
               environment={viewerEnvironment}
               onPartSelect={(id) => {
@@ -245,14 +254,16 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
               />}
             </div>
             {workspaceMode === "optimize" && viewerCurrent && <aside className="analysis-dock" aria-label="Optimization results">
-              <TopologyResultPanel branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts} />
+              <TopologyResultPanel
+                branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts}
+                assemblyId={fixture.id} topologySubject={fixture.topologySubject} materialLabel={fixture.materialLabel}
+                loadCaseIds={liveTopology.input.loadCases.map(({ id }) => id)}
+              />
             </aside>}
-            {workspaceMode === "simulate" && <aside className="analysis-dock" aria-label="Simulation controls">
-              <FlightSimulationPanel
+            {workspaceMode === "simulate" && <FixtureSimulationDock
+                supportsFlightReplay={fixture.supportsFlightReplay}
+                topology={liveTopology.input}
                 motors={viewerCurrent ? flightMotors : []}
-                massKg={liveTopology.input.assemblyMassKg}
-                componentCount={liveTopology.input.inertialMasses.length}
-                batteryMassKg={liveTopology.input.inertialMasses.find(({ id }) => id === "battery")?.massKg ?? 0}
                 onFrame={handleFlightFrame}
                 onActiveChange={(active) => {
                   setSimulationActive(active);
@@ -263,8 +274,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                 }}
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
-              />
-            </aside>}
+            />}
             <aside className="review-dock" aria-label="Review evidence" hidden={workspaceMode !== "review"}>
               <WorkbenchReviewDock
                 active={activeDrawer}
@@ -278,6 +288,8 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
                 pending={workspace.pending}
                 parts={workspace.parts}
                 layoutVersion={workspace.layoutVersion}
+                fixtureId={fixtureId}
+                onGenerateFixture={onFixtureChange}
                 onStage={workspace.stageImport}
                 onMove={workspace.movePart}
                 onChange={setActiveDrawer}

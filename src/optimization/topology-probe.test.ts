@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProbeInput } from "../gpu/probe-contract";
 
 const reference = vi.hoisted(() => ({ optimize: vi.fn() }));
-vi.mock("../reference", () => ({ optimizeDroneFrame: reference.optimize }));
+vi.mock("../reference", () => ({ optimizeTopology: reference.optimize }));
 
 const input = (topologyPreset: ProbeInput["topologyPreset"]): ProbeInput => ({
   dimensions: { width: 25, height: 25, depth: 5 },

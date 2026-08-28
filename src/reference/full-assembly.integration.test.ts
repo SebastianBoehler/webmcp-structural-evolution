@@ -5,7 +5,38 @@ import { describe, expect, it } from "vitest";
 
 import { initialDroneWorkspace } from "../assembly/drone-workspace";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
+import { compileAssemblyTopologyContext } from "../optimization/assembly-study-compiler";
+import { ROBOT_ARM_LINK_FIXTURE } from "../samples/robot-arm-link";
 import { initSync, optimize_assembly_frame } from "./pkg/webmcp_reference.js";
+
+function thresholdPathExists(
+  density: Float32Array,
+  dimensions: readonly [number, number, number],
+  starts: readonly number[],
+  goals: ReadonlySet<number>,
+) {
+  const [width, height, depth] = dimensions;
+  const seen = new Uint8Array(density.length);
+  const queue = [...starts];
+  starts.forEach((index) => { seen[index] = 1; });
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const index = queue[cursor]!;
+    if (goals.has(index)) return true;
+    const z = Math.floor(index / (width * height));
+    const row = index - z * width * height;
+    const y = Math.floor(row / width);
+    const x = row - y * width;
+    for (const [nx, ny, nz] of [[x - 1, y, z], [x + 1, y, z], [x, y - 1, z], [x, y + 1, z], [x, y, z - 1], [x, y, z + 1]]) {
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height || nz < 0 || nz >= depth) continue;
+      const neighbor = nx + width * (ny + height * nz);
+      if (!seen[neighbor] && density[neighbor]! >= 0.32) {
+        seen[neighbor] = 1;
+        queue.push(neighbor);
+      }
+    }
+  }
+  return false;
+}
 
 describe("full live assembly Wasm solve", () => {
   it("completes the balanced reference solve with bounded resident-memory growth", () => {
@@ -33,6 +64,40 @@ describe("full live assembly Wasm solve", () => {
       expect(new Set(casePeaks.map((value) => value.toPrecision(6))).size).toBeGreaterThan(1);
       expect(residentGrowth).toBeLessThan(256 * 1024 * 1024);
       expect(elapsedMs).toBeLessThan(60_000);
+    } finally {
+      result.free();
+    }
+  }, 90_000);
+
+  it("solves the robot link and preserves its named load cases across Wasm", () => {
+    const wasm = readFileSync(new URL("./pkg/webmcp_reference_bg.wasm", import.meta.url));
+    initSync({ module: wasm });
+    const fixture = ROBOT_ARM_LINK_FIXTURE;
+    const context = compileAssemblyTopologyContext(fixture.workspace, fixture.study);
+
+    const result = optimize_assembly_frame("balanced", context.input);
+
+    try {
+      const fieldLength = 48 * 32 * 8;
+      expect(result.case_ids).toEqual(["payload-down", "emergency-side"]);
+      expect(result.density).toHaveLength(fieldLength);
+      expect(result.case_displacement).toHaveLength(fieldLength * 2);
+      expect(result.case_stress).toHaveLength(fieldLength * 2);
+      expect(result.final_compliance).toBeGreaterThan(0);
+      const [width, height, depth] = [48, 32, 8] as const;
+      const region = (xCenter: number) => Array.from({ length: fieldLength }, (_, index) => index).filter((index) => {
+        const z = Math.floor(index / (width * height));
+        const row = index - z * width * height;
+        const y = Math.floor(row / width);
+        const x = row - y * width;
+        return Math.abs(x - xCenter) <= 4 && Math.abs(y - height / 2) <= 7 && Math.abs(z - depth / 2) <= 3
+          && result.density[index]! >= 0.32;
+      });
+      const base = region(6);
+      const payload = new Set(region(42));
+      expect(base.length).toBeGreaterThan(0);
+      expect(payload.size).toBeGreaterThan(0);
+      expect(thresholdPathExists(result.density, [width, height, depth], base, payload)).toBe(true);
     } finally {
       result.free();
     }

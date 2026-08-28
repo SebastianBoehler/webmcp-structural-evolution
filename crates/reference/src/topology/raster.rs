@@ -71,22 +71,3 @@ pub(crate) fn volume_overlaps_cell(
         }
     }
 }
-
-pub(crate) fn volume_center(volume: &SolverVolume) -> [f32; 3] {
-    match volume {
-        SolverVolume::Box { center_m, .. } | SolverVolume::Cylinder { center_m, .. } => *center_m,
-    }
-}
-
-pub(crate) fn planar_segment_distance(point: [f32; 3], start: [f32; 3], end: [f32; 3]) -> f32 {
-    let delta = [end[0] - start[0], end[1] - start[1]];
-    let length_squared = delta[0].mul_add(delta[0], delta[1] * delta[1]).max(1.0e-12);
-    let projection = (((point[0] - start[0]) * delta[0] + (point[1] - start[1]) * delta[1])
-        / length_squared)
-        .clamp(0.0, 1.0);
-    let nearest = [
-        start[0] + projection * delta[0],
-        start[1] + projection * delta[1],
-    ];
-    (point[0] - nearest[0]).hypot(point[1] - nearest[1])
-}

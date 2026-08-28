@@ -10,6 +10,10 @@ export interface TopologyResultPanelProps {
   readonly branch: ViewerBranch;
   readonly variant?: string;
   readonly assemblyParts?: readonly AssemblyVisualPart[];
+  readonly assemblyId: string;
+  readonly topologySubject: string;
+  readonly materialLabel: string;
+  readonly loadCaseIds: readonly string[];
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
@@ -20,7 +24,9 @@ const millimetres = (value: number) => {
 };
 const megapascals = (value: number) => compact(value / 1_000_000);
 
-export function TopologyResultPanel({ branch, variant = "balanced", assemblyParts = [] }: TopologyResultPanelProps) {
+export function TopologyResultPanel({
+  branch, variant = "balanced", assemblyParts = [], assemblyId, topologySubject, materialLabel, loadCaseIds,
+}: TopologyResultPanelProps) {
   const [exported, setExported] = useState(false);
   const [glbStatus, setGlbStatus] = useState<"idle" | "exporting" | "exported" | "error">("idle");
   if (branch.result.status !== "verified" || !branch.result.topology) return null;
@@ -32,8 +38,8 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
   return (
     <section className="topology-result" aria-label="Topology result">
       <div className="topology-result__header">
-        <div><strong>Optimized frame</strong><span>{variant} · PLA profile</span></div>
-        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{safe ? "Provisional axial screen" : "Fails axial PLA screen"}</span>
+        <div><strong>Optimized {topologySubject}</strong><span>{variant} · {materialLabel}</span></div>
+        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{safe ? "Provisional axial screen" : "Fails provisional axial screen"}</span>
       </div>
       <dl>
         <div><dt>Material removed</dt><dd>{percent(removed)}</dd></div>
@@ -43,10 +49,10 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
         <div><dt>Minimum safety factor</dt><dd>{compact(metrics.minimumSafetyFactor)}×</dd></div>
         <div><dt>Calibration</dt><dd>Continuum FEA pending</dd></div>
         {metrics.assemblyMassKg !== undefined && <div><dt>Accounted assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
-        {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated PLA frame mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
+        {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated {materialLabel} {topologySubject} mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
         {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
-        <div><dt>Structural cases</dt><dd>hover · roll · pitch · yaw</dd></div>
-        <div><dt>Physical solve</dt><dd>4 cases · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
+        <div><dt>Structural cases</dt><dd>{loadCaseIds.join(" · ")}</dd></div>
+        <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
       </dl>
       <button
         type="button"
@@ -56,14 +62,18 @@ export function TopologyResultPanel({ branch, variant = "balanced", assemblyPart
           downloadTopologyStl(branch.grid, output);
           setExported(true);
         }}
-      >{!safe ? "STL blocked: unsafe candidate" : exported ? "STL exported" : "Export frame STL"}</button>
+      >{!safe ? "STL blocked: unsafe candidate" : exported ? "STL exported" : `Export ${topologySubject} STL`}</button>
       <button
         type="button"
         className="topology-result__export"
         disabled={!safe || glbStatus === "exporting"}
         onClick={() => {
           setGlbStatus("exporting");
-          void downloadEngineeringAssemblyGlb(branch.grid, output, assemblyParts)
+          void downloadEngineeringAssemblyGlb(branch.grid, output, assemblyParts, {
+            assemblyName: `verified_${assemblyId}_engineering_assembly`,
+            topologyName: `verified_topology_${topologySubject}_${materialLabel}`,
+            filename: `verified-${assemblyId}-engineering-assembly.glb`,
+          })
             .then(() => setGlbStatus("exported"))
             .catch(() => setGlbStatus("error"));
         }}

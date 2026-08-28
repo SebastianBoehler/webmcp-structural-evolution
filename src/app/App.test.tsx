@@ -17,6 +17,17 @@ test("shows the structural evolution foundation shell", () => {
   expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeDisabled();
 });
 
+test("switches the shared workbench to the robot-arm assembly", async () => {
+  render(<App />);
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Demo assembly" }), {
+    target: { value: "robot-arm-link" },
+  });
+
+  expect(await screen.findByText("PAYLOAD-1P5KG")).toBeVisible();
+  expect((screen.getByRole("combobox", { name: "Demo assembly" }) as HTMLSelectElement).value).toBe("robot-arm-link");
+});
+
 test("does not treat CSS-hidden descendants as visible", () => {
   render(<div style={{ display: "none" }}><p>Hidden status</p></div>);
 

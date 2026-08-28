@@ -10,6 +10,7 @@ vi.mock("./pkg/webmcp_reference.js", () => ({
   default: wasm.initialize,
   relative_l2: wasm.relativeL2,
   optimize_demo_frame: wasm.optimize,
+  optimize_assembly_frame: wasm.optimize,
 }));
 
 describe("relativeL2", () => {
@@ -21,6 +22,7 @@ describe("relativeL2", () => {
       width: 3,
       height: 2,
       depth: 1,
+      case_ids: ["hover", "roll-differential", "pitch-differential", "yaw-torsion"],
       density: new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]),
       displacement: new Float32Array([0, 0.1, 0.2, 0.3, 0.4, 0.42]),
       stress: new Float32Array([1, 2, 3, 4, 5, 12]),
@@ -96,9 +98,9 @@ describe("relativeL2", () => {
   });
 
   it("returns a bounded topology result from the low-level Wasm solver", async () => {
-    const { optimizeDroneFrame } = await import("./index");
+    const { optimizeTopology } = await import("./index");
 
-    const result = await optimizeDroneFrame("balanced");
+    const result = await optimizeTopology("balanced");
 
     expect(wasm.optimize).toHaveBeenCalledWith("balanced");
     expect(result.dimensions).toEqual({ width: 3, height: 2, depth: 1 });
@@ -118,8 +120,23 @@ describe("relativeL2", () => {
     });
   });
 
+  it("maps arbitrary assembly case IDs to their returned fields", async () => {
+    wasm.optimize.mockReturnValueOnce({
+      ...wasm.optimize(),
+      case_ids: ["payload-down", "emergency-side"],
+      case_displacement: new Float32Array(12).fill(0.2),
+      case_stress: new Float32Array(12).fill(3),
+    });
+    const { optimizeTopology } = await import("./index");
+
+    const result = await optimizeTopology("balanced", {} as never);
+
+    expect(Object.keys(result.cases)).toEqual(["payload-down", "emergency-side"]);
+    expect(result.cases["emergency-side"]?.stress).toEqual(new Float32Array(6).fill(3));
+  });
+
   it("rejects invalid Wasm topology output instead of rendering it", async () => {
-    const { optimizeDroneFrame } = await import("./index");
+    const { optimizeTopology } = await import("./index");
     wasm.optimize.mockReturnValueOnce({
       width: 3,
       height: 2,
@@ -136,6 +153,6 @@ describe("relativeL2", () => {
       iterations: 16,
     });
 
-    await expect(optimizeDroneFrame("balanced")).rejects.toThrow(/invalid topology result/i);
+    await expect(optimizeTopology("balanced")).rejects.toThrow(/invalid topology result/i);
   });
 });

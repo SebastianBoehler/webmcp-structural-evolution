@@ -6,6 +6,7 @@ export class WasmTopologyResult {
     free(): void;
     [Symbol.dispose](): void;
     readonly case_displacement: Float32Array;
+    readonly case_ids: string[];
     readonly case_stress: Float32Array;
     readonly density: Float32Array;
     readonly depth: number;
@@ -37,6 +38,7 @@ export interface InitOutput {
     readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
     readonly wasmtopologyresult_case_displacement: (a: number) => [number, number];
+    readonly wasmtopologyresult_case_ids: (a: number) => [number, number];
     readonly wasmtopologyresult_case_stress: (a: number) => [number, number];
     readonly wasmtopologyresult_density: (a: number) => [number, number];
     readonly wasmtopologyresult_depth: (a: number) => number;
@@ -58,6 +60,7 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

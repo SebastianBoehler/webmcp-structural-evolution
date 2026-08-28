@@ -3,6 +3,7 @@ import type { ActionReceipt } from "../domain/receipts";
 import type { FoundationServices } from "../webmcp/executors";
 import type { FoundationProjectState, ProbeComparisonFacts } from "../webmcp/schemas";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import type { DemoFixtureId } from "../samples/demo-fixtures";
 import { EvidencePanel } from "./EvidencePanel";
 import { ExperimentRail } from "./ExperimentRail";
 import { ReceiptLedger } from "./ReceiptLedger";
@@ -22,6 +23,8 @@ interface WorkbenchReviewDockProps {
   readonly pending?: PendingComponentImport;
   readonly parts: readonly AssemblyVisualPart[];
   readonly layoutVersion: number;
+  readonly fixtureId: DemoFixtureId;
+  readonly onGenerateFixture: (fixture: DemoFixtureId) => void;
   readonly onStage: (component: ComponentImport) => PendingComponentImport;
   readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => void;
   readonly onChange: (view: DrawerView) => void;
@@ -62,6 +65,8 @@ export function WorkbenchReviewDock(props: WorkbenchReviewDockProps) {
         pending={props.pending}
         parts={props.parts}
         layoutVersion={props.layoutVersion}
+        fixtureId={props.fixtureId}
+        onGenerateFixture={props.onGenerateFixture}
         onStage={props.onStage}
         onMove={props.onMove}
       />,

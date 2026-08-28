@@ -16,6 +16,8 @@ interface ViewportModeToolbarProps {
   readonly cancelVisible: boolean;
   readonly solverCellCount: number;
   readonly showConstraints: boolean;
+  readonly topologySubject: string;
+  readonly supportsFlightReplay: boolean;
   readonly onAssemblyPanelChange: (panel: AssemblyPanel) => void;
   readonly onAnalysisLayerChange: (layer: AnalysisLayer) => void;
   readonly onComparisonModeChange: (mode: AlternativeMode) => void;
@@ -30,13 +32,6 @@ const layerLabels: Readonly<Record<AnalysisLayer, string>> = {
   displacement: "Displacement",
   stress: "Stress",
   safety: "Safety",
-};
-
-const modeCopy: Readonly<Record<WorkbenchMode, { title: string; description: string }>> = {
-  assembly: { title: "Assemble", description: "Place parts and verify physical clearances." },
-  optimize: { title: "Optimize", description: "Generate a connected frame for the current assembly." },
-  simulate: { title: "Simulate", description: "Replay flight loads on the frame and attached mass." },
-  review: { title: "Review", description: "Compare evidence and accept a verified candidate." },
 };
 
 function Segment<T extends string>({ label, values, selected, onChange }: {
@@ -56,7 +51,12 @@ function Segment<T extends string>({ label, values, selected, onChange }: {
 }
 
 export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
-  const copy = modeCopy[props.mode];
+  const copy = props.mode === "assembly" ? { title: "Assemble", description: "Place parts and verify physical clearances." }
+    : props.mode === "optimize" ? { title: "Optimize", description: `Generate a connected ${props.topologySubject} for the current assembly.` }
+      : props.mode === "simulate" ? { title: "Simulate", description: props.supportsFlightReplay
+        ? `Replay flight loads on the ${props.topologySubject} and attached mass.`
+        : `Inspect named structural load cases on the ${props.topologySubject}.` }
+        : { title: "Review", description: "Compare evidence and accept a verified candidate." };
   const layers: readonly AnalysisLayer[] = props.mode === "simulate"
     ? ["loads", "stress", "displacement"]
     : ["density", "stress", "displacement", "safety"];

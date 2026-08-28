@@ -445,6 +445,7 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
     let (case_displacement, case_stress) = load_case_fields(&grid, &springs, &density);
     TopologyResult {
         dimensions: grid.dimensions,
+        case_ids: grid.load_case_ids.clone(),
         passive_solid_indices: grid
             .passive_solid
             .iter()

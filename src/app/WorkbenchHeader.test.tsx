@@ -9,7 +9,9 @@ test("uses a compact icon-only appearance control", () => {
     capability={{ status: "available", message: "Test adapter acquired." }}
     mode="assembly"
     theme="system"
+    fixtureId="reference-drone"
     onModeChange={vi.fn()}
+    onFixtureChange={vi.fn()}
     onThemeChange={onThemeChange}
   />);
 

@@ -97,11 +97,28 @@ function stockConflicts(draft: AssemblyDraft, inventory: readonly InventoryItem[
 function accessConflicts(draft: AssemblyDraft, components: readonly PositionedComponent[]) {
   return draft.accessVolumes.flatMap((access) => {
     const blocker = components.filter(({ instance, component }) => component && component.collisionVolumes
-      .some((volume) => overlaps(volumeBounds(access), volumeBounds(volume, instance, component))))
+      .some((volume) => overlaps(volumeBounds(access), volumeBounds(volume, instance, component)))
+      && !componentDeclaresAccess(access, instance, component))
       .sort((left, right) => left.instance.instanceId.localeCompare(right.instance.instanceId))[0];
     return blocker ? [{ id: `tool-access:${access.id}:${blocker.instance.instanceId}`, kind: "tool-access" as const,
       message: `Service access ${access.id} is blocked by ${blocker.instance.instanceId}`, instanceIds: [blocker.instance.instanceId] }] : [];
   });
+}
+
+function componentDeclaresAccess(
+  assemblyAccess: AssemblyDraft["accessVolumes"][number],
+  instance: AssemblyDraft["components"][number],
+  component: ComponentDefinition,
+) {
+  const target = volumeBounds(assemblyAccess);
+  return component.interfaces.some((candidate) => candidate.kind === "access"
+    && sameBounds(target, volumeBounds(candidate.volume, instance, component)));
+}
+
+function sameBounds(left: Bounds, right: Bounds) {
+  const epsilon = 1e-9;
+  return left.min.every((value, axis) => Math.abs(value - right.min[axis]!) <= epsilon)
+    && left.max.every((value, axis) => Math.abs(value - right.max[axis]!) <= epsilon);
 }
 
 function listedConflicts(ids: readonly string[], kind: Exclude<AssemblyConflictKind, "collision" | "insufficient-stock" | "tool-access">, message: string) {

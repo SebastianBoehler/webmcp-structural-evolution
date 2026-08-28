@@ -64,7 +64,10 @@ const AnchorSchema = z.object({
 
 const ComponentDefinitionContentSchema = z.object({
   id: z.string().min(1),
-  category: z.enum(["motor", "fastener", "avionics", "battery", "wiring", "propeller", "body-interface", "retention"]),
+  category: z.string().min(1).max(80).regex(
+    /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/,
+    "Component category must be a lowercase domain path",
+  ),
   geometryCoordinates: z.literal("component-local"),
   manufacturer: z.string().min(1),
   partNumber: z.string().min(1),

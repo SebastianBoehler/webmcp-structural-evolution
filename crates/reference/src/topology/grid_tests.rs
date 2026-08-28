@@ -1,18 +1,92 @@
 use super::grid::assembly_grid;
 use super::{
-    AssemblySolverInput, InertialMassInput, LoadPathGuideInput, MotorMountInput, SolverDimensions,
-    SolverGridInput, SolverMaterial, SolverVolume,
+    AssemblySolverInput, InertialMassInput, LoadCaseInput, LoadInput, LoadPathGuideInput,
+    SolverDimensions, SolverGridInput, SolverMaterial, SolverVolume,
 };
+
+fn load_at(center_m: [f32; 3], force_n: [f32; 3]) -> LoadInput {
+    LoadInput {
+        region: SolverVolume::Cylinder {
+            center_m,
+            radius_m: 0.0175,
+            height_m: 0.005,
+            yaw_rad: 0.0,
+        },
+        force_n,
+    }
+}
+
+#[test]
+fn generic_grid_accepts_one_named_robot_link_load_case() {
+    let load_region = SolverVolume::Cylinder {
+        center_m: [0.12, 0.0, 0.0],
+        radius_m: 0.014,
+        height_m: 0.01,
+        yaw_rad: 0.0,
+    };
+    let input = AssemblySolverInput {
+        grid: SolverGridInput {
+            dimensions: SolverDimensions { width: 48, height: 32, depth: 8 },
+            origin_m: [-0.02, -0.04, -0.01],
+            cell_size_m: [0.00375, 0.0025, 0.0025],
+        },
+        design_domain: vec![SolverVolume::Box {
+            center_m: [0.065, 0.0, 0.0],
+            size_m: [0.16, 0.08, 0.02],
+            yaw_rad: 0.0,
+        }],
+        load_cases: vec![LoadCaseInput {
+            id: "payload-down".into(),
+            loads: vec![LoadInput { region: load_region, force_n: [0.0, 0.0, -120.0] }],
+        }],
+        supports: vec![SolverVolume::Cylinder {
+            center_m: [0.01, 0.0, 0.0],
+            radius_m: 0.014,
+            height_m: 0.01,
+            yaw_rad: 0.0,
+        }],
+        required_solids: vec![],
+        protected_voids: vec![],
+        access_voids: vec![],
+        load_path_guides: vec![],
+        material: SolverMaterial { youngs_modulus_pa: 69.0e9, failure_stress_pa: 250.0e6 },
+        minimum_feature_m: 0.0025,
+        minimum_load_path_width_m: 0.0075,
+        minimum_frame_thickness_m: 0.005,
+        inertial_relief: false,
+        inertial_masses: vec![],
+    };
+
+    let grid = assembly_grid(&input).expect("generic robot link grid");
+    assert_eq!(grid.load_case_ids, vec!["payload-down"]);
+    assert_eq!(grid.load_cases.len(), 1);
+    assert!(grid.load_cases[0].iter().any(|value| value.abs() > 0.0));
+}
 
 #[test]
 fn live_fpv_grid_contains_four_nonzero_physical_load_cases() {
-    let motors = [[0.105, 0.0], [0.0, 0.105], [-0.105, 0.0], [0.0, -0.105]]
-        .map(|[x, y]| MotorMountInput {
-            center_m: [x, y, 0.0],
-            radius_m: 0.0175,
-            load_n: [0.0, 0.0, -18.0],
-        })
-        .to_vec();
+    let motors = [[0.105, 0.0], [0.0, 0.105], [-0.105, 0.0], [0.0, -0.105]];
+    let cases = vec![
+        LoadCaseInput {
+            id: "hover".into(),
+            loads: motors.map(|[x, y]| load_at([x, y, 0.0], [0.0, 0.0, -18.0])).to_vec(),
+        },
+        LoadCaseInput {
+            id: "roll-differential".into(),
+            loads: motors.map(|[x, y]| load_at([x, y, 0.0], [0.0, 0.0, if y >= 0.0 { -11.7 } else { 11.7 }])).to_vec(),
+        },
+        LoadCaseInput {
+            id: "pitch-differential".into(),
+            loads: motors.map(|[x, y]| load_at([x, y, 0.0], [0.0, 0.0, if x >= 0.0 { -11.7 } else { 11.7 }])).to_vec(),
+        },
+        LoadCaseInput {
+            id: "yaw-torsion".into(),
+            loads: motors.map(|[x, y]| {
+                let radius = x.hypot(y).max(1.0e-6);
+                load_at([x, y, 0.0], [-y / radius * 2.16, x / radius * 2.16, 0.0])
+            }).to_vec(),
+        },
+    ];
     let input = AssemblySolverInput {
         grid: SolverGridInput {
             dimensions: SolverDimensions {
@@ -24,7 +98,12 @@ fn live_fpv_grid_contains_four_nonzero_physical_load_cases() {
             // Discretization may be finer than the printable minimum feature.
             cell_size_m: [0.01, 0.01, 0.00075],
         },
-        motor_mounts: motors,
+        design_domain: vec![SolverVolume::Box {
+            center_m: [0.0, 0.0, 0.0],
+            size_m: [0.32, 0.32, 0.006],
+            yaw_rad: 0.0,
+        }],
+        load_cases: cases,
         supports: vec![SolverVolume::Box {
             center_m: [0.0, 0.0, 0.0],
             size_m: [0.04, 0.04, 0.006],
@@ -65,6 +144,7 @@ fn live_fpv_grid_contains_four_nonzero_physical_load_cases() {
         minimum_feature_m: 0.001,
         minimum_load_path_width_m: 0.005,
         minimum_frame_thickness_m: 0.005,
+        inertial_relief: true,
         inertial_masses: vec![
             InertialMassInput {
                 center_m: [0.0, 0.0, -0.032],

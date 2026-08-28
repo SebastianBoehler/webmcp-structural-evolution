@@ -208,12 +208,12 @@ export function FieldViewer({
 
   const issue = prepared.error ?? renderError;
   return (
-    <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}`} aria-label="Drone-arm CAD viewport">
+    <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}`} aria-label="3D engineering viewport">
       <canvas
         ref={canvasRef}
         role="img"
         tabIndex={0}
-        aria-label="Interactive 3D drone-arm assembly and verified density field"
+        aria-label="Interactive 3D physical assembly and verified density field"
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
@@ -259,7 +259,7 @@ export function FieldViewer({
       <p className="field-viewer__field-status" role="status">
         {statusText ?? (current
           ? `Verified field · ${selectedRegion.label}`
-          : "Assembly ready · Generate a frame to add the density field")}
+          : "Assembly ready · Generate topology to add the density field")}
       </p>
       {issue && <p className="field-viewer__message field-viewer__message--error" role="alert">{issue}</p>}
       {prepared.notice && <p className="field-viewer__message" role="status">{prepared.notice}</p>}

@@ -16,7 +16,7 @@ function material(color = 0x8aa7b8, opacity = 1, metalness = 0.15): THREE.MeshSt
   });
 }
 
-function compactFrame(grid: VoxelGrid, density: Float32Array): THREE.Mesh {
+function compactTopology(grid: VoxelGrid, density: Float32Array, name: string): THREE.Mesh {
   const sourceMaterial = material(0x19252e, 1, 0.08);
   const surface = createTopologySurface(grid, density, sourceMaterial);
   const geometry = new THREE.BufferGeometry();
@@ -30,9 +30,15 @@ function compactFrame(grid: VoxelGrid, density: Float32Array): THREE.Mesh {
   geometry.computeVertexNormals();
   surface.geometry.dispose();
   sourceMaterial.dispose();
-  const frame = new THREE.Mesh(geometry, material(0x17242d, 1, 0.05));
-  frame.name = "verified_topology_frame_PLA";
-  return frame;
+  const topology = new THREE.Mesh(geometry, material(0x17242d, 1, 0.05));
+  topology.name = name;
+  return topology;
+}
+
+export interface EngineeringExportIdentity {
+  readonly assemblyName: string;
+  readonly topologyName: string;
+  readonly filename: string;
 }
 
 function proceduralPart(part: Parameters<typeof geometryPieces>[0]): THREE.Group {
@@ -95,10 +101,11 @@ export async function serializeEngineeringAssemblyGlb(
   grid: VoxelGrid,
   density: Float32Array,
   parts: readonly AssemblyVisualPart[],
+  identity: EngineeringExportIdentity,
 ): Promise<ArrayBuffer> {
   const assembly = new THREE.Group();
-  assembly.name = "verified_5inch_fpv_engineering_assembly";
-  assembly.add(compactFrame(grid, density));
+  assembly.name = identity.assemblyName;
+  assembly.add(compactTopology(grid, density, identity.topologyName));
   const [{ GLTFExporter }, { GLTFLoader }] = await Promise.all([
     import("three/examples/jsm/exporters/GLTFExporter.js"),
     import("three/examples/jsm/loaders/GLTFLoader.js"),
@@ -132,13 +139,13 @@ export async function downloadEngineeringAssemblyGlb(
   grid: VoxelGrid,
   density: Float32Array,
   parts: readonly AssemblyVisualPart[],
-  filename = "verified-fpv-engineering-assembly.glb",
+  identity: EngineeringExportIdentity,
 ): Promise<void> {
-  const output = await serializeEngineeringAssemblyGlb(grid, density, parts);
+  const output = await serializeEngineeringAssemblyGlb(grid, density, parts, identity);
   const url = URL.createObjectURL(new Blob([output], { type: "model/gltf-binary" }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = filename;
+  anchor.download = identity.filename;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
