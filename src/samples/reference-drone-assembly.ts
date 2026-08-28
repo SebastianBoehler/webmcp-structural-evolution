@@ -58,16 +58,35 @@ const requirements = [
       y + Math.sin(yaw) * coordinate(motorMount.position.x) + Math.cos(yaw) * coordinate(motorMount.position.y),
       0.003 + REFERENCE_MOTOR_MOUNT_PLATE.centerFromMotorAnchor[2] - REFERENCE_MOTOR_MOUNT_PLATE.height / 2,
     ], yaw))),
-  requirement("flight-controller", "flight-controller-30x30", [0, 0, 0.020]),
-  requirement("esc", "esc-30x30", [0, 0, 0.010]),
-  ...boardStackMounts.map((mount, index) => requirement(`board-stack-mount-${index + 1}`, "board-stack-mount", [
-    coordinate(mount.position.x), coordinate(mount.position.y), 0,
-  ])),
+  requirement("flight-controller", "flight-controller-30x30", [0, 0, 0.02002]),
+  requirement("esc", "esc-30x30", [0, 0, 0.009165]),
+  ...boardStackMounts.flatMap((mount, index) => {
+    const position = [coordinate(mount.position.x), coordinate(mount.position.y)] as const;
+    return [
+      requirement(`stack-bolt-${index + 1}`, "stack-bolt-m3x25", [...position, 0]),
+      requirement(`stack-lower-spacer-${index + 1}`, "stack-spacer-m3x6", [...position, 0]),
+      requirement(`stack-inter-spacer-${index + 1}`, "stack-spacer-m3x5", [...position, 0.01233]),
+      requirement(`stack-locknut-${index + 1}`, "stack-locknut-m3", [...position, 0.02271]),
+    ];
+  }),
   requirement("battery", "battery-6s-1550", [-0.001524, -0.001524, -0.032]),
   requirement("battery-strap-front", "battery-retention-strap", [0, -0.001524, -0.032]),
   requirement("battery-strap-rear", "battery-retention-strap", [-0.031524, -0.001524, -0.032]),
   requirement("battery-power-harness", "battery-power-harness", [0.048638, -0.006762, -0.004]),
   requirement("fpv-camera", "fpv-camera", [0.043, 0.043, 0.003], Math.PI / 4),
+  requirement("camera-fastener-left", "camera-fastener-m2x4", [0.050071067812, 0.035928932188, 0.003], Math.PI / 4),
+  requirement("camera-fastener-right", "camera-fastener-m2x4", [0.035928932188, 0.050071067812, 0.003], Math.PI * 5 / 4),
+  requirement("video-transmitter", "video-transmitter", [-0.043, -0.043, 0.0058], Math.PI / 4),
+  ...[[0.010, 0.010], [-0.010, 0.010], [-0.010, -0.010], [0.010, -0.010]].flatMap(([localX, localY], index) => {
+    const x = -0.043 + (localX - localY) / Math.sqrt(2);
+    const y = -0.043 + (localX + localY) / Math.sqrt(2);
+    return [
+      requirement(`vtx-fastener-${index + 1}`, "fastener-m3x8", [x, y, 0]),
+      requirement(`vtx-spacer-${index + 1}`, "stack-spacer-m3x5", [x, y, 0]),
+    ];
+  }),
+  requirement("video-antenna", "video-antenna", [-0.052899494937, -0.052899494937, 0.0058], Math.PI * 5 / 4),
+  requirement("radio-receiver", "radio-receiver", [-0.043, 0.043, 0.004], Math.PI * 3 / 4),
   requirement("wiring-east", "motor-wiring-corridor", [0.057, 0, 0.008]),
   requirement("wiring-north", "motor-wiring-corridor", [0, 0.057, 0.008], Math.PI / 2),
   requirement("wiring-west", "motor-wiring-corridor", [-0.057, 0, 0.008], Math.PI),

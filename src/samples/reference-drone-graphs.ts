@@ -2,9 +2,9 @@ import type { ParametricGraph } from "../domain/component-model";
 
 const m = (value: number) => ({ value, unit: "m" as const });
 const point = (x: number, y: number, z: number) => ({ x: m(x), y: m(y), z: m(z) });
-const orientation = (yaw = 0) => ({
-  roll: { value: 0, unit: "rad" as const },
-  pitch: { value: 0, unit: "rad" as const },
+const orientation = (yaw = 0, roll = 0, pitch = 0) => ({
+  roll: { value: roll, unit: "rad" as const },
+  pitch: { value: pitch, unit: "rad" as const },
   yaw: { value: yaw, unit: "rad" as const },
 });
 const cylinder = (id: string, center: readonly [number, number, number], radius: number, height: number) => ({
@@ -14,6 +14,9 @@ const cylinder = (id: string, center: readonly [number, number, number], radius:
   radius: m(radius),
   height: m(height),
   orientation: orientation(),
+});
+const cylinderY = (id: string, center: readonly [number, number, number], radius: number, height: number) => ({
+  ...cylinder(id, center, radius, height), orientation: orientation(0, -Math.PI / 2),
 });
 const box = (id: string, center: readonly [number, number, number], size: readonly [number, number, number]) => ({
   kind: "box" as const, id, center: point(...center), size: point(...size),
@@ -44,6 +47,56 @@ export const FASTENER_GRAPH: ParametricGraph = { nodes: [
   { kind: "union", id: "m3x8-solid", left: "m3-thread-envelope", right: "socket-head" },
   box("socket-recess", [0, 0, -0.00235], [0.0025, 0.0025, 0.0013]),
   { kind: "subtraction", id: "m3x8-with-drive", left: "m3x8-solid", right: "socket-recess" },
+] };
+
+export const CAMERA_FASTENER_GRAPH: ParametricGraph = { nodes: [
+  cylinderY("m2-thread-envelope", [0, 0.002, 0], 0.001, 0.004),
+  cylinderY("m2-socket-head", [0, -0.001, 0], 0.0019, 0.002),
+  { kind: "union", id: "m2x4-solid", left: "m2-thread-envelope", right: "m2-socket-head" },
+] };
+
+export const STACK_BOLT_GRAPH: ParametricGraph = { nodes: [
+  cylinder("m3x25-thread-envelope", [0, 0, 0.0125], 0.0015, 0.025),
+  cylinder("m3x25-socket-head", [0, 0, -0.0015], 0.00284, 0.003),
+  { kind: "union", id: "m3x25-solid", left: "m3x25-thread-envelope", right: "m3x25-socket-head" },
+] };
+
+export const STACK_SPACER_6_GRAPH: ParametricGraph = { nodes: [
+  cylinder("m3-spacer-6-outer", [0, 0, 0.003], 0.0025, 0.006),
+  cylinder("m3-spacer-6-bore", [0, 0, 0.003], 0.0016, 0.007),
+  { kind: "subtraction", id: "m3-spacer-6", left: "m3-spacer-6-outer", right: "m3-spacer-6-bore" },
+] };
+
+export const STACK_SPACER_5_GRAPH: ParametricGraph = { nodes: [
+  cylinder("m3-spacer-5-outer", [0, 0, 0.0025], 0.0025, 0.005),
+  cylinder("m3-spacer-5-bore", [0, 0, 0.0025], 0.0016, 0.006),
+  { kind: "subtraction", id: "m3-spacer-5", left: "m3-spacer-5-outer", right: "m3-spacer-5-bore" },
+] };
+
+export const STACK_LOCKNUT_GRAPH: ParametricGraph = { nodes: [
+  cylinder("m3-locknut-body", [0, 0, 0.002], 0.0032, 0.004),
+  cylinder("m3-locknut-bore", [0, 0, 0.002], 0.0015, 0.005),
+  { kind: "subtraction", id: "m3-locknut", left: "m3-locknut-body", right: "m3-locknut-bore" },
+] };
+
+export const VIDEO_TRANSMITTER_GRAPH: ParametricGraph = { nodes: [
+  box("tx800-pcb", [0, 0, 0], [0.028, 0.028, 0.0016]),
+  box("tx800-heatsink", [0, 0, 0.0038], [0.026, 0.026, 0.0044]),
+  { kind: "union", id: "tx800-assembly", left: "tx800-pcb", right: "tx800-heatsink" },
+] };
+
+export const VIDEO_ANTENNA_GRAPH: ParametricGraph = { nodes: [
+  box("lollipop-feed", [0.021, 0, 0], [0.042, 0.003, 0.003]),
+  cylinder("lollipop-radome", [0.0525, 0, 0], 0.0055, 0.015),
+  { kind: "union", id: "lollipop-assembly", left: "lollipop-feed", right: "lollipop-radome" },
+] };
+
+export const RADIO_RECEIVER_GRAPH: ParametricGraph = { nodes: [
+  box("rp1-receiver-board", [0, 0, 0], [0.013, 0.011, 0.003]),
+  box("rp1-antenna-feed", [0.0385, 0, 0], [0.065, 0.0015, 0.0015]),
+  box("rp1-t-element", [0.071, 0, 0], [0.0015, 0.030, 0.0015]),
+  { kind: "union", id: "rp1-with-feed", left: "rp1-receiver-board", right: "rp1-antenna-feed" },
+  { kind: "union", id: "rp1-with-t-antenna", left: "rp1-with-feed", right: "rp1-t-element" },
 ] };
 
 export const BOARD_STACK_MOUNT_GRAPH: ParametricGraph = { nodes: [
@@ -84,8 +137,8 @@ export const BATTERY_STRAP_GRAPH: ParametricGraph = { nodes: [
 
 export const BATTERY_HARNESS_GRAPH: ParametricGraph = { nodes: [
   box("battery-harness-horizontal", [0.0079, -0.005, -0.014], [0.040, 0.009, 0.007]),
-  box("battery-harness-riser", [-0.012, -0.005, -0.0036], [0.008, 0.009, 0.0208]),
-  box("battery-harness-esc-tail", [-0.020, -0.005, 0.0088], [0.018, 0.009, 0.004]),
+  box("battery-harness-riser", [-0.012, -0.005, -0.004018], [0.008, 0.009, 0.019965]),
+  box("battery-harness-esc-tail", [-0.020, -0.005, 0.007965], [0.018, 0.009, 0.004]),
   { kind: "union", id: "battery-harness-lower-route", left: "battery-harness-horizontal", right: "battery-harness-riser" },
   { kind: "union", id: "battery-harness-route", left: "battery-harness-lower-route", right: "battery-harness-esc-tail" },
 ] };

@@ -9,13 +9,20 @@ const EXPECTED_SOURCES = {
   "flight-controller-30x30": ["engineering-drawing", "manufacturer-product-page"],
   "esc-30x30": ["engineering-drawing", "manufacturer-product-page"],
   "battery-6s-1550": ["manufacturer-product-page"],
-  "battery-retention-strap": ["engineering-drawing"],
+  "battery-retention-strap": ["supplier-specification", "engineering-drawing"],
   "battery-power-harness": ["manufacturer-product-page", "engineering-drawing"],
   "fastener-m3x8": ["supplier-specification"],
-  "board-stack-mount": ["manufacturer-product-page", "manufacturer-product-page", "engineering-drawing"],
   "motor-wiring-corridor": ["manufacturer-datasheet", "manufacturer-product-page", "engineering-drawing"],
   "propeller-5x4.3x3": ["manufacturer-product-page"],
   "fpv-camera": ["manufacturer-datasheet"],
+  "video-transmitter": ["manufacturer-product-page"],
+  "video-antenna": ["manufacturer-product-page"],
+  "radio-receiver": ["manufacturer-product-page"],
+  "camera-fastener-m2x4": ["supplier-specification"],
+  "stack-bolt-m3x25": ["supplier-specification"],
+  "stack-spacer-m3x6": ["supplier-specification"],
+  "stack-spacer-m3x5": ["supplier-specification"],
+  "stack-locknut-m3": ["supplier-specification"],
   "body-interface": ["engineering-drawing"],
 } as const;
 
@@ -37,7 +44,7 @@ describe("reference drone catalog", () => {
       component.provenance.sources.map(({ classification }) => classification),
     ]))).toEqual(EXPECTED_SOURCES);
     expect(REFERENCE_DRONE_CATALOG.every(({ provenance }) => provenance.sources.every(
-      ({ accessedOn, sourceTimestamp }) => accessedOn === "2026-08-26" && sourceTimestamp.length > 0,
+      ({ accessedOn, sourceTimestamp }) => accessedOn === "2026-08-27" && sourceTimestamp.length > 0,
     ))).toBe(true);
     const openHardware = REFERENCE_DRONE_CATALOG.filter(({ id }) =>
       id === "flight-controller-30x30" || id === "esc-30x30");
@@ -80,8 +87,11 @@ describe("reference drone catalog", () => {
   it("assembles every physical category by exact component revision", () => {
     expect(referenceAssemblyInstancesFor("motor-2207")).toHaveLength(4);
     expect(referenceAssemblyInstancesFor("propeller-5x4.3x3")).toHaveLength(4);
-    expect(referenceAssemblyInstancesFor("fastener-m3x8")).toHaveLength(16);
-    expect(referenceAssemblyInstancesFor("board-stack-mount")).toHaveLength(4);
+    expect(referenceAssemblyInstancesFor("fastener-m3x8")).toHaveLength(20);
+    expect(referenceAssemblyInstancesFor("stack-bolt-m3x25")).toHaveLength(4);
+    expect(referenceAssemblyInstancesFor("stack-spacer-m3x6")).toHaveLength(4);
+    expect(referenceAssemblyInstancesFor("stack-spacer-m3x5")).toHaveLength(8);
+    expect(referenceAssemblyInstancesFor("stack-locknut-m3")).toHaveLength(4);
     expect(referenceAssemblyInstancesFor("motor-wiring-corridor")).toHaveLength(4);
     expect(referenceAssemblyInstancesFor("flight-controller-30x30")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("esc-30x30")).toHaveLength(1);
@@ -89,6 +99,10 @@ describe("reference drone catalog", () => {
     expect(referenceAssemblyInstancesFor("battery-retention-strap")).toHaveLength(2);
     expect(referenceAssemblyInstancesFor("battery-power-harness")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("fpv-camera")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("camera-fastener-m2x4")).toHaveLength(2);
+    expect(referenceAssemblyInstancesFor("video-transmitter")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("video-antenna")).toHaveLength(1);
+    expect(referenceAssemblyInstancesFor("radio-receiver")).toHaveLength(1);
     expect(referenceAssemblyInstancesFor("body-interface")).toHaveLength(1);
   });
 });

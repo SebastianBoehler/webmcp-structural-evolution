@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 
 import { droneAssemblyVisuals, INITIAL_MOTORS } from "../assembly/drone-workspace";
 import { geometryPieces } from "./assembly-geometries";
@@ -31,5 +32,22 @@ describe("reference assembly geometry", () => {
     expect(pieces).toHaveLength(1);
     expect(pieces[0]).toMatchObject({ id: "filled-protected-swept-volume" });
     expect(pieces[0]!.geometry.type).toBe("CylinderGeometry");
+  });
+
+  it("pitches each propeller blade around its radial axis", () => {
+    const propeller = droneAssemblyVisuals(INITIAL_MOTORS, []).find(
+      ({ id }) => id === "motor-east-propeller",
+    )!;
+    if (propeller.kind !== "propeller") throw new Error("unexpected propeller asset");
+    const blades = geometryPieces(propeller).slice(1);
+
+    expect(blades).toHaveLength(3);
+    for (const blade of blades) {
+      const rotation = new THREE.Euler(...blade.rotation!);
+      const span = new THREE.Vector3(1, 0, 0).applyEuler(rotation);
+      const chord = new THREE.Vector3(0, 1, 0).applyEuler(rotation);
+      expect(span.z).toBeCloseTo(0, 12);
+      expect(Math.abs(chord.z)).toBeGreaterThan(0.1);
+    }
   });
 });

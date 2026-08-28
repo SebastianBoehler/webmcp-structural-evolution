@@ -9,9 +9,26 @@ import {
 import { REFERENCE_DRONE_CATALOG } from "./reference-drone-catalog";
 
 describe("canonical reference drone assembly", () => {
+  it("is a sourced ready-to-fly analog assembly rather than a decorative airframe", () => {
+    const required = [
+      "motor-2207", "propeller-5x4.3x3", "flight-controller-30x30", "esc-30x30",
+      "battery-6s-1550", "fpv-camera", "video-transmitter", "video-antenna", "radio-receiver",
+    ];
+    expect(required.every((id) => referenceDroneAssembly.components.some(
+      (instance) => referenceComponentForInstance(instance).id === id,
+    ))).toBe(true);
+    expect(referenceDroneAssembly.missingComponents).toEqual([]);
+    expect(referenceDroneAssembly.incompatibleComponents).toEqual([]);
+    expect(referenceDroneAssembly.ambiguousComponents).toEqual([]);
+  });
+
   it("content-addresses every component and exact assembly instance", () => {
-    expect(REFERENCE_DRONE_CATALOG.map(({ category }) => category).sort()).toEqual([
-      "avionics", "avionics", "avionics", "battery", "body-interface", "fastener", "fastener", "motor", "propeller", "retention", "wiring", "wiring",
+    expect(REFERENCE_DRONE_CATALOG.map(({ id }) => id).sort()).toEqual([
+      "battery-6s-1550", "battery-power-harness", "battery-retention-strap", "body-interface",
+      "camera-fastener-m2x4", "esc-30x30", "fastener-m3x8", "flight-controller-30x30",
+      "fpv-camera", "motor-2207", "motor-wiring-corridor", "propeller-5x4.3x3", "radio-receiver",
+      "stack-bolt-m3x25", "stack-locknut-m3", "stack-spacer-m3x5", "stack-spacer-m3x6",
+      "video-antenna", "video-transmitter",
     ]);
     expect(referenceDroneAssembly.revision).toMatch(/^[0-9a-f]{64}$/);
     expect(referenceDroneAssembly.components.every((instance) =>
@@ -40,12 +57,12 @@ describe("canonical reference drone assembly", () => {
     });
   });
 
-  it("mounts the OpenESC and OpenFC stack on four physical 30.5 mm columns", () => {
-    const mounts = referenceDroneAssembly.components.filter(({ instanceId }) =>
-      instanceId.startsWith("board-stack-mount-"),
+  it("mounts the OpenESC and OpenFC stack with catalog bolts, spacers, and locknuts", () => {
+    const bolts = referenceDroneAssembly.components.filter(({ instanceId }) =>
+      instanceId.startsWith("stack-bolt-"),
     );
-    expect(mounts).toHaveLength(4);
-    expect(mounts.map(({ transform }) => [
+    expect(bolts).toHaveLength(4);
+    expect(bolts.map(({ transform }) => [
       transform.position.x.value,
       transform.position.y.value,
       transform.position.z.value,
@@ -55,18 +72,56 @@ describe("canonical reference drone assembly", () => {
       [-0.01525, -0.01525, 0],
       [0.01525, -0.01525, 0],
     ]);
-    const mount = REFERENCE_DRONE_CATALOG.find(({ id }) => id === "board-stack-mount")!;
-    expect(mount.interfaces.some(({ kind, id }) => kind === "mate" && id === "frame-through-hole")).toBe(true);
-    expect(mount.interfaces.filter(({ kind }) => kind === "mate").map(({ id, position }) => [
-      id,
-      position.z.value,
-    ])).toEqual([
-      ["frame-through-hole", 0],
-      ["openesc-bearing-plane", 0.006835],
-      ["openfc-bearing-plane", 0.01731],
+    expect(referenceDroneAssembly.components.filter(({ instanceId }) => instanceId.startsWith("stack-lower-spacer-"))).toHaveLength(4);
+    expect(referenceDroneAssembly.components.filter(({ instanceId }) => instanceId.startsWith("stack-inter-spacer-"))).toHaveLength(4);
+    expect(referenceDroneAssembly.components.filter(({ instanceId }) => instanceId.startsWith("stack-locknut-"))).toHaveLength(4);
+    expect(REFERENCE_DRONE_CATALOG.filter(({ id }) => id.startsWith("stack-")).every(
+      ({ manufacturer }) => manufacturer !== "Sunderlabs",
+    )).toBe(true);
+  });
+
+  it("mates the camera, TX800, antennas, and receiver with their real interfaces", () => {
+    const instance = (id: string) => referenceDroneAssembly.components.find(({ instanceId }) => instanceId === id)!;
+    const component = (id: string) => REFERENCE_DRONE_CATALOG.find((candidate) => candidate.id === id)!;
+    const world = (instanceId: string, componentId: string, interfaceId: string) => {
+      const placed = instance(instanceId);
+      const local = component(componentId).interfaces.find(({ id }) => id === interfaceId)!.position;
+      const yaw = placed.transform.orientation.yaw.value;
+      return [
+        placed.transform.position.x.value + Math.cos(yaw) * local.x.value - Math.sin(yaw) * local.y.value,
+        placed.transform.position.y.value + Math.sin(yaw) * local.x.value + Math.cos(yaw) * local.y.value,
+        placed.transform.position.z.value + local.z.value,
+      ].map((value) => Math.round(value * 1e12) / 1e12);
+    };
+
+    expect(world("fpv-camera", "fpv-camera", "camera-mount-left")).toEqual([
+      instance("camera-fastener-left").transform.position.x.value,
+      instance("camera-fastener-left").transform.position.y.value,
+      instance("camera-fastener-left").transform.position.z.value,
     ]);
-    expect(mount.envelope.kind).toBe("cylinder");
-    if (mount.envelope.kind === "cylinder") expect(mount.envelope.height.value).toBe(0.0281);
+    expect(world("fpv-camera", "fpv-camera", "camera-mount-right")).toEqual([
+      instance("camera-fastener-right").transform.position.x.value,
+      instance("camera-fastener-right").transform.position.y.value,
+      instance("camera-fastener-right").transform.position.z.value,
+    ]);
+    expect(component("camera-fastener-m2x4").envelope.orientation.roll.value).toBe(-Math.PI / 2);
+
+    const vtxMounts = component("video-transmitter").mountInterfaces.map((mount) => world(
+      "video-transmitter", "video-transmitter", mount.id,
+    ).slice(0, 2).join(":"));
+    const vtxFasteners = referenceDroneAssembly.components.filter(({ instanceId }) =>
+      instanceId.startsWith("vtx-fastener-"),
+    ).map(({ transform }) => [transform.position.x.value, transform.position.y.value].map(
+      (value) => Math.round(value * 1e12) / 1e12,
+    ).join(":"));
+    expect(vtxFasteners.sort()).toEqual(vtxMounts.sort());
+    expect(world("video-transmitter", "video-transmitter", "antenna-mmcx")).toEqual(
+      world("video-antenna", "video-antenna", "antenna-mmcx"),
+    );
+    expect(component("radio-receiver").interfaces.some(({ id }) => id === "fc-crsf")).toBe(true);
+    expect(component("radio-receiver").protectedVolumes.map(({ id }) => id)).toEqual([
+      "rp1-board-keepout", "rp1-coax-keepout", "rp1-t-element-keepout",
+    ]);
   });
 
   it("mates the trimmed motor pigtail to the routed harness without overlap or a loose end", () => {

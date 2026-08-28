@@ -2,6 +2,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import {
+  cameraFastener,
+  radioReceiver,
+  stackBolt,
+  stackLocknut,
+  stackSpacer5,
+  stackSpacer6,
+  videoAntenna,
+  videoTransmitter,
+} from "./reference-cad-ready-to-fly.mjs";
 
 globalThis.FileReader = class {
   result = null;
@@ -98,7 +108,11 @@ function propeller() {
   });
   geometry.translate(0, 0, -0.0006);
   for (let index = 0; index < 3; index += 1) {
-    const item = mesh(group, geometry.clone(), propMaterial, [0, 0, 0], [0.05, 0.12, index * Math.PI * 2 / 3]);
+    const bladeRoot = new THREE.Group();
+    bladeRoot.rotation.z = index * Math.PI * 2 / 3;
+    group.add(bladeRoot);
+    // Pitch inside the yawed root so the axis follows the radial blade span.
+    const item = mesh(bladeRoot, geometry.clone(), propMaterial, [0, 0, 0], [0.12, 0, 0]);
     item.name = `pitch_blade_${index + 1}`;
   }
   return group;
@@ -195,12 +209,12 @@ function batteryHarness() {
       new THREE.Vector3(-0.006, -0.005 + offset, -0.014),
       new THREE.Vector3(-0.012, -0.005 + offset, 0.002),
       new THREE.Vector3(-0.020, -0.005 + offset, 0.008),
-      end.clone().add(new THREE.Vector3(0, offset, -0.003165)),
+      end.clone().add(new THREE.Vector3(0, offset, -0.004)),
     ]);
     mesh(group, new THREE.TubeGeometry(curve, 72, 0.0017, 14, false), material(color, 0, 0.52));
   });
   mesh(group, new RoundedBoxGeometry(0.014, 0.010, 0.009, 4, 0.0013), material(0xe4b323, 0.05, 0.45), [0.0215, 0.005238, -0.014]);
-  mesh(group, new RoundedBoxGeometry(0.010, 0.008, 0.007, 4, 0.001), material(0x22262c, 0.04, 0.72), [-0.025, -0.005238, 0.014]);
+  mesh(group, new RoundedBoxGeometry(0.010, 0.008, 0.007, 4, 0.001), material(0x22262c, 0.04, 0.72), [-0.025, -0.005238, 0.013165]);
   return group;
 }
 
@@ -210,8 +224,8 @@ function motorHarness() {
   [0xe9c629, 0xd64935, 0x20252b].forEach((color, index) => {
     const y = (index - 1) * 0.0018;
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.036, y, -0.001165),
-      new THREE.Vector3(-0.018, y + (index - 1) * 0.0004, -0.0012),
+      new THREE.Vector3(-0.036, y, -0.002),
+      new THREE.Vector3(-0.018, y + (index - 1) * 0.0004, -0.002),
       new THREE.Vector3(0.018, y - (index - 1) * 0.0004, -0.0032),
       new THREE.Vector3(0.036, y, -0.004),
     ]);
@@ -251,20 +265,6 @@ function fastener() {
   return group;
 }
 
-function boardStackMount() {
-  const group = new THREE.Group();
-  group.name = "Sunderlabs_M3_Open30_board_stack_mount_rev1";
-  const zinc = material(0x737b83, 0.94, 0.18);
-  const spacer = material(0x1e242a, 0.18, 0.54);
-  mesh(group, cylinder(0.00125, 0.025, 48), zinc, [0, 0, 0.0125], [Math.PI / 2, 0, 0]);
-  mesh(group, cylinder(0.00284, 0.003, 64), zinc, [0, 0, -0.0015], [Math.PI / 2, 0, 0]);
-  mesh(group, cylinder(0.00125, 0.0013, 6), black, [0, 0, -0.00235], [Math.PI / 2, 0, 0]);
-  mesh(group, cylinder(0.0025, 0.006835, 48), spacer, [0, 0, 0.0034175], [Math.PI / 2, 0, 0]);
-  mesh(group, cylinder(0.0025, 0.004145, 48), spacer, [0, 0, 0.0152375], [Math.PI / 2, 0, 0]);
-  mesh(group, cylinder(0.003, 0.0024, 6), zinc, [0, 0, 0.0239], [Math.PI / 2, 0, 0]);
-  return group;
-}
-
 async function save(name, scene) {
   scene.traverse((object) => {
     if (object.isMesh) {
@@ -288,5 +288,12 @@ await Promise.all([
   save("motor-to-esc-3x20awg.glb", motorHarness()),
   save("runcam-phoenix-2.glb", fpvCamera()),
   save("accu-m3x8-din912.glb", fastener()),
-  save("sunderlabs-open30-stack-mount.glb", boardStackMount()),
+  save("accu-m2x4-a4-black.glb", cameraFastener()),
+  save("accu-m3x25-din912.glb", stackBolt()),
+  save("harwin-r30-6700694.glb", stackSpacer6()),
+  save("harwin-r30-6700594.glb", stackSpacer5()),
+  save("nbk-swut-m3.glb", stackLocknut()),
+  save("speedybee-tx800.glb", videoTransmitter()),
+  save("foxeer-lollipop-4-plus.glb", videoAntenna()),
+  save("radiomaster-rp1-v2.glb", radioReceiver()),
 ]);

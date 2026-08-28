@@ -52,12 +52,20 @@ function collisionConflicts(components: readonly PositionedComponent[]) {
 }
 
 function intentionalAssemblyMate(left: PositionedComponent, right: PositionedComponent) {
-  const stackMount = left.component?.id === "board-stack-mount" ? left
-    : right.component?.id === "board-stack-mount" ? right : undefined;
-  const stackMate = stackMount === left ? right : left;
-  if (stackMount && stackMate.component && [
+  const ids = [left.instance.instanceId, right.instance.instanceId];
+  const components = [left.component?.id, right.component?.id];
+  const stackHardware = ids.find((id) => id.startsWith("stack-"));
+  const stackMate = stackHardware === ids[0] ? right : left;
+  if (stackHardware && stackMate.component && [
     "flight-controller-30x30", "esc-30x30", "body-interface",
   ].includes(stackMate.component.id)) return true;
+  if (ids.every((id) => id.startsWith("stack-")) && numericSuffix(ids[0]!) === numericSuffix(ids[1]!)) return true;
+  const vtxHardware = ids.find((id) => id.startsWith("vtx-fastener-") || id.startsWith("vtx-spacer-"));
+  const vtxMate = vtxHardware === ids[0] ? right : left;
+  if (vtxHardware && (vtxMate.component?.id === "video-transmitter"
+    || ids.every((id) => id.startsWith("vtx-") && numericSuffix(ids[0]!) === numericSuffix(ids[1]!)))) return true;
+  if (components.includes("fpv-camera") && components.includes("camera-fastener-m2x4")) return true;
+  if (components.includes("video-transmitter") && components.includes("video-antenna")) return true;
   const motor = left.component?.category === "motor" ? left : right.component?.category === "motor" ? right : undefined;
   const attached = motor === left ? right : left;
   const motorDirection = motor?.instance.instanceId.replace("motor-", "");
@@ -71,6 +79,8 @@ function intentionalAssemblyMate(left: PositionedComponent, right: PositionedCom
     || categories.includes("wiring") && categories.includes("battery") && wiring?.instance.instanceId === "battery-power-harness"
     || categories.includes("body-interface") && categories.includes("avionics");
 }
+
+const numericSuffix = (id: string) => /-(\d+)$/.exec(id)?.[1];
 
 function stockConflicts(draft: AssemblyDraft, inventory: readonly InventoryItem[]) {
   const required = new Map<string, number>();

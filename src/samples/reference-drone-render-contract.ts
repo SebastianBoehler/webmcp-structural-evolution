@@ -1,4 +1,5 @@
 import type { ComponentDefinition, ParametricGraph } from "../domain/component-model";
+import * as THREE from "three";
 
 export type SiVector = readonly [number, number, number];
 type GraphNode = ParametricGraph["nodes"][number];
@@ -102,12 +103,26 @@ export function propellerRenderContract(component: ComponentDefinition): Propell
 export function componentGeometryEnvelope(component: ComponentDefinition): RenderBounds {
   const envelope = component.envelope;
   const center = vector(envelope.center);
-  if (envelope.orientation.roll.value !== 0 || envelope.orientation.pitch.value !== 0 || envelope.orientation.yaw.value !== 0) {
-    throw new Error(`Reference ${component.id} envelope must be axis aligned`);
-  }
-  const half = envelope.kind === "box"
-    ? vector(envelope.size).map((size) => size / 2)
-    : [envelope.radius.value, envelope.radius.value, envelope.height.value / 2];
+  const radians = (angle: { readonly value: number; readonly unit: "rad" | "deg" }) =>
+    angle.unit === "rad" ? angle.value : angle.value * Math.PI / 180;
+  const rotation = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
+    radians(envelope.orientation.roll), radians(envelope.orientation.pitch), radians(envelope.orientation.yaw),
+  ));
+  const elements = rotation.elements;
+  const half = envelope.kind === "box" ? (() => {
+    const [x, y, z] = vector(envelope.size).map((size) => size / 2) as unknown as SiVector;
+    return [
+      Math.abs(elements[0]!) * x + Math.abs(elements[4]!) * y + Math.abs(elements[8]!) * z,
+      Math.abs(elements[1]!) * x + Math.abs(elements[5]!) * y + Math.abs(elements[9]!) * z,
+      Math.abs(elements[2]!) * x + Math.abs(elements[6]!) * y + Math.abs(elements[10]!) * z,
+    ];
+  })() : (() => {
+    const radius = metres(envelope.radius);
+    const halfHeight = metres(envelope.height) / 2;
+    const axis = new THREE.Vector3(0, 0, 1).applyMatrix4(rotation);
+    return [axis.x, axis.y, axis.z].map((component) =>
+      radius * Math.sqrt(Math.max(0, 1 - component ** 2)) + halfHeight * Math.abs(component));
+  })();
   const exact = (value: number) => Math.round(value * 1e12) / 1e12;
   return {
     minimum: center.map((coordinate, axis) => exact(coordinate - half[axis]!)) as unknown as SiVector,

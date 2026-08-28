@@ -85,6 +85,14 @@ function bladeGeometry(radius: number, hubRadius: number, depth: number): THREE.
   return geometry;
 }
 
+function radialBladeRotation(pitch: number, yaw: number): readonly [number, number, number] {
+  const orientation = new THREE.Quaternion()
+    .setFromAxisAngle(new THREE.Vector3(0, 0, 1), yaw)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch));
+  const euler = new THREE.Euler().setFromQuaternion(orientation, "XYZ");
+  return [euler.x, euler.y, euler.z];
+}
+
 function propellerPieces(part: Extract<AssemblyVisualPart, { kind: "propeller" }>): readonly VisualPiece[] {
   const pieces: VisualPiece[] = [{
     geometry: cylinder(part.hubRadius, part.hubHeight),
@@ -98,7 +106,9 @@ function propellerPieces(part: Extract<AssemblyVisualPart, { kind: "propeller" }
       color: 0x334f66,
       metalness: 0.08,
       opacity: 0.84,
-      rotation: [0.08, -0.12, index * Math.PI * 2 / part.bladeCount],
+      // Yaw the radial span first, then pitch about that local span. Adding
+      // Euler angles would tilt later blade tips out of the rotor plane.
+      rotation: radialBladeRotation(0.12, index * Math.PI * 2 / part.bladeCount),
     });
   }
   return pieces;

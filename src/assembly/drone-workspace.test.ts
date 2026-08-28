@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { defineComponent } from "../domain/component-model";
 import { referenceDroneAssembly } from "../samples/reference-drone-assembly";
-import { referenceComponent } from "../samples/reference-drone-catalog";
+import { REFERENCE_DRONE_CATALOG, referenceComponent } from "../samples/reference-drone-catalog";
 
 const step = vi.hoisted(() => ({ decode: vi.fn() }));
 const packages = vi.hoisted(() => ({ parse: vi.fn() }));
@@ -12,7 +12,8 @@ vi.mock("./component-package", async (importOriginal) => ({
   parseComponentPackage: packages.parse,
 }));
 
-import { droneAssemblyVisuals, INITIAL_MOTORS } from "./drone-workspace";
+import { droneAssemblyVisuals, INITIAL_MOTORS, renderPartsForAssembly } from "./drone-workspace";
+import { REFERENCE_DISPLAY_RESOURCES } from "./reference-display-resources";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
 
 describe("drone assembly workspace", () => {
@@ -25,6 +26,7 @@ describe("drone assembly workspace", () => {
 
   it("starts as a recognizable four-motor assembly with attached rotor safety geometry", () => {
     const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
+    const assemblyParts = renderPartsForAssembly(referenceDroneAssembly, REFERENCE_DRONE_CATALOG, REFERENCE_DISPLAY_RESOURCES);
 
     expect(parts.filter(({ kind }) => kind === "motor")).toHaveLength(4);
     expect(parts.filter(({ kind }) => kind === "motor-mount")).toHaveLength(4);
@@ -68,7 +70,10 @@ describe("drone assembly workspace", () => {
     });
     expect(parts.find(({ id }) => id === "battery")).toMatchObject({ size: [78, 37, 52] });
     expect(parts.filter(({ id }) => id.includes("-fastener-"))).toHaveLength(16);
-    expect(parts.some(({ id }) => id === "receiver")).toBe(false);
+    expect(["fpv-camera", "video-transmitter", "video-antenna", "radio-receiver"].every((id) =>
+      assemblyParts.some((part) => part.id === id && part.kind === "model"))).toBe(true);
+    expect(assemblyParts.filter(({ id }) => id.startsWith("camera-fastener-") && !id.includes("keepout"))).toHaveLength(2);
+    expect(assemblyParts.filter(({ id }) => id.startsWith("stack-bolt-") && !id.includes("keepout"))).toHaveLength(4);
     expect(parts.filter(({ appearance }) => appearance === "constraint").length).toBeGreaterThanOrEqual(8);
     expect(parts.find(({ id }) => id === "arm-design-region")?.appearance).toBe("design-region");
   });
@@ -90,12 +95,12 @@ describe("drone assembly workspace", () => {
   });
 
   it("renders the exact solver-facing protected world volumes", () => {
-    const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
+    const parts = renderPartsForAssembly(referenceDroneAssembly, REFERENCE_DRONE_CATALOG, REFERENCE_DISPLAY_RESOURCES);
     const viewerVolumes = parts.filter((part) =>
       part.appearance === "constraint" && part.kind !== "guard").map((part) => ({
       id: part.id,
       kind: part.kind === "protected-disc" ? "cylinder" : part.kind,
-      center: part.center,
+      center: part.center.map((value) => Math.round(value * 1e6) / 1e6),
       ...(part.kind === "box" ? { size: part.size, yaw: part.rotation?.[2] ?? 0 }
         : part.kind === "protected-disc" ? { radius: part.radius, height: part.height, yaw: 0 } : {}),
     })).sort((left, right) => left.id.localeCompare(right.id));
