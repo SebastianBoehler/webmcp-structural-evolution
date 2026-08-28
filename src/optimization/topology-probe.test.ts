@@ -18,6 +18,12 @@ describe("runTopologyProbe", () => {
       density: new Float32Array(25 * 25 * 5).fill(0.36),
       displacement: new Float32Array(25 * 25 * 5).fill(0.1),
       stress: new Float32Array(25 * 25 * 5).fill(2),
+      cases: {
+        "collective-thrust": {
+          displacement: new Float32Array(25 * 25 * 5).fill(0.1),
+          stress: new Float32Array(25 * 25 * 5).fill(2),
+        },
+      },
       metrics: {
         initialCompliance: 100,
         finalCompliance: 42,
@@ -65,6 +71,7 @@ describe("runTopologyProbe", () => {
       density: new Float32Array(4),
       displacement: new Float32Array(4),
       stress: new Float32Array(4),
+      cases: {},
       metrics: { initialCompliance: 1, finalCompliance: 1, maxDisplacement: 1, materialFraction: 1, iterations: 1 },
     });
 

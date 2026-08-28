@@ -1,5 +1,5 @@
 use super::grid::{assembly_grid, drone_grid, Grid};
-use super::solver::{compliance_and_sensitivity, springs};
+use super::solver::{compliance_and_sensitivity, load_case_fields, springs};
 use super::{AssemblySolverInput, OptimizationPreset, TopologyResult};
 use std::sync::OnceLock;
 
@@ -318,12 +318,14 @@ fn supported_material(grid: &Grid, density: &[f32], start: usize) -> Vec<bool> {
 }
 
 fn remove_floating_material(grid: &Grid, density: &mut [f32], path: &[bool], target: f32) {
-    let [width, height, depth] = grid.dimensions;
     let start = grid
         .fixed_dofs
         .chunks_exact(3)
-        .position(|dofs| dofs[0])
-        .unwrap_or(grid.index(width / 2, height / 2, depth / 2));
+        .enumerate()
+        .find_map(|(index, dofs)| {
+            (dofs[0] && !grid.passive_void[index] && density[index] >= 0.32).then_some(index)
+        })
+        .expect("topology grid must retain a fixed material node");
     for _ in 0..4 {
         let supported = supported_material(grid, density, start);
         for index in 0..density.len() {
@@ -440,6 +442,7 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
     }
     let (final_compliance, max_displacement, _, max_stress, displacement, stress) =
         compliance_and_sensitivity(&grid, &springs, &density);
+    let (case_displacement, case_stress) = load_case_fields(&grid, &springs, &density);
     TopologyResult {
         dimensions: grid.dimensions,
         passive_solid_indices: grid
@@ -458,6 +461,8 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
         density,
         displacement,
         stress,
+        case_displacement,
+        case_stress,
         initial_compliance,
         final_compliance,
         max_displacement,

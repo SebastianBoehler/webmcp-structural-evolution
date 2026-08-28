@@ -49,7 +49,7 @@ export async function runTopologyProbe(
       relativeL2: 0,
       tolerance: 0,
       topology,
-      analysis: { displacement: result.displacement, stress: result.stress },
+      analysis: { displacement: result.displacement, stress: result.stress, cases: result.cases },
       ...(input.topologyGrid ? { grid: input.topologyGrid } : {}),
     };
   } catch (error) {

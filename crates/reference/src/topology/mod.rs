@@ -3,6 +3,7 @@ mod grid;
 mod grid_tests;
 mod inertial_relief;
 mod optimize;
+mod raster;
 mod solver;
 #[cfg(test)]
 mod solver_tests;
@@ -120,6 +121,8 @@ pub struct TopologyResult {
     pub density: Vec<f32>,
     pub displacement: Vec<f32>,
     pub stress: Vec<f32>,
+    pub case_displacement: Vec<f32>,
+    pub case_stress: Vec<f32>,
     pub passive_solid_indices: Vec<usize>,
     pub passive_void_indices: Vec<usize>,
     pub initial_compliance: f32,
@@ -161,6 +164,14 @@ impl WasmTopologyResult {
     #[wasm_bindgen(getter)]
     pub fn stress(&self) -> Vec<f32> {
         self.inner.stress.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn case_displacement(&self) -> Vec<f32> {
+        self.inner.case_displacement.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn case_stress(&self) -> Vec<f32> {
+        self.inner.case_stress.clone()
     }
     #[wasm_bindgen(getter)]
     pub fn initial_compliance(&self) -> f32 {

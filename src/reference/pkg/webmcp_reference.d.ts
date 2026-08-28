@@ -5,6 +5,8 @@ export class WasmTopologyResult {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly case_displacement: Float32Array;
+    readonly case_stress: Float32Array;
     readonly density: Float32Array;
     readonly depth: number;
     readonly displacement: Float32Array;
@@ -30,9 +32,12 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbg_wasmtopologyresult_free: (a: number, b: number) => void;
     readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
+    readonly wasmtopologyresult_case_displacement: (a: number) => [number, number];
+    readonly wasmtopologyresult_case_stress: (a: number) => [number, number];
     readonly wasmtopologyresult_density: (a: number) => [number, number];
     readonly wasmtopologyresult_depth: (a: number) => number;
     readonly wasmtopologyresult_displacement: (a: number) => [number, number];
@@ -46,7 +51,6 @@ export interface InitOutput {
     readonly wasmtopologyresult_minimum_safety_factor: (a: number) => number;
     readonly wasmtopologyresult_stress: (a: number) => [number, number];
     readonly wasmtopologyresult_width: (a: number) => number;
-    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

@@ -18,6 +18,7 @@ import {
 } from "./field-renderer";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
 import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
+import { analysisRenderField } from "./analysis-render-field";
 import type { FlightFrame } from "../simulation/flight-scenarios";
 import type { FlightFrameSource } from "../simulation/flight-frame-channel";
 import "./field-viewer.css";
@@ -100,23 +101,9 @@ function prepareViewer(
       else notice = "Choose a verified alternative to audition. The accepted field remains visible.";
     }
     let analysisField: ScalarAnalysisField | undefined;
-    if (current.result.analysis && current.result.topology && analysisLayer && !["density", "loads"].includes(analysisLayer)) {
-      if (analysisLayer === "displacement") analysisField = {
-        kind: "displacement", values: current.result.analysis.displacement,
-        maximum: Math.max(current.result.topology.maxDisplacement, Number.EPSILON),
-      };
-      if (analysisLayer === "stress") analysisField = {
-        kind: "stress", values: current.result.analysis.stress,
-        maximum: Math.max(current.result.topology.maxStress, Number.EPSILON),
-      };
-      if (analysisLayer === "safety") {
-        const failureStress = current.result.topology.maxStress * current.result.topology.minimumSafetyFactor;
-        analysisField = {
-          kind: "safety",
-          values: Float32Array.from(current.result.analysis.stress, (stress) => stress / Math.max(failureStress, 1)),
-          maximum: 1,
-        };
-      }
+    if (current.result.analysis && current.result.topology
+      && (analysisLayer === "displacement" || analysisLayer === "stress" || analysisLayer === "safety")) {
+      analysisField = analysisRenderField(current.result.analysis, current.result.topology, analysisLayer);
     }
     return {
       model: {

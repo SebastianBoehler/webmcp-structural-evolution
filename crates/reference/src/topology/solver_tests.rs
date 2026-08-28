@@ -1,5 +1,22 @@
 use super::grid::Grid;
-use super::solver::{solve, springs};
+use super::solver::{compliance_and_sensitivity, load_case_fields, solve, springs};
+
+fn two_node_grid() -> Grid {
+    Grid {
+        dimensions: [2, 1, 1],
+        coordinates: vec![[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
+        passive_solid: vec![false; 2],
+        passive_void: vec![false; 2],
+        fixed_dofs: vec![true, true, true, false, false, false],
+        load_cases: vec![vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]],
+        cell_size_m: [0.01, 0.01, 0.01],
+        youngs_modulus_pa: 3_500_000_000.0,
+        failure_stress_pa: 50_000_000.0,
+        minimum_load_path_width_m: 0.01,
+        minimum_frame_thickness_m: 0.005,
+        load_path_guides: vec![],
+    }
+}
 
 fn solid_bar(dimensions: [usize; 3], cell_size_m: [f32; 3]) -> Grid {
     let [width, height, depth] = dimensions;
@@ -57,5 +74,30 @@ fn physically_equal_solid_bars_are_mesh_convergent() {
         relative < 0.2,
         "mesh refinement changed displacement by {:.1}%",
         relative * 100.0
+    );
+}
+
+#[test]
+fn near_void_stabilization_springs_do_not_define_printed_peak_stress() {
+    let grid = two_node_grid();
+    let links = springs(&grid);
+    let (_, _, _, void_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[0.02, 0.02]);
+    let (_, _, _, solid_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[1.0, 1.0]);
+
+    assert_eq!(void_stress, 0.0);
+    assert!(solid_stress > 0.0);
+}
+
+#[test]
+fn exports_one_structural_field_per_load_case() {
+    let mut grid = two_node_grid();
+    grid.load_cases.push(vec![0.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
+    let (displacement, stress) = load_case_fields(&grid, &springs(&grid), &[1.0, 1.0]);
+
+    assert_eq!(displacement.len(), grid.node_count() * 2);
+    assert_eq!(stress.len(), grid.node_count() * 2);
+    assert!(
+        displacement[grid.node_count()..].iter().sum::<f32>()
+            > displacement[..grid.node_count()].iter().sum::<f32>()
     );
 }

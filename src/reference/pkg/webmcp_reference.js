@@ -20,6 +20,24 @@ export class WasmTopologyResult {
     /**
      * @returns {Float32Array}
      */
+    get case_displacement() {
+        const ret = wasm.wasmtopologyresult_case_displacement(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get case_stress() {
+        const ret = wasm.wasmtopologyresult_case_stress(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {Float32Array}
+     */
     get density() {
         const ret = wasm.wasmtopologyresult_density(this.__wbg_ptr);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();

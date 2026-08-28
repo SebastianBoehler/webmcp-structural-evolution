@@ -28,6 +28,12 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
       ...(result.analysis ? { analysis: {
         displacement: new Float32Array(result.analysis.displacement),
         stress: new Float32Array(result.analysis.stress),
+        ...(result.analysis.cases ? { cases: Object.fromEntries(Object.entries(result.analysis.cases).map(
+          ([loadCase, fields]) => [loadCase, fields ? {
+            displacement: new Float32Array(fields.displacement),
+            stress: new Float32Array(fields.stress),
+          } : undefined],
+        )) } : {}),
       } } : {}),
       ...(result.grid ? { grid: result.grid } : {}),
     };

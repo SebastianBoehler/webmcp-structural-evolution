@@ -28,6 +28,23 @@ const part: AssemblyVisualPart = {
   movable: true,
 };
 
+const loadVectorCenters: readonly (readonly [string, readonly [number, number, number]])[] = [
+  ["east", [105, 0, 0]],
+  ["north", [0, 105, 0]],
+  ["west", [-105, 0, 0]],
+  ["south", [0, -105, 0]],
+];
+const loadVectors: readonly AssemblyVisualPart[] = loadVectorCenters.map(([id, center]) => ({
+  id: `${id}-load-vector`,
+  selectionId: String(id),
+  label: `${id} solver load`,
+  appearance: "generated" as const,
+  kind: "load-vector" as const,
+  center,
+  forceN: [0, 0, -18] as const,
+  length: 28,
+}));
+
 function renderedScene(test: ReturnType<typeof harness>): THREE.Scene {
   test.flushFrame();
   return test.renderer.render.mock.calls.at(-1)?.[0] as THREE.Scene;
@@ -155,6 +172,78 @@ describe("FieldViewer", () => {
     ], 0.495));
     const replayRoot = renderedScene(test).getObjectByName("flight-replay-root")!;
     expect(replayRoot.rotation.x).toBeCloseTo(0.34);
+    expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
+  });
+
+  it("recolors the structural surface from the active replay load case instead of a static envelope", () => {
+    const test = harness();
+    const channel = createFlightFrameChannel();
+    const caseAware = {
+      ...current,
+      result: {
+        ...current.result,
+        topology: {
+          solver: "sparse-simp-lattice-wasm",
+          initialCompliance: 10,
+          finalCompliance: 4,
+          maxDisplacement: 1,
+          maxStress: 10,
+          minimumSafetyFactor: 5,
+          materialFraction: 0.5,
+          iterations: 8,
+        },
+        analysis: {
+          displacement: new Float32Array(4),
+          stress: new Float32Array(4),
+          cases: {
+            "roll-differential": {
+              displacement: new Float32Array([0, 0.2, 0, 1]),
+              stress: new Float32Array([0, 10, 0, 2]),
+            },
+          },
+        },
+      },
+    } as unknown as ViewerBranch;
+    render(<FieldViewer
+      current={caseAware}
+      alternatives={[]}
+      selectedRegion={region}
+      threshold={0.5}
+      mode="overlay"
+      analysisLayer="stress"
+      assemblyParts={loadVectors}
+      flightFrameSource={channel}
+      environment={test.environment}
+    />);
+    const surface = renderedScene(test).getObjectByName("verified-topology-surface") as THREE.Mesh;
+    const before = Array.from(surface.geometry.getAttribute("color").array);
+
+    channel.emit(flightFrameAt("roll", 0.25, [
+      { id: "east", centerM: [0.105, 0, 0] },
+      { id: "north", centerM: [0, 0.105, 0] },
+      { id: "west", centerM: [-0.105, 0, 0] },
+      { id: "south", centerM: [0, -0.105, 0] },
+    ], 0.495));
+
+    const after = Array.from(surface.geometry.getAttribute("color").array);
+    expect(after).not.toEqual(before);
+
+    channel.emit(undefined);
+    expect(Array.from(surface.geometry.getAttribute("color").array)).toEqual(before);
+
+    channel.emit(flightFrameAt("roll", 0, [
+      { id: "east", centerM: [0.105, 0, 0] },
+      { id: "north", centerM: [0, 0.105, 0] },
+      { id: "west", centerM: [-0.105, 0, 0] },
+      { id: "south", centerM: [0, -0.105, 0] },
+    ], 0.495));
+    const cold = new THREE.Color(0x16b9ff).toArray();
+    const zeroAmplitude = Array.from(surface.geometry.getAttribute("color").array);
+    for (let index = 0; index < zeroAmplitude.length; index += 3) {
+      zeroAmplitude.slice(index, index + 3).forEach((value, axis) => {
+        expect(value).toBeCloseTo(cold[axis]!, 6);
+      });
+    }
     expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { flightFrameAt, FLIGHT_SCENARIOS } from "./flight-scenarios";
+import { flightFrameAt, FLIGHT_SCENARIOS, structuralReplayScale } from "./flight-scenarios";
 
 const motors = [
   { id: "motor-east", centerM: [0.105, 0, 0] as const },
@@ -41,5 +41,20 @@ describe("flight scenario replay", () => {
     expect(FLIGHT_SCENARIOS.map(({ solverCase }) => solverCase)).toEqual([
       "collective-thrust", "roll-differential", "pitch-differential", "yaw-torsion",
     ]);
+  });
+
+  it("scales structural cases from the instantaneous load relative to the solver reference", () => {
+    const massKg = 0.495;
+    const referenceMotorLoadN = 18;
+    const hoverN = massKg * 9.80665 / 4;
+
+    expect(structuralReplayScale(flightFrameAt("hover", 0, motors, massKg), referenceMotorLoadN))
+      .toBeCloseTo(hoverN / referenceMotorLoadN, 12);
+    expect(structuralReplayScale(flightFrameAt("roll", 0, motors, massKg), referenceMotorLoadN))
+      .toBe(0);
+    expect(structuralReplayScale(flightFrameAt("roll", 0.25, motors, massKg), referenceMotorLoadN))
+      .toBeCloseTo(hoverN * 0.78 / (referenceMotorLoadN * 0.65), 12);
+    expect(structuralReplayScale(flightFrameAt("yaw", 0.25, motors, massKg), referenceMotorLoadN))
+      .toBeCloseTo(hoverN * 0.38 / (referenceMotorLoadN * 0.12), 12);
   });
 });

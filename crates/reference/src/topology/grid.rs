@@ -1,5 +1,8 @@
 use super::inertial_relief::{apply_inertial_relief, set_kinematic_stabilizers};
-use super::{AssemblySolverInput, LoadPathGuideInput, SolverVolume};
+use super::raster::{
+    planar_segment_distance, volume_center, volume_contains, volume_overlaps_cell,
+};
+use super::{AssemblySolverInput, LoadPathGuideInput};
 
 #[derive(Clone)]
 pub(crate) struct Grid {
@@ -15,56 +18,6 @@ pub(crate) struct Grid {
     pub minimum_load_path_width_m: f32,
     pub minimum_frame_thickness_m: f32,
     pub load_path_guides: Vec<LoadPathGuideInput>,
-}
-
-fn volume_contains(volume: &SolverVolume, point: [f32; 3]) -> bool {
-    match volume {
-        SolverVolume::Box {
-            center_m,
-            size_m,
-            yaw_rad,
-        } => {
-            let dx = point[0] - center_m[0];
-            let dy = point[1] - center_m[1];
-            let cosine = yaw_rad.cos();
-            let sine = yaw_rad.sin();
-            let local_x = cosine * dx + sine * dy;
-            let local_y = -sine * dx + cosine * dy;
-            local_x.abs() <= size_m[0] * 0.5
-                && local_y.abs() <= size_m[1] * 0.5
-                && (point[2] - center_m[2]).abs() <= size_m[2] * 0.5
-        }
-        SolverVolume::Cylinder {
-            center_m,
-            radius_m,
-            height_m,
-            ..
-        } => {
-            let dx = point[0] - center_m[0];
-            let dy = point[1] - center_m[1];
-            dx.mul_add(dx, dy * dy) <= radius_m * radius_m
-                && (point[2] - center_m[2]).abs() <= height_m * 0.5
-        }
-    }
-}
-
-fn volume_center(volume: &SolverVolume) -> [f32; 3] {
-    match volume {
-        SolverVolume::Box { center_m, .. } | SolverVolume::Cylinder { center_m, .. } => *center_m,
-    }
-}
-
-fn planar_segment_distance(point: [f32; 3], start: [f32; 3], end: [f32; 3]) -> f32 {
-    let delta = [end[0] - start[0], end[1] - start[1]];
-    let length_squared = delta[0].mul_add(delta[0], delta[1] * delta[1]).max(1.0e-12);
-    let projection = (((point[0] - start[0]) * delta[0] + (point[1] - start[1]) * delta[1])
-        / length_squared)
-        .clamp(0.0, 1.0);
-    let nearest = [
-        start[0] + projection * delta[0],
-        start[1] + projection * delta[1],
-    ];
-    (point[0] - nearest[0]).hypot(point[1] - nearest[1])
 }
 
 pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String> {
@@ -142,7 +95,7 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                 let required = input
                     .required_solids
                     .iter()
-                    .any(|volume| volume_contains(volume, point));
+                    .any(|volume| volume_overlaps_cell(volume, point, input.grid.cell_size_m));
                 let void = input
                     .protected_voids
                     .iter()

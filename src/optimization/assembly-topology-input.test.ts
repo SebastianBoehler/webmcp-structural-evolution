@@ -7,7 +7,7 @@ describe("compileLiveTopologyContext", () => {
   it("derives the physical FPV solver domain, supports, loads, and keep-outs from the live assembly", () => {
     const context = compileLiveTopologyContext(initialDroneWorkspace);
 
-    expect(context.grid.dimensions).toEqual({ width: 128, height: 128, depth: 32 });
+    expect(context.grid.dimensions).toEqual({ width: 128, height: 128, depth: 16 });
     expect(context.input.motorMounts).toHaveLength(4);
     expect(context.input.supports).not.toHaveLength(0);
     expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({
@@ -21,7 +21,7 @@ describe("compileLiveTopologyContext", () => {
       return count + definition.collisionVolumes.length + definition.protectedVolumes.length;
     }, 0);
     expect(context.input.protectedVoids).toHaveLength(expectedProtectedVolumes);
-    expect(context.input.accessVoids).toHaveLength(26);
+    expect(context.input.accessVoids).toHaveLength(30);
     expect(context.input.accessVoids.slice(0, 16).every((volume) =>
       volume.kind === "cylinder" && volume.radiusM === 0.00334 && volume.heightM === 0.024,
     )).toBe(true);
@@ -57,6 +57,21 @@ describe("compileLiveTopologyContext", () => {
     expect(boardStackHoles.every((hole) =>
       hole.radiusM === 0.0028125 && hole.heightM === 0.024,
     )).toBe(true);
+    const vtxMountHoles = context.input.accessVoids.filter((volume) =>
+      volume.kind === "cylinder"
+      && Math.hypot(volume.centerM[0] + 0.043, volume.centerM[1] + 0.043) > 0.013
+      && Math.hypot(volume.centerM[0] + 0.043, volume.centerM[1] + 0.043) < 0.015,
+    );
+    expect(vtxMountHoles).toHaveLength(4);
+    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({
+      kind: "box", sizeM: [0.036, 0.036, 0.003], yawRad: Math.PI / 4,
+    }));
+    expect(context.input.requiredSolids).toContainEqual(expect.objectContaining({
+      kind: "box", sizeM: [0.021, 0.021, 0.001], yawRad: Math.PI * 3 / 4,
+    }));
+    expect(context.input.requiredSolids.filter((volume) =>
+      volume.kind === "box" && volume.sizeM?.[0] === 0.012 && volume.sizeM[1] === 0.003,
+    )).toHaveLength(2);
     const cameraMountRails = context.input.requiredSolids.filter((volume) =>
       volume.kind === "box" && volume.sizeM?.[0] === 0.046 && volume.sizeM[2] === 0.020,
     );
@@ -70,11 +85,13 @@ describe("compileLiveTopologyContext", () => {
     expect(strapTopClearance?.centerM[0]).toBeCloseTo(0, 9);
     expect(strapTopClearance?.centerM[1]).toBeCloseTo(-0.001524, 9);
     expect(strapTopClearance?.centerM[2]).toBeCloseTo(-0.0015, 9);
-    expect(context.input.assemblyMassKg).toBeCloseTo(0.521, 3);
+    expect(context.input.assemblyMassKg).toBeCloseTo(0.538444, 6);
     expect(context.input.inertialMasses.reduce((sum, item) => sum + item.massKg, 0)).toBeCloseTo(context.input.assemblyMassKg, 12);
     const batteryMass = context.input.inertialMasses.find(({ id }) => id === "battery");
     expect(batteryMass?.massKg).toBeCloseTo(0.254, 12);
     expect(batteryMass?.inertiaTensorKgM2[2][2]).toBeGreaterThan(0);
-    expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(0.001);
+    expect(["fpv-camera", "video-transmitter", "video-antenna", "radio-receiver"].every((id) =>
+      context.input.inertialMasses.some((mass) => mass.id === id && mass.massKg > 0))).toBe(true);
+    expect(Math.hypot(context.input.centerOfMassM[0], context.input.centerOfMassM[1])).toBeLessThan(0.002);
   });
 });

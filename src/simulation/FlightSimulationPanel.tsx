@@ -114,7 +114,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>Rigid-body replay plus linearized structural fields. Not CFD, thermal analysis, or transient continuum FEA.</small>
+      <small>Rigid-body replay with the selected structural load-case colors. Component mass and inertia transfer into the frame at their mounts; component-internal stress is not solved. Not CFD, thermal analysis, or transient continuum FEA.</small>
     </aside>
   );
 }

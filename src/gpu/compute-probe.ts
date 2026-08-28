@@ -18,6 +18,7 @@ import {
   withErrorScopes,
 } from "./probe-runtime";
 import probeShader from "./probe.wgsl?raw";
+import type { StructuralLoadCase } from "../optimization/structural-load-cases";
 
 export type { ProbeFailureCode } from "./probe-runtime";
 
@@ -45,6 +46,12 @@ export interface TopologyMetrics {
 }
 
 export interface StructuralAnalysisFields {
+  readonly displacement: Float32Array;
+  readonly stress: Float32Array;
+  readonly cases?: Readonly<Partial<Record<StructuralLoadCase, StructuralAnalysisCaseFields>>>;
+}
+
+export interface StructuralAnalysisCaseFields {
   readonly displacement: Float32Array;
   readonly stress: Float32Array;
 }

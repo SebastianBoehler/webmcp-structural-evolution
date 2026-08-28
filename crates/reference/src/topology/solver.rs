@@ -221,35 +221,41 @@ pub(crate) fn compliance_and_sensitivity(
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn two_node_grid() -> Grid {
-        Grid {
-            dimensions: [2, 1, 1],
-            coordinates: vec![[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
-            passive_solid: vec![false; 2],
-            passive_void: vec![false; 2],
-            fixed_dofs: vec![true, true, true, false, false, false],
-            load_cases: vec![vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0]],
-            cell_size_m: [0.01, 0.01, 0.01],
-            youngs_modulus_pa: 3_500_000_000.0,
-            failure_stress_pa: 50_000_000.0,
-            minimum_load_path_width_m: 0.01,
-            minimum_frame_thickness_m: 0.005,
-            load_path_guides: vec![],
+pub(crate) fn load_case_fields(
+    grid: &Grid,
+    springs: &[Spring],
+    density: &[f32],
+) -> (Vec<f32>, Vec<f32>) {
+    let mut displacement_fields = Vec::with_capacity(grid.load_cases.len() * density.len());
+    let mut stress_fields = Vec::with_capacity(grid.load_cases.len() * density.len());
+    for load in &grid.load_cases {
+        let displacement = solve(grid, springs, density, load);
+        let mut displacement_field = vec![0.0_f32; density.len()];
+        let mut stress_field = vec![0.0_f32; density.len()];
+        for (node, vector) in displacement.chunks_exact(3).enumerate() {
+            displacement_field[node] = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
         }
+        for &spring in springs {
+            let left = spring.left * 3;
+            let right = spring.right * 3;
+            let extension = spring
+                .direction
+                .iter()
+                .enumerate()
+                .map(|(axis, direction)| {
+                    direction * (displacement[left + axis] - displacement[right + axis])
+                })
+                .sum::<f32>();
+            let average = ((density[spring.left] + density[spring.right]) * 0.5).max(0.001);
+            if average >= 0.32 {
+                let effective_area = (spring.area_m2 * average.powi(3)).max(1.0e-12);
+                let stress = (spring_stiffness(spring, density) * extension).abs() / effective_area;
+                stress_field[spring.left] = stress_field[spring.left].max(stress);
+                stress_field[spring.right] = stress_field[spring.right].max(stress);
+            }
+        }
+        displacement_fields.extend(displacement_field);
+        stress_fields.extend(stress_field);
     }
-
-    #[test]
-    fn near_void_stabilization_springs_do_not_define_printed_peak_stress() {
-        let grid = two_node_grid();
-        let links = springs(&grid);
-        let (_, _, _, void_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[0.02, 0.02]);
-        let (_, _, _, solid_stress, _, _) = compliance_and_sensitivity(&grid, &links, &[1.0, 1.0]);
-
-        assert_eq!(void_stress, 0.0);
-        assert!(solid_stress > 0.0);
-    }
+    (displacement_fields, stress_fields)
 }

@@ -24,6 +24,8 @@ describe("relativeL2", () => {
       density: new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]),
       displacement: new Float32Array([0, 0.1, 0.2, 0.3, 0.4, 0.42]),
       stress: new Float32Array([1, 2, 3, 4, 5, 12]),
+      case_displacement: new Float32Array(24).fill(0.2),
+      case_stress: new Float32Array(24).fill(3),
       initial_compliance: 18,
       final_compliance: 7,
       max_displacement: 0.42,
@@ -104,6 +106,7 @@ describe("relativeL2", () => {
     expect(result.density).toEqual(new Float32Array([1, 0.6, 0, 0.4, 0.2, 1]));
     expect(result.displacement).toHaveLength(6);
     expect(result.stress).toHaveLength(6);
+    expect(result.cases["roll-differential"].stress).toEqual(new Float32Array(6).fill(3));
     expect(result.metrics).toEqual({
       initialCompliance: 18,
       finalCompliance: 7,
@@ -124,6 +127,8 @@ describe("relativeL2", () => {
       density: new Float32Array([1]),
       displacement: new Float32Array([1]),
       stress: new Float32Array([1]),
+      case_displacement: new Float32Array([1]),
+      case_stress: new Float32Array([1]),
       initial_compliance: 18,
       final_compliance: Number.NaN,
       max_displacement: 0.42,

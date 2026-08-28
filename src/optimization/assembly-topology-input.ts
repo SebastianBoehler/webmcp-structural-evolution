@@ -2,6 +2,8 @@ import type { AssemblyAuthoringState } from "../assembly/assembly-authoring";
 import { solveAssemblyConstraints } from "../assembly/assembly-authoring";
 import type { ComponentDefinition } from "../domain/component-model";
 import type { VoxelGrid } from "../viewer/field-instances";
+import { branchingLoadPaths } from "./assembly-load-paths";
+import { componentFixtureVolumes, componentMountAccessVoids } from "./assembly-topology-fixtures";
 
 type Point = readonly [number, number, number];
 type Tensor3 = readonly [Point, Point, Point];
@@ -71,6 +73,13 @@ function worldVolume(
   if (volume.kind === "box") return {
     kind: "box", centerM: center, sizeM: point(volume.size), yawRad: yawRad + volume.orientation.yaw.value,
   };
+  if (volume.orientation.roll.value !== 0 || volume.orientation.pitch.value !== 0) {
+    const diameter = metres(volume.radius) * 2;
+    const axisY = Math.abs(Math.abs(volume.orientation.roll.value) - Math.PI / 2) < 1e-9
+      && volume.orientation.pitch.value === 0;
+    if (!axisY) throw new Error("Topology input supports only z-axis or local y-axis component cylinders.");
+    return { kind: "box", centerM: center, sizeM: [diameter, metres(volume.height), diameter], yawRad: yawRad + volume.orientation.yaw.value };
+  }
   return {
     kind: "cylinder", centerM: center, radiusM: metres(volume.radius), heightM: metres(volume.height), yawRad: yawRad + volume.orientation.yaw.value,
   };
@@ -162,44 +171,13 @@ function dynamicGrid(state: AssemblyAuthoringState): AssemblyTopologyInput["grid
   if (envelope.kind !== "box") throw new Error("The FPV topology solver requires the live box design envelope.");
   const center = point(envelope.center);
   const size = point(envelope.size);
-  // 128 x 128 x 32 resolves the 5-inch assembly at 1.875 x 1.875 x 0.75 mm.
-  const dimensions = { width: 128, height: 128, depth: 32 };
+  // Preserve the 1.875 mm planar detail that controls the visible arm surface,
+  // while using 16 layers through the 24 mm design volume. The former 32-layer
+  // solve doubled Wasm working memory without adding meaningful planar detail.
+  const dimensions = { width: 128, height: 128, depth: 16 };
   const cellSizeM: Point = [size[0] / dimensions.width, size[1] / dimensions.height, size[2] / dimensions.depth];
   const originM: Point = [center[0] - size[0] / 2, center[1] - size[1] / 2, center[2] - size[2] / 2];
   return { dimensions, originM, cellSizeM };
-}
-
-function branchingLoadPaths(
-  motors: AssemblyTopologyInput["motorMounts"],
-  support: SolverVolume,
-): readonly LoadPathGuide[] {
-  const frame = support.centerM;
-  return motors.flatMap((motor, motorIndex) => {
-    const delta = [motor.centerM[0] - frame[0], motor.centerM[1] - frame[1]] as const;
-    const length = Math.hypot(...delta);
-    if (length <= 0) throw new Error("A motor mount cannot coincide with the body support.");
-    const radial = [delta[0] / length, delta[1] / length] as const;
-    const tangent = [-radial[1], radial[0]] as const;
-    return [-1, 1].flatMap((side) => ["lower", "upper"].map((level): LoadPathGuide => {
-      const at = (radialDistance: number, tangentDistance: number, z: number): Point => [
-        frame[0] + radial[0] * radialDistance + tangent[0] * tangentDistance * side,
-        frame[1] + radial[1] * radialDistance + tangent[1] * tangentDistance * side,
-        z,
-      ];
-      return {
-        id: `motor-${motorIndex + 1}-${side < 0 ? "left" : "right"}-${level}`,
-        kind: "must-pass",
-        pointsM: [
-          at(length, 0.006, motor.centerM[2]),
-          at(Math.min(0.074, length * 0.72), 0.009, level === "upper" ? 0.009 : motor.centerM[2]),
-          at(0.042, 0.017, level === "upper" ? 0.011 : motor.centerM[2]),
-          at(0.010, 0.010, frame[2]),
-        ],
-        memberWidthM: 0.005,
-        frameThicknessM: 0.005,
-      };
-    }));
-  });
 }
 
 export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveTopologyContext {
@@ -266,41 +244,11 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
       // The body interface is the real fixture boundary for this frame slice, rather than an invented centre support.
       supports.push(...definition.collisionVolumes.map((volume) => worldVolume(volume, centerM, yawRad)));
     } else {
-      if (definition.category === "battery") {
-        // A 60 mm deck leaves a load-bearing outer rim around both 43 mm strap loops.
-        requiredSolids.push({ kind: "box", centerM: [centerM[0], centerM[1], -0.0015], sizeM: [0.084, 0.060, 0.003], yawRad });
-      }
+      const fixtures = componentFixtureVolumes(definition, centerM, yawRad);
+      requiredSolids.push(...fixtures.solids);
+      accessVoids.push(...fixtures.access);
       accessVoids.push(...retentionAccessVoids(definition, centerM, yawRad, grid));
-      if (definition.id === "flight-controller-30x30" || definition.id === "esc-30x30") {
-        for (const mount of definition.mountInterfaces) {
-          const worldMount = add(centerM, rotateZ(point(mount.position), yawRad));
-          const key = `${worldMount[0].toFixed(9)}:${worldMount[1].toFixed(9)}`;
-          if (boardMountLocations.has(key)) continue;
-          boardMountLocations.add(key);
-          accessVoids.push({
-            kind: "cylinder",
-            centerM: [worldMount[0], worldMount[1], 0],
-            // Preserve the published 4 mm board hole with a conservative
-            // three-cell representation at the current 1.875 mm XY pitch.
-            radiusM: Math.max(metres(mount.diameter) / 2, grid.cellSizeM[0] * 1.5),
-            heightM: grid.cellSizeM[2] * grid.dimensions.depth,
-            yawRad,
-          });
-        }
-      }
-      if (definition.id === "fpv-camera") {
-        const bridgeCenter = add(centerM, rotateZ([-0.038, 0, -0.004], yawRad));
-        requiredSolids.push({ kind: "box", centerM: bridgeCenter, sizeM: [0.008, 0.030, 0.020], yawRad });
-        for (const side of [-1, 1]) {
-          // The side rails sit outside the 24 mm camera keep-out and overlap
-          // the inboard bridge. This forms one U-bracket instead of leaving
-          // keep-out-clipped deck fragments around the camera housing.
-          const railCenter = add(centerM, rotateZ([-0.019, side * 0.0135, -0.004], yawRad));
-          requiredSolids.push({ kind: "box", centerM: railCenter, sizeM: [0.046, 0.003, 0.020], yawRad });
-          const screwCenter = add(centerM, rotateZ([0, side * 0.0135, 0], yawRad));
-          accessVoids.push({ kind: "box", centerM: screwCenter, sizeM: [0.006, 0.006, 0.006], yawRad });
-        }
-      }
+      accessVoids.push(...componentMountAccessVoids(definition, centerM, yawRad, grid, boardMountLocations));
       protectedVoids.push(
         ...collisionClearances(definition, centerM, yawRad),
         ...definition.protectedVolumes.map((volume) => worldVolume(volume, centerM, yawRad)),

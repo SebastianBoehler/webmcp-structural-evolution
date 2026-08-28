@@ -2,12 +2,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { installAssemblyInteractions, type PartInteractionHandlers } from "./assembly-interactions";
 import { installTransformGizmo, type TransformGizmoSession } from "./transform-gizmo";
-import type { FlightFrame } from "../simulation/flight-scenarios";
+import { structuralReplayScale, type FlightFrame } from "../simulation/flight-scenarios";
 
 import {
   createFieldMeshes,
   highlightFieldMesh,
-  updateAnalysisSurfaceLoadFactor,
+  restoreAnalysisSurfaceField,
+  updateAnalysisSurfaceField,
   type FieldMeshSet,
 } from "./field-meshes";
 import {
@@ -130,6 +131,12 @@ export function mountFieldRenderer(
   interactions: PartInteractionHandlers = {},
 ): FieldRendererSession {
   const prepared = prepareRenderModel(model);
+  const referenceLoads = (prepared.assemblyParts ?? []).flatMap((part) => (
+    part.kind === "load-vector" ? [Math.hypot(...part.forceN)] : []
+  ));
+  const referenceMotorLoadN = referenceLoads.length > 0
+    ? referenceLoads.reduce((sum, value) => sum + value, 0) / referenceLoads.length
+    : undefined;
   const ownership = createCleanupLedger();
   let renderer: RendererLike | undefined;
   let meshSet: FieldMeshSet | undefined;
@@ -201,10 +208,9 @@ export function mountFieldRenderer(
       if (!flightGroup || !assemblyMeshSet) return;
       const attitude = flightFrame?.attitudeRad ?? [0, 0, 0];
       flightGroup.rotation.set(...attitude);
-      const meanThrust = flightFrame
-        ? Math.max(0.001, flightFrame.motorThrustN.reduce((sum, value) => sum + value, 0) / 4)
-        : 1;
-      const structuralScale = flightFrame ? Math.max(...flightFrame.motorThrustN) / meanThrust : 1;
+      const structuralScale = flightFrame && referenceMotorLoadN !== undefined
+        ? structuralReplayScale(flightFrame, referenceMotorLoadN)
+        : flightFrame ? 0 : 1;
       const loadVectors = flightFrame?.motorLoadVectorsN ?? [];
       const meanLoad = Math.max(0.001, loadVectors.reduce(
         (sum, vector) => sum + Math.hypot(...vector), 0,
@@ -236,7 +242,18 @@ export function mountFieldRenderer(
         const utilization = Math.min(1, band * structuralScale);
         mesh.material.color.copy(new THREE.Color(0x16b9ff).lerp(new THREE.Color(0xff2d55), utilization));
       }
-      updateAnalysisSurfaceLoadFactor(meshSet?.analysisSurfaces ?? [], structuralScale);
+      const activeField = flightFrame
+        ? prepared.analysisField?.cases?.[flightFrame.solverCase]
+        : undefined;
+      if (!flightFrame) {
+        restoreAnalysisSurfaceField(meshSet?.analysisSurfaces ?? []);
+      } else if (activeField) {
+        updateAnalysisSurfaceField(
+          meshSet?.analysisSurfaces ?? [], activeField.values, activeField.maximum, structuralScale,
+        );
+      } else {
+        restoreAnalysisSurfaceField(meshSet?.analysisSurfaces ?? []);
+      }
       scheduleRender();
     },
     setReferenceGridVisible(visible) {

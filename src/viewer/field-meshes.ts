@@ -14,7 +14,9 @@ export interface FieldMeshSet {
 
 interface AnalysisSurface {
   readonly geometry: THREE.BufferGeometry;
-  readonly utilization: Float32Array;
+  readonly fieldIndices: Uint32Array;
+  readonly envelopeUtilization: Float32Array;
+  utilization: Float32Array;
 }
 
 interface MeshOwnership extends Pick<CleanupLedger, "own"> {
@@ -38,6 +40,27 @@ export function updateAnalysisSurfaceLoadFactor(surfaces: readonly AnalysisSurfa
   surfaces.forEach((surface) => colorAnalysisSurface(surface, loadFactor));
 }
 
+export function restoreAnalysisSurfaceField(surfaces: readonly AnalysisSurface[]): void {
+  for (const surface of surfaces) {
+    surface.utilization = surface.envelopeUtilization;
+    colorAnalysisSurface(surface);
+  }
+}
+
+export function updateAnalysisSurfaceField(
+  surfaces: readonly AnalysisSurface[],
+  values: Float32Array,
+  maximum: number,
+  loadFactor: number,
+): void {
+  for (const surface of surfaces) {
+    surface.utilization = Float32Array.from(surface.fieldIndices, (fieldIndex) => (
+      Math.max(0, Math.min(1, values[fieldIndex]! / Math.max(maximum, 1e-12)))
+    ));
+    colorAnalysisSurface(surface, loadFactor);
+  }
+}
+
 function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership, analysis?: ScalarAnalysisField, ghosted = false) {
   const material = new THREE.MeshStandardMaterial({
     color: analysis ? 0xffffff : 0x5da9d6,
@@ -54,6 +77,7 @@ function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshO
   if (analysis) {
     const position = surface.geometry.getAttribute("position");
     const utilization = new Float32Array(position.count);
+    const fieldIndices = new Uint32Array(position.count);
     const world = new THREE.Vector3();
     const gridLocal = new THREE.Vector3();
     const inverseAnchor = new THREE.Quaternion(...grid.anchor.orientation).invert();
@@ -65,9 +89,15 @@ function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshO
       const y = Math.max(0, Math.min(grid.dimensions.height - 1, Math.floor(gridLocal.y / grid.cellSize[1])));
       const z = Math.max(0, Math.min(grid.dimensions.depth - 1, Math.floor(gridLocal.z / grid.cellSize[2])));
       const fieldIndex = x + grid.dimensions.width * (y + grid.dimensions.height * z);
+      fieldIndices[index] = fieldIndex;
       utilization[index] = Math.max(0, Math.min(1, analysis.values[fieldIndex]! / Math.max(analysis.maximum, 1e-12)));
     }
-    analysisSurface = { geometry: surface.geometry, utilization };
+    analysisSurface = {
+      geometry: surface.geometry,
+      fieldIndices,
+      envelopeUtilization: utilization,
+      utilization,
+    };
     colorAnalysisSurface(analysisSurface);
   }
   ownership.own(() => surface.geometry.dispose());

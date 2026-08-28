@@ -1,5 +1,6 @@
+import type { StructuralLoadCase } from "../optimization/structural-load-cases";
+
 export type FlightScenarioId = "hover" | "roll" | "pitch" | "yaw";
-export type SolverLoadCase = "collective-thrust" | "roll-differential" | "pitch-differential" | "yaw-torsion";
 type Point = readonly [number, number, number];
 
 export interface FlightMotor {
@@ -10,12 +11,13 @@ export interface FlightMotor {
 export interface FlightScenario {
   readonly id: FlightScenarioId;
   readonly label: string;
-  readonly solverCase: SolverLoadCase;
+  readonly solverCase: StructuralLoadCase;
   readonly description: string;
 }
 
 export interface FlightFrame {
   readonly scenario: FlightScenarioId;
+  readonly solverCase: StructuralLoadCase;
   readonly timeS: number;
   readonly motorThrustN: readonly number[];
   readonly motorLoadVectorsN: readonly Point[];
@@ -35,6 +37,12 @@ export const FLIGHT_SCENARIOS: readonly FlightScenario[] = Object.freeze([
 
 const G = 9.80665;
 const wave = (timeS: number) => Math.sin(timeS * Math.PI * 2);
+const SOLVER_CASE_MOTOR_FACTOR: Readonly<Record<StructuralLoadCase, number>> = Object.freeze({
+  "collective-thrust": 1,
+  "roll-differential": 0.65,
+  "pitch-differential": 0.65,
+  "yaw-torsion": 0.12,
+});
 
 function profile(id: FlightScenarioId, timeS: number, hoverN: number): readonly number[] {
   const pulse = wave(timeS);
@@ -42,6 +50,19 @@ function profile(id: FlightScenarioId, timeS: number, hoverN: number): readonly 
   if (id === "roll") return [hoverN, hoverN * (1 + 0.78 * pulse), hoverN, hoverN * (1 - 0.78 * pulse)];
   if (id === "pitch") return [hoverN * (1 + 0.78 * pulse), hoverN, hoverN * (1 - 0.78 * pulse), hoverN];
   return [hoverN * (1 + 0.38 * pulse), hoverN * (1 - 0.38 * pulse), hoverN * (1 + 0.38 * pulse), hoverN * (1 - 0.38 * pulse)];
+}
+
+export function structuralReplayScale(frame: FlightFrame, referenceMotorLoadN: number): number {
+  if (!Number.isFinite(referenceMotorLoadN) || referenceMotorLoadN <= 0) {
+    throw new RangeError("Structural replay requires a positive finite solver reference load.");
+  }
+  const meanThrust = frame.motorThrustN.reduce((sum, value) => sum + value, 0)
+    / frame.motorThrustN.length;
+  if (frame.solverCase === "collective-thrust") return meanThrust / referenceMotorLoadN;
+  const differential = frame.motorThrustN.reduce(
+    (largest, value) => Math.max(largest, Math.abs(value - meanThrust)), 0,
+  );
+  return differential / (referenceMotorLoadN * SOLVER_CASE_MOTOR_FACTOR[frame.solverCase]);
 }
 
 export function flightFrameAt(
@@ -79,6 +100,7 @@ export function flightFrameAt(
       : scenario === "yaw" ? [0, 0, phase * 0.24] : [0, 0, 0];
   return {
     scenario,
+    solverCase: FLIGHT_SCENARIOS.find(({ id }) => id === scenario)!.solverCase,
     timeS,
     motorThrustN: Object.freeze(motorThrustN),
     motorLoadVectorsN: Object.freeze(motorLoadVectorsN),

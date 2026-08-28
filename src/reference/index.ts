@@ -1,5 +1,6 @@
 type ReferenceModule = typeof import("./pkg/webmcp_reference.js");
 import type { AssemblyTopologyInput } from "../optimization/assembly-topology-input";
+import { STRUCTURAL_LOAD_CASES, type StructuralLoadCase } from "../optimization/structural-load-cases";
 
 let referencePromise: Promise<ReferenceModule> | undefined;
 
@@ -35,6 +36,10 @@ export interface TopologyOptimizationResult {
   readonly density: Float32Array;
   readonly displacement: Float32Array;
   readonly stress: Float32Array;
+  readonly cases: Readonly<Record<StructuralLoadCase, {
+    readonly displacement: Float32Array;
+    readonly stress: Float32Array;
+  }>>;
   readonly metrics: {
     readonly initialCompliance: number;
     readonly finalCompliance: number;
@@ -60,6 +65,8 @@ export async function optimizeDroneFrame(
   const density = result.density;
   const displacement = result.displacement;
   const stress = result.stress;
+  const caseDisplacement = result.case_displacement;
+  const caseStress = result.case_stress;
   const metrics = {
     initialCompliance: result.initial_compliance,
     finalCompliance: result.final_compliance,
@@ -79,11 +86,18 @@ export async function optimizeDroneFrame(
     && density.every((value) => finite(value) && value >= 0 && value <= 1);
   const validAnalysis = [displacement, stress].every((field) => field instanceof Float32Array
     && field.length === expectedLength && field.every((value) => finite(value) && value >= 0));
-  if (!validDimensions || !validMetrics || !validDensity || !validAnalysis) {
+  const validCaseAnalysis = [caseDisplacement, caseStress].every((field) => field instanceof Float32Array
+    && field.length === expectedLength * STRUCTURAL_LOAD_CASES.length
+    && field.every((value) => finite(value) && value >= 0));
+  if (!validDimensions || !validMetrics || !validDensity || !validAnalysis || !validCaseAnalysis) {
     throw new Error("Invalid topology result returned by the Wasm solver.");
   }
+  const cases = Object.fromEntries(STRUCTURAL_LOAD_CASES.map((loadCase, index) => [loadCase, {
+    displacement: new Float32Array(caseDisplacement.slice(index * expectedLength, (index + 1) * expectedLength)),
+    stress: new Float32Array(caseStress.slice(index * expectedLength, (index + 1) * expectedLength)),
+  }])) as unknown as Record<StructuralLoadCase, { displacement: Float32Array; stress: Float32Array }>;
   return {
     dimensions, density: new Float32Array(density),
-    displacement: new Float32Array(displacement), stress: new Float32Array(stress), metrics,
+    displacement: new Float32Array(displacement), stress: new Float32Array(stress), cases, metrics,
   };
 }
