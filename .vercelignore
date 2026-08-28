@@ -1,0 +1,8 @@
+.git
+.superpowers
+.worktrees
+.vercel
+crates/reference/target
+dist
+node_modules
+output

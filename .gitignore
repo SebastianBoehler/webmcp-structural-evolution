@@ -4,3 +4,4 @@ dist/
 src/reference/pkg/
 crates/reference/target/
 output/
+.vercel
