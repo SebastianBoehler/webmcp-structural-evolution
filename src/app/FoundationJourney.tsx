@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
+import { runTopologyProbeInWorker } from "../optimization/topology-probe-client";
 import {
   DRONE_ARM_FOUNDATION_CONTEXT,
   DRONE_ARM_FOUNDATION_STUDY,
@@ -46,7 +47,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
     selection: initialContext.selection,
     locks: initialContext.locks,
     capability,
-    compute,
+    compute: compute ?? runTopologyProbeInWorker,
     buildProbeInput: (variant) => buildProbeInput(variant, liveTopology),
   });
   const { theme, setTheme } = useTheme();
@@ -187,6 +188,7 @@ export function FoundationJourney({ capability, compute, viewerEnvironment }: Fo
             primaryLabel={primaryLabel}
             primaryDisabled={primaryDisabled}
             cancelVisible={state.operationStatus === "running"}
+            solverCellCount={liveTopology.grid.dimensions.width * liveTopology.grid.dimensions.height * liveTopology.grid.dimensions.depth}
             showConstraints={showConstraints}
             onAssemblyPanelChange={setAssemblyPanel}
             onAnalysisLayerChange={setAnalysisLayer}

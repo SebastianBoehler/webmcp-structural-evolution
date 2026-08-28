@@ -76,7 +76,7 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   expect(screen.getByRole("button", { name: /import component file/i })).toBeVisible();
   expect(screen.getByText(/^east motor$/i)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^details$/i }));
-  expect(screen.getByText(/128 × 128 × 32/)).toBeVisible();
+  expect(screen.getByText(/128 × 128 × 16/)).toBeVisible();
   fireEvent.click(screen.getByText("Engineering details"));
   expect(screen.getByText("assembly · mm")).toBeVisible();
 
@@ -185,6 +185,7 @@ test("shows cancellation as immutable evidence and ignores a late result", async
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
 
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  expect(await screen.findByText(/gray center: fixed assembly interface/i)).toBeVisible();
   fireEvent.click(await screen.findByRole("button", { name: /cancel optimization/i }));
   await screen.findByText(/topology optimization canceled by the user/i);
   expect(await screen.findByRole("button", { name: /retry balanced frame/i })).toBeVisible();

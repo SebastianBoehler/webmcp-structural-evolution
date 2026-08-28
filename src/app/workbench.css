@@ -99,16 +99,19 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .status-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--warning); }
 .status-dot--available { background: var(--success); }
 .status-dot--failed { background: var(--danger); }
-.appearance-select select {
-  min-height: 2.5rem;
-  padding: 0.45rem 1.9rem 0.45rem 0.65rem;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  background: var(--surface-raised);
-  font: inherit;
-  font-size: var(--text-caption);
+.theme-switch { display: flex; padding: 0.2rem; border-radius: var(--radius-md); background: var(--surface-subtle); }
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  min-height: 2.1rem;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: none;
 }
+.theme-switch button[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-raised); box-shadow: var(--shadow-control); }
+.theme-switch svg { display: block; }
 
 .segmented-control { display: flex; padding: 0.2rem; border-radius: var(--radius-md); background: var(--surface-subtle); }
 .segmented-control button {
@@ -171,6 +174,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .toggle-button { min-height: 2.5rem; font-size: var(--text-caption); }
 .toggle-button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 .selection-context { max-width: 16rem; text-align: end; }
+.optimization-context { display: grid; gap: 0.15rem; }
+.optimization-context strong { color: var(--text-primary); }
 
 .viewport-canvas { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .viewport-canvas[data-dock-open="true"] { grid-template-columns: minmax(0, 1fr) clamp(20rem, 30vw, 24rem); }
@@ -197,7 +202,7 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 
 @media (max-width: 52rem) {
   .workbench-header { grid-template-columns: minmax(0, 1fr) auto; }
-  .brand-lockup p, .appearance-select { display: none; }
+  .brand-lockup p { display: none; }
   .workflow-navigation { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .workflow-navigation button { justify-content: center; }
   .viewport-toolbar { grid-template-columns: minmax(0, 1fr); gap: 0.65rem; }

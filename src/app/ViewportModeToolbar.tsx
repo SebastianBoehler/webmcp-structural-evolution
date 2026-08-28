@@ -14,6 +14,7 @@ interface ViewportModeToolbarProps {
   readonly primaryLabel: string;
   readonly primaryDisabled: boolean;
   readonly cancelVisible: boolean;
+  readonly solverCellCount: number;
   readonly showConstraints: boolean;
   readonly onAssemblyPanelChange: (panel: AssemblyPanel) => void;
   readonly onAnalysisLayerChange: (layer: AnalysisLayer) => void;
@@ -98,6 +99,11 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
         ? <button className="secondary-action" type="button" onClick={props.onCancel}>Cancel optimization</button>
         : <button className="primary-action" type="button" disabled={props.primaryDisabled} onClick={props.onPrimary}>{props.primaryLabel}</button>)}
     </div>
-    <p className="selection-context">Selected: <strong>{props.selectionLabel}</strong></p>
+    {props.cancelVisible
+      ? <p className="selection-context optimization-context" role="status">
+          <strong>Solving {props.solverCellCount.toLocaleString()} cells</strong>
+          <span>Gray center: fixed assembly interface.</span>
+        </p>
+      : <p className="selection-context">Selected: <strong>{props.selectionLabel}</strong></p>}
   </header>;
 }
