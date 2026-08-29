@@ -117,4 +117,28 @@ describe("design session", () => {
       outcome: { status: "failed", error: "Expected revision does not match the document revision" },
     });
   });
+
+  it("records malformed transactions as typed failures without changing session state", async () => {
+    const root = await document();
+    const session = createDesignSession(root);
+
+    const applied = await applyDesignSessionTransaction(session, {
+      id: "tx-invalid",
+      expectedRevision: root.revision,
+      actor: human,
+      preconditions: [],
+      commands: [
+        { id: "rename-pump", type: "rename-document", label: "Pump" },
+        { id: "rename-pump", type: "rename-document", label: "Pump again" },
+      ],
+    } as never, clock);
+
+    expect(applied.result).toMatchObject({ ok: false, code: "invalid-transaction" });
+    expect(applied.session.history).toBe(session.history);
+    expect(applied.session.artifacts).toBe(session.artifacts);
+    expect(applied.session.receipts.at(-1)).toMatchObject({
+      validatedInputs: null,
+      outcome: { status: "failed" },
+    });
+  });
 });

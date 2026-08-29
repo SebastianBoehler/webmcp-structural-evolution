@@ -52,10 +52,12 @@ function errorMessage(result: DesignTransactionResult): string {
 }
 
 async function createReceipt(
-  transaction: DesignTransaction,
+  transaction: unknown,
   result: DesignTransactionResult,
   clock: DesignSessionClock,
 ): Promise<ActionReceipt> {
+  const parsedTransaction = DesignTransactionSchema.safeParse(transaction);
+  const validatedTransaction = parsedTransaction.success ? parsedTransaction.data : null;
   const createdAt = clock.now();
   const affectedRevision = result.ok ? result.document.revision : null;
   const changed = result.ok && result.changedReferences.length > 0;
@@ -64,7 +66,7 @@ async function createReceipt(
     : { status: "failed", error: errorMessage(result) };
   const id = await revisionId({
     action: "apply_design_transaction",
-    transactionId: transaction.id,
+    transactionId: validatedTransaction?.id ?? null,
     affectedRevision,
     outcome,
     createdAt,
@@ -73,7 +75,7 @@ async function createReceipt(
   return defineActionReceipt({
     id,
     action: "apply_design_transaction",
-    validatedInputs: transaction,
+    validatedInputs: validatedTransaction,
     affectedRevision,
     outcome,
     duration: { value: Math.max(0, clock.elapsedMs()), unit: "ms" },
@@ -101,7 +103,7 @@ export async function applyDesignSessionTransaction(
   clock: DesignSessionClock,
 ): Promise<DesignSessionApplication> {
   const result = await applyDesignTransaction(currentDocument(session), transaction);
-  const receipt = await createReceipt(DesignTransactionSchema.parse(transaction), result, clock);
+  const receipt = await createReceipt(transaction, result, clock);
 
   if (!result.ok) {
     return freezeSnapshot({
