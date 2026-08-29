@@ -15,13 +15,14 @@ export const CadOutputSchema = z.enum([
   "section-curves",
   "step",
 ]);
+const CadOutputsSchema = z.array(CadOutputSchema).min(1);
 
 export const CadEvaluationRequestSchema = z
   .object({
     requestId: z.string().min(1),
     document: DesignDocumentSchema,
     sourceRevision: RevisionSchema,
-    requestedOutputs: z.array(CadOutputSchema).min(1),
+    requestedOutputs: CadOutputsSchema,
     settings: JsonValueSchema,
   })
   .strict()
@@ -46,10 +47,32 @@ const CadFailureSchema = z.object({
   ]),
   message: z.string().min(1),
 }).strict();
+const CadEvaluationResultSchema = z.object({
+  output: CadOutputSchema,
+  artifact: ArtifactRecordSchema,
+}).strict();
+const CadEvaluationSuccessSchema = z.object({
+  requestId: z.string().min(1),
+  state: z.literal("succeeded"),
+  requestedOutputs: CadOutputsSchema,
+  results: z.array(CadEvaluationResultSchema).min(1),
+}).strict().superRefine((value, context) => {
+  const returned = new Set(value.results.map((result) => result.output));
+  for (const output of value.requestedOutputs) {
+    if (!returned.has(output)) {
+      context.addIssue({ code: "custom", path: ["results"], message: `Missing requested output: ${output}` });
+    }
+  }
+  for (const [index, result] of value.results.entries()) {
+    if (!value.requestedOutputs.includes(result.output)) {
+      context.addIssue({ code: "custom", path: ["results", index, "output"], message: `Unexpected output: ${result.output}` });
+    }
+  }
+});
 
 export const CadEvaluationEventSchema = z.discriminatedUnion("state", [
   z.object({ requestId: z.string().min(1), state: z.literal("progress"), progress: z.number().min(0).max(1) }).strict(),
-  z.object({ requestId: z.string().min(1), state: z.literal("succeeded"), artifacts: z.array(ArtifactRecordSchema) }).strict(),
+  CadEvaluationSuccessSchema,
   z.object({ requestId: z.string().min(1), state: z.literal("failed"), error: CadFailureSchema }).strict(),
   z.object({ requestId: z.string().min(1), state: z.literal("cancelled") }).strict(),
 ]);

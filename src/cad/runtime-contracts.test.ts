@@ -3,12 +3,24 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "../domain/canonical-json";
 import { createDesignDocument } from "./document-schema";
 import {
+  CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
   EngineeringJobEventSchema,
   EngineeringJobRequestSchema,
 } from "./runtime-contracts";
 
 const digest = "a".repeat(64);
+const outputArtifact = {
+  id: "b".repeat(64),
+  kind: "brep",
+  sourceRevision: digest,
+  producer: { name: "cad-kernel", version: "1" },
+  settingsDigest: "c".repeat(64),
+  contentDigest: "d".repeat(64),
+  units: "mm",
+  mediaType: "application/octet-stream",
+  dependencies: [],
+} as const;
 
 async function evaluationRequest() {
   const document = await createDesignDocument({
@@ -32,6 +44,22 @@ describe("CAD runtime contracts", () => {
 
     expect(CadEvaluationRequestSchema.parse(request)).toEqual(request);
     expect(() => CadEvaluationRequestSchema.parse({ ...request, requestedOutputs: ["fake-solid"] })).toThrow();
+  });
+
+  it("requires every CAD success result to cover a declared output", () => {
+    const success = {
+      requestId: "request-1",
+      state: "succeeded",
+      requestedOutputs: ["brep"],
+      results: [{ output: "brep", artifact: outputArtifact }],
+    } as const;
+
+    expect(CadEvaluationEventSchema.parse(success)).toEqual(success);
+    expect(() => CadEvaluationEventSchema.parse({ ...success, results: [] })).toThrow();
+    expect(() => CadEvaluationEventSchema.parse({
+      ...success,
+      results: [{ output: "mass-properties", artifact: outputArtifact }],
+    })).toThrow();
   });
 
   it("keeps truth levels exclusive to verified engineering events", () => {
