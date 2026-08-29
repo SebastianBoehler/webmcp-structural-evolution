@@ -22,5 +22,6 @@ describe("compileAssemblyTopologyContext", () => {
       }),
     ]);
     expect(context.input.inertialRelief).toBe(false);
+    expect(context.input.requiredSolids).toHaveLength(fixture.assembly.preservedMounts.length);
   });
 });

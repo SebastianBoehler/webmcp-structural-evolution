@@ -14,16 +14,40 @@ const point = (value: Readonly<{
 
 function solverVolume(volume: StudySpec["designRegion"]): SolverVolume {
   const yawRad = volume.orientation.yaw.value;
-  if (volume.orientation.roll.value !== 0 || volume.orientation.pitch.value !== 0) {
-    throw new Error(`Topology study volume must be aligned to assembly z: ${volume.id}`);
-  }
   if (volume.kind === "box") return {
     kind: "box", centerM: point(volume.center), sizeM: point(volume.size), yawRad,
   };
+  if (volume.orientation.roll.value !== 0 || volume.orientation.pitch.value !== 0) {
+    const radius = metres(volume.radius);
+    const halfHeight = metres(volume.height) / 2;
+    const roll = volume.orientation.roll.value, pitch = volume.orientation.pitch.value;
+    const cr = Math.cos(roll), sr = Math.sin(roll), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yawRad), sy = Math.sin(yawRad);
+    const matrix = [
+      cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
+      sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
+      -sp, cp * sr, cp * cr,
+    ];
+    const half = [0, 1, 2].map((axis) => radius * Math.hypot(matrix[axis * 3]!, matrix[axis * 3 + 1]!) + halfHeight * Math.abs(matrix[axis * 3 + 2]!));
+    return {
+      kind: "box", centerM: point(volume.center),
+      sizeM: half.map((value) => Math.round(value * 2e12) / 1e12) as unknown as Point,
+      yawRad: 0,
+    };
+  }
   return {
     kind: "cylinder", centerM: point(volume.center), radiusM: metres(volume.radius),
     heightM: metres(volume.height), yawRad,
   };
+}
+
+function requiredSolidsFor(state: AssemblyAuthoringState, study: StudySpec): readonly SolverVolume[] {
+  const height = Math.max(study.manufacturing.minimumFeature.value * 2, 0.001);
+  return state.draft.preservedMounts.map((mount) => solverVolume({
+    kind: "cylinder", id: mount.id, center: mount.position,
+    radius: { value: mount.diameter.value / 2, unit: "m" },
+    height: { value: height, unit: "m" }, orientation: mount.orientation,
+  }));
 }
 
 function gridFor(study: StudySpec): AssemblyTopologyInput["grid"] {
@@ -107,7 +131,7 @@ export function compileAssemblyTopologyContext(
     })),
     motorMounts: [],
     supports: supportsFor(study),
-    requiredSolids: [],
+    requiredSolids: requiredSolidsFor(state, study),
     protectedVoids: state.draft.obstacleVolumes.map(solverVolume),
     accessVoids: state.draft.accessVolumes.map(solverVolume),
     loadPathGuides: [],

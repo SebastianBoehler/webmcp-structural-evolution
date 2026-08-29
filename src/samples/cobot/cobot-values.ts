@@ -26,9 +26,10 @@ export const cylinderVolumeMm = (
   radius: number,
   height: number,
   center: readonly [number, number, number] = [0, 0, 0],
+  rotation: readonly [number, number, number] = [0, 0, 0],
 ) => ({
   kind: "cylinder" as const, id, center: mmPoint(...center), radius: mm(radius), height: mm(height),
-  orientation: orientationRad(),
+  orientation: orientationRad(...rotation),
 });
 
 export function qualifiedProvenance(

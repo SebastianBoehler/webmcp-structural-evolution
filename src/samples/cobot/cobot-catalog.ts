@@ -30,7 +30,7 @@ const specs: readonly PartSpec[] = [
   { id: "forearm-shell", category: "robotics/structure", size: [292, 82, 74], shape: "box", massKg: 2.1 },
   { id: "forearm-cover", category: "robotics/cover", size: [220, 8, 34], shape: "box", massKg: 0.2 },
   { id: "cover-fastener", category: "robotics/fastener", size: [6, 12], shape: "cylinder", massKg: 0.1 },
-  { id: "wrist-joint", category: "robotics/joint", size: [58, 68], shape: "cylinder", massKg: 0.5 },
+  { id: "wrist-joint", category: "robotics/joint", size: [58, 68], shape: "cylinder", massKg: 0.4 },
   { id: "wrist-cap", category: "robotics/cover", size: [48, 14], shape: "cylinder", massKg: 0.15 },
   { id: "wrist-spacer", category: "robotics/interface", size: [40, 20], shape: "cylinder", massKg: 0.1 },
   { id: "tool-flange", category: "robotics/tooling", size: [40, 18], shape: "cylinder", massKg: 0.3 },
@@ -52,6 +52,14 @@ async function component(spec: PartSpec): Promise<ComponentDefinition> {
   const graphNode = spec.shape === "box"
     ? { kind: "box" as const, id: `${spec.id}-body`, center: mmPoint(0, 0, 0), size: (envelope as Extract<typeof envelope, { kind: "box" }>).size }
     : { kind: "cylinder" as const, id: `${spec.id}-body`, center: mmPoint(0, 0, 0), radius: mm(spec.size[0]), height: mm(spec.size[1]), orientation: orientationRad() };
+  const interfaces: ComponentDefinition["interfaces"][number][] = [
+    { kind: "mate", id: "anchor", coordinates: "component-local", position: mmPoint(0, 0, 0), orientation: orientationRad(), mating: "concentric", diameter: mm(8) },
+  ];
+  if (spec.id === "upper-boss") interfaces.push(...[-45, 45].map((offset, index) => ({
+    kind: "access" as const, id: `fastener-access-${index + 1}`, coordinates: "component-local" as const,
+    position: mmPoint(0, offset, 0), orientation: orientationRad(),
+    volume: cylinderVolumeMm(`fastener-access-volume-${index + 1}`, 5, 110, [0, offset, 0]),
+  })));
   return defineComponent({
     id: `se6-${spec.id}`, category: spec.category, geometryCoordinates: "component-local",
     manufacturer: "Sunderlabs", partNumber: `SE6-${spec.id.toUpperCase()}`,
@@ -63,7 +71,7 @@ async function component(spec: PartSpec): Promise<ComponentDefinition> {
     mountInterfaces: [{ id: "mount", position: mmPoint(0, 0, 0), orientation: orientationRad(), diameter: mm(8), fastenerType: "SE-6 qualified interface" }],
     loadContributions: [], allowedOrientations: [orientationRad()],
     geometry: { kind: "parametric", graph: { nodes: [graphNode] } },
-    interfaces: [{ kind: "mate", id: "anchor", coordinates: "component-local", position: mmPoint(0, 0, 0), orientation: orientationRad(), mating: "concentric", diameter: mm(8) }],
+    interfaces,
   });
 }
 
