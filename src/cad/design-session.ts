@@ -1,0 +1,162 @@
+import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
+import { revisionId } from "../domain/revisions";
+import { freezeSnapshot, type DeepReadonly } from "../domain/snapshots";
+import { createArtifactIndex, type ArtifactIndex, type ArtifactRecord } from "./artifact-contract";
+import { invalidateArtifacts } from "./artifact-invalidation";
+import { DesignTransactionSchema, type DesignTransaction } from "./command-schema";
+import {
+  commitDesignRevision,
+  createDesignHistory,
+  type DesignHistory,
+} from "./design-history";
+import type { DesignDocument } from "./document-schema";
+import { applyDesignTransaction, type DesignTransactionResult } from "./transactions";
+
+export type DesignSession = DeepReadonly<{
+  history: DesignHistory;
+  artifacts: {
+    index: ArtifactIndex;
+    invalidatedIds: readonly string[];
+  };
+  receipts: readonly ActionReceipt[];
+}>;
+
+export type DesignSessionClock = Readonly<{
+  now: () => string;
+  elapsedMs: () => number;
+}>;
+
+export type DesignSessionApplication = DeepReadonly<{
+  session: DesignSession;
+  result: DesignTransactionResult;
+}>;
+
+export type DesignSessionInspection = DeepReadonly<{
+  documentId: string;
+  headRevision: string;
+  acceptedRevision: string;
+  parameterCount: number;
+  frameCount: number;
+  branchCount: number;
+  artifactCount: number;
+  invalidatedArtifactCount: number;
+  units: DesignDocument["units"];
+}>;
+
+function currentDocument(session: DesignSession): DesignDocument {
+  return session.history.documents[session.history.headRevision];
+}
+
+function errorMessage(result: DesignTransactionResult): string {
+  return result.ok ? "" : result.diagnostics.map(({ message }) => message).join("; ");
+}
+
+async function createReceipt(
+  transaction: DesignTransaction,
+  result: DesignTransactionResult,
+  clock: DesignSessionClock,
+): Promise<ActionReceipt> {
+  const createdAt = clock.now();
+  const affectedRevision = result.ok ? result.document.revision : null;
+  const changed = result.ok && result.changedReferences.length > 0;
+  const outcome: ActionReceipt["outcome"] = result.ok
+    ? { status: "succeeded", result: { revision: result.document.revision, changed } }
+    : { status: "failed", error: errorMessage(result) };
+  const id = await revisionId({
+    action: "apply_design_transaction",
+    transactionId: transaction.id,
+    affectedRevision,
+    outcome,
+    createdAt,
+  });
+
+  return defineActionReceipt({
+    id,
+    action: "apply_design_transaction",
+    validatedInputs: transaction,
+    affectedRevision,
+    outcome,
+    duration: { value: Math.max(0, clock.elapsedMs()), unit: "ms" },
+    createdAt,
+  });
+}
+
+export function createDesignSession(
+  document: DesignDocument,
+  artifacts: readonly ArtifactRecord[] = [],
+): DesignSession {
+  return freezeSnapshot({
+    history: createDesignHistory(document),
+    artifacts: {
+      index: createArtifactIndex(document.revision, artifacts),
+      invalidatedIds: [],
+    },
+    receipts: [],
+  });
+}
+
+export async function applyDesignSessionTransaction(
+  session: DesignSession,
+  transaction: DesignTransaction,
+  clock: DesignSessionClock,
+): Promise<DesignSessionApplication> {
+  const result = await applyDesignTransaction(currentDocument(session), transaction);
+  const receipt = await createReceipt(DesignTransactionSchema.parse(transaction), result, clock);
+
+  if (!result.ok) {
+    return freezeSnapshot({
+      session: { ...session, receipts: [...session.receipts, receipt] },
+      result,
+    });
+  }
+
+  if (result.document.revision === session.history.headRevision) {
+    return freezeSnapshot({
+      session: { ...session, receipts: [...session.receipts, receipt] },
+      result,
+    });
+  }
+
+  const artifacts = invalidateArtifacts(
+    session.artifacts.index,
+    result.changedReferences,
+    result.document.revision,
+  );
+  return freezeSnapshot({
+    session: {
+      history: commitDesignRevision(
+        session.history,
+        transaction.expectedRevision,
+        transaction.id,
+        result.document,
+      ),
+      artifacts,
+      receipts: [...session.receipts, receipt],
+    },
+    result,
+  });
+}
+
+export function inspectDesignSession(session: DesignSession): DesignSessionInspection {
+  const document = currentDocument(session);
+  const parentRevisions = new Set(
+    Object.values(session.history.nodes)
+      .map((node) => node.parentRevision)
+      .filter((revision): revision is string => revision !== null),
+  );
+  const branchCount = Object.keys(session.history.nodes)
+    .filter((revision) => !parentRevisions.has(revision))
+    .length;
+
+  return freezeSnapshot({
+    documentId: document.id,
+    headRevision: session.history.headRevision,
+    acceptedRevision: session.history.acceptedRevision,
+    parameterCount: document.parameters.length,
+    frameCount: document.frames.length,
+    branchCount,
+    artifactCount: session.artifacts.index.artifacts.length,
+    invalidatedArtifactCount: session.artifacts.invalidatedIds.length,
+    units: { ...document.units },
+  });
+}
