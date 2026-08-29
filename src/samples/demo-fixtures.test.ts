@@ -12,6 +12,14 @@ test.each(Object.values(DEMO_FIXTURES))("$label exposes the exact compiled topol
   ]);
 });
 
-test("robot fixture exposes its real fixed region rather than a drone body lock", () => {
-  expect(DEMO_FIXTURES["robot-arm-link"].context.locks).toEqual(["base-support"]);
+test("SE-6 fixture exposes its upper-arm study and detailed visual adapter", () => {
+  const fixture = DEMO_FIXTURES["se6-cobot"];
+  expect(fixture.context.locks).toEqual(["j2-upper-arm-support"]);
+  expect(fixture.label).toBe("SE-6 six-axis cobot");
+  expect(fixture.topologySubject).toBe("upper arm");
+  expect(fixture.compileTopology(fixture.initialState).input.loadCases.map(({ id }) => id)).toEqual([
+    "rated-payload-gravity", "emergency-stop", "lateral-disturbance",
+  ]);
+  expect(fixture.renderParts?.(fixture.initialState.draft, fixture.initialState.catalog, {})
+    .filter(({ appearance }) => appearance === "component")).toHaveLength(52);
 });

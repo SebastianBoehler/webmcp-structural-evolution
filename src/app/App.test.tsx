@@ -17,15 +17,15 @@ test("shows the structural evolution foundation shell", () => {
   expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeDisabled();
 });
 
-test("switches the shared workbench to the robot-arm assembly", async () => {
+test("switches the shared workbench to the detailed SE-6 cobot", async () => {
   render(<App />);
 
   fireEvent.change(screen.getByRole("combobox", { name: "Demo assembly" }), {
-    target: { value: "robot-arm-link" },
+    target: { value: "se6-cobot" },
   });
 
-  expect(await screen.findByText("PAYLOAD-1P5KG")).toBeVisible();
-  expect((screen.getByRole("combobox", { name: "Demo assembly" }) as HTMLSelectElement).value).toBe("robot-arm-link");
+  expect(await screen.findByText("Mounted 1.5 kg calibration payload")).toBeVisible();
+  expect((screen.getByRole("combobox", { name: "Demo assembly" }) as HTMLSelectElement).value).toBe("se6-cobot");
 });
 
 test("does not treat CSS-hidden descendants as visible", () => {

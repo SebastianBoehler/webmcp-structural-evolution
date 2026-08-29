@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { initialDroneWorkspace } from "../assembly/drone-workspace";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { compileAssemblyTopologyContext } from "../optimization/assembly-study-compiler";
-import { ROBOT_ARM_LINK_FIXTURE } from "../samples/robot-arm-link";
+import { SE6_COBOT_FIXTURE } from "../samples/cobot/cobot-fixture";
 import { initSync, optimize_assembly_frame } from "./pkg/webmcp_reference.js";
 
 function thresholdPathExists(
@@ -69,22 +69,24 @@ describe("full live assembly Wasm solve", () => {
     }
   }, 90_000);
 
-  it("solves the robot link and preserves its named load cases across Wasm", () => {
+  it("solves the SE-6 upper arm and preserves its named load cases across Wasm", () => {
     const wasm = readFileSync(new URL("./pkg/webmcp_reference_bg.wasm", import.meta.url));
     initSync({ module: wasm });
-    const fixture = ROBOT_ARM_LINK_FIXTURE;
+    const fixture = SE6_COBOT_FIXTURE;
     const context = compileAssemblyTopologyContext(fixture.workspace, fixture.study);
 
     const result = optimize_assembly_frame("balanced", context.input);
 
     try {
-      const fieldLength = 48 * 32 * 8;
-      expect(result.case_ids).toEqual(["payload-down", "emergency-side"]);
+      const fieldLength = 48 * 24 * 16;
+      expect(result.case_ids).toEqual([
+        "rated-payload-gravity", "emergency-stop", "lateral-disturbance",
+      ]);
       expect(result.density).toHaveLength(fieldLength);
       expect(result.case_displacement).toHaveLength(fieldLength * 2);
       expect(result.case_stress).toHaveLength(fieldLength * 2);
       expect(result.final_compliance).toBeGreaterThan(0);
-      const [width, height, depth] = [48, 32, 8] as const;
+      const [width, height, depth] = [48, 24, 16] as const;
       const region = (xCenter: number) => Array.from({ length: fieldLength }, (_, index) => index).filter((index) => {
         const z = Math.floor(index / (width * height));
         const row = index - z * width * height;
@@ -93,8 +95,8 @@ describe("full live assembly Wasm solve", () => {
         return Math.abs(x - xCenter) <= 4 && Math.abs(y - height / 2) <= 7 && Math.abs(z - depth / 2) <= 3
           && result.density[index]! >= 0.32;
       });
-      const base = region(6);
-      const payload = new Set(region(42));
+      const base = region(4);
+      const payload = new Set(region(43));
       expect(base.length).toBeGreaterThan(0);
       expect(payload.size).toBeGreaterThan(0);
       expect(thresholdPathExists(result.density, [width, height, depth], base, payload)).toBe(true);

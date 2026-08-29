@@ -238,7 +238,7 @@ test("forwards WebMCP cancellation to one terminal transaction", async () => {
   await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
 });
 
-test("solves the robot-arm fixture with its named load cases and no flight-only claims", async () => {
+test("solves the SE-6 upper arm with its named load cases and no flight-only claims", async () => {
   const compute = vi.fn(async (input: ProbeInput): Promise<ProbeResult> => ({
     status: "verified",
     output: sparseField(input, 0.65),
@@ -249,22 +249,25 @@ test("solves the robot-arm fixture with its named load cases and no flight-only 
   render(<FoundationJourney
     capability={{ status: "available", message: "Test adapter acquired." }}
     compute={compute}
-    fixtureId="robot-arm-link"
+    fixtureId="se6-cobot"
     onFixtureChange={vi.fn()}
     viewerEnvironment={harness().environment}
   />);
 
-  expect(screen.getByText("PAYLOAD-1P5KG")).toBeVisible();
+  expect(screen.getByText("Mounted 1.5 kg calibration payload")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
-  fireEvent.click(screen.getByRole("button", { name: /generate balanced link/i }));
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced upper arm/i }));
   await screen.findByRole("button", { name: /review topology candidate/i });
 
   const solverInput = compute.mock.calls[0]![0].assembly!;
-  expect(solverInput.loadCases.map(({ id }) => id)).toEqual(["payload-down", "emergency-side"]);
+  expect(solverInput.loadCases.map(({ id }) => id)).toEqual([
+    "rated-payload-gravity", "emergency-stop", "lateral-disturbance",
+  ]);
   expect(solverInput.motorMounts).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
   expect(screen.getByText(/flight replay does not apply to this assembly/i)).toBeVisible();
-  expect(screen.getByText("payload-down")).toBeVisible();
-  expect(screen.getByText("emergency-side")).toBeVisible();
+  expect(screen.getByText("rated-payload-gravity")).toBeVisible();
+  expect(screen.getByText("emergency-stop")).toBeVisible();
+  expect(screen.getByText("lateral-disturbance")).toBeVisible();
 });

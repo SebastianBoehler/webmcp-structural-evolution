@@ -40,7 +40,11 @@ export function FoundationJourney({
   const initialAcceptedRevision = fixture.acceptedRevision;
   const workspace = useAssemblyWorkspace(fixtureId === "reference-drone"
     ? undefined
-    : { initialState: fixture.initialState, inventory: fixture.inventory });
+    : {
+        initialState: fixture.initialState,
+        inventory: fixture.inventory,
+        renderParts: fixture.renderParts,
+      });
   const liveTopology = useMemo(
     () => fixture.compileTopology(workspace),
     [fixture, workspace.revision],

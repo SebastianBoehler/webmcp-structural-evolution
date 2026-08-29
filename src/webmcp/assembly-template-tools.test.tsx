@@ -25,9 +25,9 @@ test("registers a bounded agent action that replaces the world with an approved 
   expect(screen.getByText(/1 assembly generation tool registered/i)).toBeVisible();
   expect(context.active.get("generate_approved_assembly")?.annotations).toMatchObject({ readOnlyHint: false });
 
-  const result = readText(await context.execute("generate_approved_assembly", { templateId: "robot-arm-link" }));
-  expect(result).toMatchObject({ templateId: "robot-arm-link", status: "generated-visible-assembly" });
-  expect(onGenerate).toHaveBeenCalledWith("robot-arm-link");
+  const result = readText(await context.execute("generate_approved_assembly", { templateId: "se6-cobot" }));
+  expect(result).toMatchObject({ templateId: "se6-cobot", status: "generated-visible-assembly" });
+  expect(onGenerate).toHaveBeenCalledWith("se6-cobot");
 });
 
 test("rejects unapproved assembly identifiers without mutating the world", async () => {

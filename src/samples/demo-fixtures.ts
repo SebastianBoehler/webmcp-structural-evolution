@@ -1,13 +1,14 @@
 import { INITIAL_DRONE_INVENTORY, initialDroneWorkspace } from "../assembly/drone-workspace";
 import type { AssemblyAuthoringState } from "../assembly/assembly-authoring";
+import type { AssemblyVisualRenderer } from "../assembly/assembly-workspace-model";
 import { freezeSnapshot, type InventoryItem } from "../domain/design";
 import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import { compileAssemblyTopologyContext } from "../optimization/assembly-study-compiler";
 import { compileLiveTopologyContext, type LiveTopologyContext } from "../optimization/assembly-topology-input";
 import { DRONE_ARM_FOUNDATION_CONTEXT, DRONE_ARM_FOUNDATION_STUDY } from "./drone-arm-foundation";
-import { ROBOT_ARM_LINK_FIXTURE } from "./robot-arm-link";
+import { SE6_COBOT_FIXTURE } from "./cobot/cobot-fixture";
 
-export type DemoFixtureId = "reference-drone" | "robot-arm-link";
+export type DemoFixtureId = "reference-drone" | "se6-cobot";
 
 export interface DemoFixture {
   readonly id: DemoFixtureId;
@@ -20,6 +21,7 @@ export interface DemoFixture {
   readonly supportsFlightReplay: boolean;
   readonly topologySubject: string;
   readonly materialLabel: string;
+  readonly renderParts?: AssemblyVisualRenderer;
   readonly compileTopology: (state: AssemblyAuthoringState) => LiveTopologyContext;
 }
 
@@ -38,7 +40,7 @@ function exactContext(
 }
 
 const droneTopology = compileLiveTopologyContext(initialDroneWorkspace);
-const robotTopology = compileAssemblyTopologyContext(ROBOT_ARM_LINK_FIXTURE.workspace, ROBOT_ARM_LINK_FIXTURE.study);
+const cobotTopology = compileAssemblyTopologyContext(SE6_COBOT_FIXTURE.workspace, SE6_COBOT_FIXTURE.study);
 
 export const DEMO_FIXTURES: Readonly<Record<DemoFixtureId, DemoFixture>> = Object.freeze({
   "reference-drone": {
@@ -54,17 +56,18 @@ export const DEMO_FIXTURES: Readonly<Record<DemoFixtureId, DemoFixture>> = Objec
     materialLabel: "PLA",
     compileTopology: compileLiveTopologyContext,
   },
-  "robot-arm-link": {
-    id: "robot-arm-link",
-    label: "Robot arm link",
-    tagline: "Agent-generated typed assembly",
-    initialState: ROBOT_ARM_LINK_FIXTURE.workspace,
-    inventory: ROBOT_ARM_LINK_FIXTURE.inventory,
-    context: exactContext(ROBOT_ARM_LINK_FIXTURE.context, robotTopology, ["base-support"]),
-    acceptedRevision: ROBOT_ARM_LINK_FIXTURE.assembly.revision,
+  "se6-cobot": {
+    id: "se6-cobot",
+    label: "SE-6 six-axis cobot",
+    tagline: "A complete robot, one solver-owned upper arm",
+    initialState: SE6_COBOT_FIXTURE.workspace,
+    inventory: SE6_COBOT_FIXTURE.inventory,
+    context: exactContext(SE6_COBOT_FIXTURE.context, cobotTopology, ["j2-upper-arm-support"]),
+    acceptedRevision: SE6_COBOT_FIXTURE.assembly.revision,
     supportsFlightReplay: false,
-    topologySubject: "link",
+    topologySubject: "upper arm",
     materialLabel: "PA12",
-    compileTopology: (state) => compileAssemblyTopologyContext(state, ROBOT_ARM_LINK_FIXTURE.study),
+    renderParts: SE6_COBOT_FIXTURE.renderParts,
+    compileTopology: (state) => compileAssemblyTopologyContext(state, SE6_COBOT_FIXTURE.study),
   },
 });
