@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import { ActionReceiptSchema } from "../domain/receipts";
 import { RevisionSchema } from "../domain/snapshots";
-import { ArtifactRecordSchema } from "./artifact-contract";
-import { DesignDocumentSchema } from "./document-schema";
+import { ArtifactRecordSchema, type ArtifactKind } from "./artifact-contract";
+import { defineDesignDocument, DesignDocumentSchema } from "./document-schema";
 
 const JsonValueSchema = ActionReceiptSchema.shape.validatedInputs;
 const JobIdSchema = z.string().min(1);
@@ -36,6 +36,12 @@ export const CadEvaluationRequestSchema = z
     }
   });
 
+export async function defineCadEvaluationRequest(value: unknown): Promise<CadEvaluationRequest> {
+  const request = CadEvaluationRequestSchema.parse(value);
+  const document = await defineDesignDocument(request.document);
+  return CadEvaluationRequestSchema.parse({ ...request, document });
+}
+
 const CadFailureSchema = z.object({
   code: z.enum([
     "invalid-document",
@@ -47,10 +53,35 @@ const CadFailureSchema = z.object({
   ]),
   message: z.string().min(1),
 }).strict();
-const CadEvaluationResultSchema = z.object({
-  output: CadOutputSchema,
-  artifact: ArtifactRecordSchema,
-}).strict();
+const artifactForOutput = (
+  output: z.infer<typeof CadOutputSchema>,
+  kind: ArtifactKind,
+) => ArtifactRecordSchema.refine(
+  (artifact) => artifact.kind === kind,
+  { message: `${output} output requires an ${kind} artifact` },
+);
+const CadEvaluationResultSchema = z.discriminatedUnion("output", [
+  z.object({
+    output: z.literal("brep"),
+    artifact: artifactForOutput("brep", "brep"),
+  }).strict(),
+  z.object({
+    output: z.literal("semantic-mesh"),
+    artifact: artifactForOutput("semantic-mesh", "render-mesh"),
+  }).strict(),
+  z.object({
+    output: z.literal("mass-properties"),
+    payload: z.record(z.string(), JsonValueSchema),
+  }).strict(),
+  z.object({
+    output: z.literal("section-curves"),
+    payload: z.record(z.string(), JsonValueSchema),
+  }).strict(),
+  z.object({
+    output: z.literal("step"),
+    artifact: artifactForOutput("step", "export"),
+  }).strict(),
+]);
 const CadEvaluationSuccessSchema = z.object({
   requestId: z.string().min(1),
   state: z.literal("succeeded"),
@@ -117,6 +148,8 @@ export const EngineeringJobEventSchema = z.discriminatedUnion("state", [
   EngineeringJobEventBaseSchema.extend({
     state: z.literal("verified"),
     truthLevel: EngineeringTruthLevelSchema,
+    progress: z.literal(1),
+    artifacts: z.array(ArtifactRecordSchema).min(1),
   }).strict(),
   EngineeringJobEventBaseSchema.extend({ state: z.literal("failed") }).strict(),
   EngineeringJobEventBaseSchema.extend({ state: z.literal("cancelled") }).strict(),

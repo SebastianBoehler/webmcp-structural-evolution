@@ -34,11 +34,27 @@ const ArtifactRecordContentSchema = z.object({
   dependencies: z.array(ArtifactDependencySchema),
 }).strict();
 
-export const ArtifactRecordSchema = ArtifactRecordContentSchema.extend({ id: RevisionSchema }).strict();
+const ArtifactRecordShapeSchema = ArtifactRecordContentSchema.extend({ id: RevisionSchema }).strict();
 const ArtifactRecordInputSchema = ArtifactRecordContentSchema.extend({ id: RevisionSchema.optional() }).strict();
+const verifiedArtifactRecords = new WeakSet<object>();
+
+export const ArtifactRecordSchema = ArtifactRecordShapeSchema
+  .transform(async (candidate, context) => {
+    const { id, dependencies, ...content } = candidate;
+    const canonical = { ...content, dependencies: sortDependencies(dependencies) };
+    const derivedId = await revisionId(canonical);
+    if (id !== derivedId) {
+      context.addIssue({ code: "custom", path: ["id"], message: "Artifact ID does not match canonical content" });
+      return z.NEVER;
+    }
+    const verified = freezeSnapshot({ ...canonical, id });
+    verifiedArtifactRecords.add(verified);
+    return verified;
+  })
+  .brand<"VerifiedArtifactRecord">();
 
 export type ArtifactKind = z.infer<typeof ArtifactKindSchema>;
-export type ArtifactRecord = DeepReadonly<z.infer<typeof ArtifactRecordSchema>>;
+export type ArtifactRecord = DeepReadonly<z.output<typeof ArtifactRecordSchema>>;
 export type ArtifactIndex = DeepReadonly<{
   documentRevision: string;
   artifacts: readonly ArtifactRecord[];
@@ -68,12 +84,17 @@ export async function defineArtifactRecord(value: unknown): Promise<ArtifactReco
     throw new Error("Artifact ID does not match canonical content");
   }
 
-  return freezeSnapshot({ ...canonical, id });
+  return ArtifactRecordSchema.parseAsync({ ...canonical, id });
 }
 
 export function createArtifactIndex(documentRevision: string, artifacts: readonly ArtifactRecord[]): ArtifactIndex {
   const parsedRevision = RevisionSchema.parse(documentRevision);
-  const records = artifacts.map((artifact) => ArtifactRecordSchema.parse(artifact));
+  const records = artifacts.map((artifact) => {
+    if (!verifiedArtifactRecords.has(artifact)) {
+      throw new Error("Artifact index requires a verified artifact record");
+    }
+    return artifact;
+  });
   const artifactIds = new Set<string>();
   for (const artifact of records) {
     if (artifactIds.has(artifact.id)) throw new Error(`Duplicate artifact ID: ${artifact.id}`);

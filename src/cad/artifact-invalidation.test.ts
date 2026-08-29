@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ArtifactRecordSchema,
   createArtifactIndex,
   defineArtifactRecord,
   type ArtifactKind,
+  type ArtifactRecord,
 } from "./artifact-contract";
 import { invalidateArtifacts } from "./artifact-invalidation";
 import { createDesignDocument } from "./document-schema";
@@ -51,6 +53,18 @@ describe("derived artifact invalidation", () => {
     expect(first.id).toBe(second.id);
     expect((await defineArtifactRecord(withoutId)).id).toBe(first.id);
     await expect(defineArtifactRecord({ ...withoutId, id: digest("f") })).rejects.toThrow(/artifact id/i);
+  });
+
+  it("rejects fabricated artifact identities at schema and index ingress", async () => {
+    const design = await document();
+    const verified = await defineArtifactRecord(record("brep", design.revision, []));
+    const reparsed = await ArtifactRecordSchema.parseAsync(structuredClone(verified));
+    const fabricated = { ...verified, id: digest("f") };
+
+    expect(createArtifactIndex(design.revision, [reparsed]).artifacts).toEqual([verified]);
+    await expect(ArtifactRecordSchema.parseAsync(fabricated)).rejects.toThrow(/artifact id/i);
+    expect(() => createArtifactIndex(design.revision, [fabricated as ArtifactRecord]))
+      .toThrow(/verified artifact record/i);
   });
 
   it("invalidates entity dependents and all artifact consumers", async () => {

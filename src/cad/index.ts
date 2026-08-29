@@ -51,6 +51,7 @@ export {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
   CadOutputSchema,
+  defineCadEvaluationRequest,
   EngineeringJobEventSchema,
   EngineeringJobKindSchema,
   EngineeringJobRequestSchema,

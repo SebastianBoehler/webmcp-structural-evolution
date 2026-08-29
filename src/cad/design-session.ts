@@ -5,6 +5,7 @@ import { createArtifactIndex, type ArtifactIndex, type ArtifactRecord } from "./
 import { invalidateArtifacts } from "./artifact-invalidation";
 import { DesignTransactionSchema, type DesignTransaction } from "./command-schema";
 import {
+  checkoutDesignRevision,
   commitDesignRevision,
   createDesignHistory,
   type DesignHistory,
@@ -124,14 +125,17 @@ export async function applyDesignSessionTransaction(
     result.changedReferences,
     result.document.revision,
   );
-  return freezeSnapshot({
-    session: {
-      history: commitDesignRevision(
+  const history = session.history.nodes[result.document.revision]
+    ? checkoutDesignRevision(session.history, result.document.revision)
+    : commitDesignRevision(
         session.history,
         transaction.expectedRevision,
         transaction.id,
         result.document,
-      ),
+      );
+  return freezeSnapshot({
+    session: {
+      history,
       artifacts,
       receipts: [...session.receipts, receipt],
     },

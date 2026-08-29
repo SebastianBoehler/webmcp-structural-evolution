@@ -97,6 +97,41 @@ describe("design session", () => {
     });
   });
 
+  it("moves the head to an existing revision when a transaction converges", async () => {
+    const root = await document();
+    const retained = await dependentBrep(root.revision);
+    const session = createDesignSession(root, [retained]);
+    const renamed = await applyDesignSessionTransaction(session, {
+      id: "tx-rename-away",
+      expectedRevision: root.revision,
+      actor: human,
+      preconditions: [],
+      commands: [{ id: "rename-away", type: "rename-document", label: "Pump draft" }],
+    }, clock);
+    if (!renamed.result.ok) throw new Error("Expected rename to succeed");
+
+    const converged = await applyDesignSessionTransaction(renamed.session, {
+      id: "tx-rename-back",
+      expectedRevision: renamed.result.document.revision,
+      actor: human,
+      preconditions: [],
+      commands: [{ id: "rename-back", type: "rename-document", label: "Pump" }],
+    }, clock);
+
+    expect(converged.result).toMatchObject({ ok: true, changedReferences: ["document:pump"] });
+    expect(converged.session.history.headRevision).toBe(root.revision);
+    expect(Object.keys(converged.session.history.nodes)).toHaveLength(2);
+    expect(converged.session.artifacts).toMatchObject({
+      index: { documentRevision: root.revision, artifacts: [retained] },
+      invalidatedIds: [],
+    });
+    expect(converged.session.receipts).toHaveLength(2);
+    expect(converged.session.receipts.at(-1)).toMatchObject({
+      affectedRevision: root.revision,
+      outcome: { status: "succeeded", result: { revision: root.revision, changed: true } },
+    });
+  });
+
   it("preserves history and artifacts after failed transactions while recording failure", async () => {
     const root = await document();
     const session = createDesignSession(root);
