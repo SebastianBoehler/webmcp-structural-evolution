@@ -80,7 +80,7 @@ export const se6Assembly = await defineAssemblyDraft({
     { id: "j2-bearing-interface", position: mmPoint(30, 0, 340), orientation: orientationRad(...axisY), diameter: mm(84), fastenerType: "SE-6 qualified bearing interface" },
     { id: "j3-bearing-interface", position: mmPoint(390, 0, 340), orientation: orientationRad(...axisY), diameter: mm(84), fastenerType: "SE-6 qualified bearing interface" },
   ],
-  obstacleVolumes: [cylinderVolumeMm("upper-arm-cable-corridor", 14, 360, [210, 0, 340], [0, Math.PI / 2, 0])],
+  obstacleVolumes: [cylinderVolumeMm("upper-arm-cable-corridor", 14, 270, [210, 0, 340], [0, Math.PI / 2, 0])],
   accessVolumes: [[30, 295], [30, 385], [390, 295], [390, 385]].map(([x, z], index) =>
     cylinderVolumeMm(`upper-arm-fastener-access-${index + 1}`, 5, 110, [x!, 0, z!], axisY)),
   missingComponents: [], incompatibleComponents: [], ambiguousComponents: [],

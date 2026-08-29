@@ -235,7 +235,7 @@ Assert every component visual owns an existing assembly instance, the design reg
 
 - [ ] **Step 4: Re-run the focused tests and verify the installed upper-arm context passes.**
 
-- [ ] **Step 5: Replace the old proxy integration case with a real Wasm SE-6 solve.** Assert all three load-case IDs survive, density and per-case analysis lengths match `48 × 24 × 16`, protected/access voxels stay below threshold, and a six-neighbor path at density `>= 0.32` connects the two boss regions.
+- [ ] **Step 5: Replace the old proxy integration case with a real Wasm SE-6 solve.** Assert all three load-case IDs survive, density and per-case analysis lengths match `48 × 32 × 16`, protected/access voxels stay below threshold, and a six-neighbor path at density `>= 0.32` connects the two boss regions. The 32-cell second axis is the enforced minimum of the shipped Wasm solver.
 
 - [ ] **Step 6: Run `pnpm wasm:build && pnpm test:run src/reference/full-assembly.integration.test.ts` and require the locked solve to pass within its 90-second test budget.**
 

@@ -11,7 +11,7 @@ const workspace = await createAssemblyAuthoringState(se6Assembly, SE6_CATALOG);
 const selection: ContextSelection = {
   id: "se6-upper-arm-design-domain",
   label: "SE-6 solver-owned upper arm",
-  min: [0, 0, 0], maxExclusive: [48, 24, 16],
+  min: [0, 0, 0], maxExclusive: [48, 32, 16],
 };
 const context = createFoundationContext({
   assembly: se6Assembly,

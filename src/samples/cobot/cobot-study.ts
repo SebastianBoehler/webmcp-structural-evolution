@@ -1,7 +1,7 @@
 import { defineStudy } from "../../domain/design";
 import { SE6_INSTANCE_GROUPS, se6Assembly } from "./cobot-assembly";
 import { SE6_CATALOG } from "./cobot-catalog";
-import { cylinderVolumeMm, mm } from "./cobot-values";
+import { boxVolumeMm, mm } from "./cobot-values";
 
 type Point = readonly [number, number, number];
 const metres = (value: { readonly value: number; readonly unit: "m" | "mm" }) =>
@@ -45,15 +45,22 @@ export const SE6_DISTAL_CENTER_M = distalWeighted.map((value) => value / distalM
 
 const n = (value: number) => ({ value, unit: "N" as const });
 const force = (x: number, y: number, z: number) => ({ x: n(x), y: n(y), z: n(z) });
-const axisY = [Math.PI / 2, 0, 0] as const;
-const support = cylinderVolumeMm("j2-upper-arm-support", 42, 24, [30, 0, 340], axisY);
-const loadRegion = cylinderVolumeMm("j3-distal-load", 42, 24, [390, 0, 340], axisY);
 const gravityN = SE6_DISTAL_MASS_KG * 9.80665;
+const ringRegions = (prefix: string, x: number, interiorDirection: -1 | 1) => [
+  boxVolumeMm(`${prefix}-lower`, [84, 24, 12], [x, 0, 304]),
+  boxVolumeMm(`${prefix}-upper`, [84, 24, 12], [x, 0, 376]),
+  boxVolumeMm(`${prefix}-interior`, [12, 24, 60], [x + interiorDirection * 36, 0, 340]),
+];
+const supports = ringRegions("j2-upper-arm-support", 30, 1);
+const loads = ringRegions("j3-distal-load", 390, -1);
+const distributed = (vector: readonly [number, number, number]) => loads.map((region) => ({
+  region, vector: force(vector[0] / loads.length, vector[1] / loads.length, vector[2] / loads.length),
+}));
 
 export const se6Study = await defineStudy({
   id: "se6-upper-arm-topology", assemblyRevision: se6Assembly.revision,
   geometryCoordinates: "assembly", designRegion: se6Assembly.targetEnvelope,
-  voxelResolution: { x: { value: 48, unit: "voxels" }, y: { value: 24, unit: "voxels" }, z: { value: 16, unit: "voxels" } },
+  voxelResolution: { x: { value: 48, unit: "voxels" }, y: { value: 32, unit: "voxels" }, z: { value: 16, unit: "voxels" } },
   material: {
     id: "pa12-qualified-assumption", youngsModulus: { value: 1700, unit: "MPa" },
     failureStress: { value: 45, unit: "MPa" }, poissonRatio: 0.39,
@@ -61,9 +68,9 @@ export const se6Study = await defineStudy({
   },
   manufacturing: { process: "fused-filament-fabrication", minimumFeature: mm(2.5), buildDirection: "z" },
   loadCases: [
-    { id: "rated-payload-gravity", name: "Rated payload and distal assembly under gravity", fixedRegions: [support], forces: [{ region: loadRegion, vector: force(0, 0, -gravityN) }] },
-    { id: "emergency-stop", name: "Qualified 2 g tangential emergency stop with gravity", fixedRegions: [support], forces: [{ region: loadRegion, vector: force(-2 * gravityN, 0, -gravityN) }] },
-    { id: "lateral-disturbance", name: "Qualified 150 N lateral disturbance with gravity", fixedRegions: [support], forces: [{ region: loadRegion, vector: force(0, 150, -gravityN) }] },
+    { id: "rated-payload-gravity", name: "Rated payload and distal assembly under gravity", fixedRegions: supports, forces: distributed([0, 0, -gravityN]) },
+    { id: "emergency-stop", name: "Qualified 2 g tangential emergency stop with gravity", fixedRegions: supports, forces: distributed([-2 * gravityN, 0, -gravityN]) },
+    { id: "lateral-disturbance", name: "Qualified 150 N lateral disturbance with gravity", fixedRegions: supports, forces: distributed([0, 150, -gravityN]) },
   ],
   objective: { kind: "minimize-compliance", volumeFraction: 0.35 },
   hardLimits: { maximumDisplacement: mm(2) }, deterministicSeed: 6006,

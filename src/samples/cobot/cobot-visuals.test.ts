@@ -31,8 +31,8 @@ describe("SE-6 visual adapter", () => {
     const domain = parts.find(({ appearance }) => appearance === "design-region");
     const prepared = prepareRenderModel({
       grid: {
-        dimensions: { width: 48, height: 24, depth: 16 },
-        cellSize: [7.5, 130 / 24, 110 / 16],
+        dimensions: { width: 48, height: 32, depth: 16 },
+        cellSize: [7.5, 130 / 32, 110 / 16],
         anchor: { position: [30, -65, 285], orientation: [0, 0, 0, 1] },
       },
       currentInstances: new Uint32Array(), alternativeLayers: [], assemblyParts: parts,

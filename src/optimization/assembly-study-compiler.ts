@@ -43,11 +43,34 @@ function solverVolume(volume: StudySpec["designRegion"]): SolverVolume {
 
 function requiredSolidsFor(state: AssemblyAuthoringState, study: StudySpec): readonly SolverVolume[] {
   const height = Math.max(study.manufacturing.minimumFeature.value * 2, 0.001);
-  return state.draft.preservedMounts.map((mount) => solverVolume({
-    kind: "cylinder", id: mount.id, center: mount.position,
-    radius: { value: mount.diameter.value / 2, unit: "m" },
-    height: { value: height, unit: "m" }, orientation: mount.orientation,
-  }));
+  const band = Math.min(height, 0.2 * Math.min(...state.draft.preservedMounts.map(({ diameter }) => diameter.value)));
+  return state.draft.preservedMounts.flatMap((mount): readonly SolverVolume[] => {
+    const center = point(mount.position);
+    const diameter = mount.diameter.value;
+    const span = diameter - 2 * band;
+    const axisY = Math.abs(Math.abs(mount.orientation.roll.value) - Math.PI / 2) < 1e-9
+      && mount.orientation.pitch.value === 0;
+    if (axisY) return [
+      { kind: "box", centerM: [center[0], center[1], center[2] - (diameter - band) / 2], sizeM: [diameter, height, band], yawRad: 0 },
+      { kind: "box", centerM: [center[0], center[1], center[2] + (diameter - band) / 2], sizeM: [diameter, height, band], yawRad: 0 },
+      { kind: "box", centerM: [center[0] - (diameter - band) / 2, center[1], center[2]], sizeM: [band, height, span], yawRad: 0 },
+      { kind: "box", centerM: [center[0] + (diameter - band) / 2, center[1], center[2]], sizeM: [band, height, span], yawRad: 0 },
+    ];
+    if (mount.orientation.roll.value !== 0 || mount.orientation.pitch.value !== 0) {
+      throw new Error(`Preserved mount axis is not supported: ${mount.id}`);
+    }
+    const offset = (x: number, y: number): Point => [
+      center[0] + Math.cos(mount.orientation.yaw.value) * x - Math.sin(mount.orientation.yaw.value) * y,
+      center[1] + Math.sin(mount.orientation.yaw.value) * x + Math.cos(mount.orientation.yaw.value) * y,
+      center[2],
+    ];
+    return [
+      { kind: "box", centerM: offset(0, -(diameter - band) / 2), sizeM: [diameter, band, height], yawRad: mount.orientation.yaw.value },
+      { kind: "box", centerM: offset(0, (diameter - band) / 2), sizeM: [diameter, band, height], yawRad: mount.orientation.yaw.value },
+      { kind: "box", centerM: offset(-(diameter - band) / 2, 0), sizeM: [band, span, height], yawRad: mount.orientation.yaw.value },
+      { kind: "box", centerM: offset((diameter - band) / 2, 0), sizeM: [band, span, height], yawRad: mount.orientation.yaw.value },
+    ];
+  });
 }
 
 function gridFor(study: StudySpec): AssemblyTopologyInput["grid"] {
