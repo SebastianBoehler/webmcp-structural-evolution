@@ -28,6 +28,16 @@ const appearance = {
   constraint: { color: 0xd98b5f, opacity: 0.16, wireframe: true },
 } as const;
 
+const semanticMaterial = {
+  structural: { color: 0xc8d2dc, metalness: 0.28, roughness: 0.4 },
+  joint: { color: 0x243241, metalness: 0.58, roughness: 0.3 },
+  cover: { color: 0x2e8bb8, metalness: 0.18, roughness: 0.46 },
+  fastener: { color: 0x7b828b, metalness: 0.92, roughness: 0.22 },
+  cable: { color: 0xe36f2d, metalness: 0.02, roughness: 0.68 },
+  tooling: { color: 0x66717d, metalness: 0.5, roughness: 0.34 },
+  payload: { color: 0xd7a94a, metalness: 0.16, roughness: 0.52 },
+} as const;
+
 export function createAssemblyMeshes(
   parts: readonly AssemblyVisualPart[],
   ownership: MeshOwnership,
@@ -44,11 +54,12 @@ export function createAssemblyMeshes(
     metalness?: number,
   ) => {
     const style = appearance[part.appearance];
+    const semantic = part.material ? semanticMaterial[part.material] : undefined;
     const material = new THREE.MeshStandardMaterial({
-      color: color ?? style.color,
-      metalness: metalness ?? (part.appearance === "component" ? 0.24 : 0),
+      color: color ?? semantic?.color ?? style.color,
+      metalness: metalness ?? semantic?.metalness ?? (part.appearance === "component" ? 0.24 : 0),
       opacity: opacity ?? style.opacity,
-      roughness: 0.52,
+      roughness: semantic?.roughness ?? 0.52,
       transparent: (opacity ?? style.opacity) < 1,
       wireframe: style.wireframe,
     });

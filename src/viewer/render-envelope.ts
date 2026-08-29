@@ -36,6 +36,15 @@ export interface ScalarAnalysisCaseField {
   readonly maximum: number;
 }
 
+export type AssemblyMaterialToken =
+  | "structural"
+  | "joint"
+  | "cover"
+  | "fastener"
+  | "cable"
+  | "tooling"
+  | "payload";
+
 export type AssemblyVisualPart = Readonly<{
   id: string;
   selectionId: string;
@@ -44,6 +53,8 @@ export type AssemblyVisualPart = Readonly<{
   rotation?: Vector3Tuple;
   dragGroup?: string;
   movable?: boolean;
+  material?: AssemblyMaterialToken;
+  semanticGroup?: string;
   appearance: "component" | "generated" | "design-region" | "constraint";
 }> & (
   | Readonly<{ kind: "box"; size: Vector3Tuple }>
