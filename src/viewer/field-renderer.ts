@@ -264,7 +264,7 @@ export function mountFieldRenderer(
     setView(view) {
       if (!camera || !controls) return;
       const [x, y, z] = prepared.camera.target;
-      const distance = prepared.camera.span * 2.4;
+      const distance = prepared.camera.span * 1.25;
       const offset = view === "top" ? [0, 0, distance]
         : view === "front" ? [0, -distance, 0]
           : view === "right" ? [distance, 0, 0]
@@ -307,7 +307,7 @@ export function mountFieldRenderer(
       ownership.own(() => flightGroup!.remove(object));
       flightGroup!.add(object);
     };
-    attach(new THREE.HemisphereLight(0xdcefff, 0x101724, 2.2));
+    attach(new THREE.HemisphereLight(0xdcefff, 0x526170, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 2.6);
     key.position.set(5, 8, 12);
     attach(key);

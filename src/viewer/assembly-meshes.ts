@@ -29,12 +29,12 @@ const appearance = {
 } as const;
 
 const semanticMaterial = {
-  structural: { color: 0xc8d2dc, metalness: 0.28, roughness: 0.4 },
-  joint: { color: 0x243241, metalness: 0.58, roughness: 0.3 },
-  cover: { color: 0x2e8bb8, metalness: 0.18, roughness: 0.46 },
-  fastener: { color: 0x7b828b, metalness: 0.92, roughness: 0.22 },
-  cable: { color: 0xe36f2d, metalness: 0.02, roughness: 0.68 },
-  tooling: { color: 0x66717d, metalness: 0.5, roughness: 0.34 },
+  structural: { color: 0xdfe8ef, metalness: 0.28, roughness: 0.4 },
+  joint: { color: 0x52687a, metalness: 0.58, roughness: 0.3 },
+  cover: { color: 0x168fc2, metalness: 0.18, roughness: 0.46 },
+  fastener: { color: 0x9aa3ad, metalness: 0.92, roughness: 0.22 },
+  cable: { color: 0xf07836, metalness: 0.02, roughness: 0.68 },
+  tooling: { color: 0x7b8792, metalness: 0.5, roughness: 0.34 },
   payload: { color: 0xd7a94a, metalness: 0.16, roughness: 0.52 },
 } as const;
 

@@ -23,6 +23,7 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
     part.appearance === "component" &&
     !part.id.startsWith("reference-arm") &&
     `${part.label} ${part.kind}`.toLowerCase().includes(query.toLowerCase())), [parts, query]);
+  const designRegion = parts.find(({ appearance }) => appearance === "design-region");
   const importLocalFile = async (file: File) => {
     setImportError(undefined);
     try {
@@ -57,17 +58,17 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
         />
       </label>
       <nav className="component-list" aria-label="Assembly tree">
-        <button
+        {designRegion ? <button
           className="component-row"
           type="button"
-          data-selected={selectedId === "arm-design-region"}
-          aria-pressed={selectedId === "arm-design-region"}
-          onClick={() => onSelect("arm-design-region")}
+          data-selected={selectedId === designRegion.selectionId}
+          aria-pressed={selectedId === designRegion.selectionId}
+          onClick={() => onSelect(designRegion.selectionId)}
         >
           <span className="part-mark part-mark--region" aria-hidden="true" />
-          <span><strong>Frame design space</strong><small>Topology-optimized structure</small></span>
+          <span><strong>{designRegion.label}</strong><small>Topology-optimized structure</small></span>
           <span className="stock-badge stock-badge--ready">Ready</span>
-        </button>
+        </button> : null}
         {components.map((component) => (
             <button
               className="component-row"

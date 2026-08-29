@@ -21,7 +21,7 @@ function isDemoFixtureId(value: unknown): value is DemoFixtureId {
 export function AssemblyTemplateTools({ current, onGenerate }: AssemblyTemplateToolsProps) {
   const definitions = useMemo<readonly FoundationToolDefinition[]>(() => [{
     name: "generate_approved_assembly",
-    description: "Replace the shared world with one approved, typed demo assembly. Available templates are the reference FPV drone and robot arm link; this does not generate arbitrary CAD geometry.",
+    description: "Replace the shared world with one approved, typed demo assembly. Available templates are the reference FPV drone and SE-6 six-axis cobot; this does not generate arbitrary CAD geometry.",
     inputSchema: {
       type: "object",
       properties: {

@@ -227,6 +227,9 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
   .brand-lockup h1 { font-size: 0.95rem; }
   .workflow-navigation button { gap: 0.25rem; padding-inline: 0.35rem; }
   .workflow-navigation button span { display: none; }
+  .toolbar-controls { display: grid; grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .toolbar-controls .segmented-control { min-width: 0; overflow-x: auto; }
+  .toolbar-controls > button { width: 100%; }
 }
 
 @media (prefers-contrast: more) { :root { --separator: var(--separator-strong); } }

@@ -37,4 +37,18 @@ describe("selectableAssemblyMeshes", () => {
     expect(roots).toHaveLength(1);
     releases.forEach((release) => release());
   });
+
+  it("keeps joint and cover materials legible against the CAD viewport", () => {
+    const releases: (() => void)[] = [];
+    const parts: AssemblyVisualPart[] = [
+      { id: "joint", selectionId: "joint", label: "Joint", appearance: "component", material: "joint", kind: "cylinder", center: [0, 0, 0], radius: 20, height: 30 },
+      { id: "cover", selectionId: "cover", label: "Cover", appearance: "component", material: "cover", kind: "box", center: [0, 0, 0], size: [20, 20, 20] },
+    ];
+
+    const result = createAssemblyMeshes(parts, { own: (release) => releases.push(release), attach: () => undefined });
+
+    expect(result.materials.get("joint")![0]!.color.getHex()).toBe(0x52687a);
+    expect(result.materials.get("cover")![0]!.color.getHex()).toBe(0x168fc2);
+    releases.forEach((release) => release());
+  });
 });

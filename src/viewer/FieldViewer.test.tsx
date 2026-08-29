@@ -120,6 +120,11 @@ describe("FieldViewer", () => {
     expect(renderedScene(test).getObjectByName("cad-world-grid")).toBeDefined();
     expect(renderedScene(test).getObjectByName("cad-transform-gizmo")).toBeDefined();
 
+    test.flushFrame();
+    const initialCamera = test.renderer.render.mock.calls.at(-1)?.[1] as THREE.PerspectiveCamera;
+    const initialTarget = new THREE.Vector3(...test.controls.target.set.mock.calls.at(-1)!);
+    expect(initialCamera.position.distanceTo(initialTarget)).toBeLessThan(22);
+
     fireEvent.click(screen.getByRole("button", { name: "Top view" }));
     test.flushFrame();
     const camera = test.renderer.render.mock.calls.at(-1)?.[1] as THREE.PerspectiveCamera;

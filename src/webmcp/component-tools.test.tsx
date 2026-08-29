@@ -99,3 +99,23 @@ test("returns a tool error instead of moving unknown or stale components", async
   expect(stale).toMatchObject({ isError: true });
   expect(readText(stale).error).toMatch(/layout is stale/i);
 });
+
+test("does not advertise movement when the active assembly has no movable components", async () => {
+  const context = new FakeModelContext();
+  cleanups.push(installFakeModelContext(context));
+  render(<ComponentImportTools
+    imports={[]}
+    parts={[{
+      id: "j1-turntable", selectionId: "j1-turntable", label: "J1 base-yaw turntable",
+      appearance: "component", kind: "cylinder", center: [0, 0, 268], radius: 82, height: 52,
+      movable: false,
+    }]}
+    layoutVersion={1}
+    onMove={vi.fn()}
+    onStage={(input) => ({ ...input, id: "pending-1", stagedBy: "agent" })}
+  />);
+
+  await waitFor(() => expect(context.active.has("inspect_component_library")).toBe(true));
+  expect(context.active.has("move_assembly_component")).toBe(false);
+  expect(screen.getByText(/2 of 2 component tools registered/i)).toBeVisible();
+});

@@ -50,4 +50,15 @@ describe("ComponentBrowser local package import", () => {
 
     expect(onReplaceDisplayFile).toHaveBeenCalledWith("motor-east", file);
   });
+
+  it("uses the active fixture label for its topology design region", () => {
+    render(<ComponentBrowser {...props(vi.fn())} parts={[{
+      id: "arm-design-region", selectionId: "arm-design-region",
+      label: "SE-6 upper-arm topology domain", appearance: "design-region",
+      kind: "box", center: [210, 0, 340], size: [360, 130, 110],
+    }]} />);
+
+    expect(screen.getByText("SE-6 upper-arm topology domain")).toBeVisible();
+    expect(screen.queryByText("Frame design space")).toBeNull();
+  });
 });

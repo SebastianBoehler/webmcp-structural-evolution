@@ -29,6 +29,17 @@ function model() {
 }
 
 describe("mountFieldRenderer", () => {
+  it("lights shaded mechanical surfaces with a readable neutral fill", () => {
+    const test = harness();
+    const session = mountFieldRenderer(document.createElement("canvas"), model(), test.environment);
+    test.flushFrame();
+    const scene = test.renderer.render.mock.calls.at(-1)?.[0] as THREE.Scene;
+    const fill = scene.children.find((child) => child instanceof THREE.HemisphereLight) as THREE.HemisphereLight;
+
+    expect(fill.groundColor.getHex()).toBe(0x526170);
+    session.dispose();
+  });
+
   it("observes physical pixels explicitly and separates actual DPR from render DPR", () => {
     const test = harness({ dpr: 3 });
     const canvas = document.createElement("canvas");

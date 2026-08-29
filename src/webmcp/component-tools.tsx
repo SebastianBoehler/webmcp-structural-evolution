@@ -26,7 +26,10 @@ const response = (value: unknown, isError = false) => Promise.resolve({
 });
 
 export function ComponentImportTools({ imports, pending, parts, layoutVersion, onStage, onMove }: ComponentImportToolsProps) {
-  const signature = `${imports.map(({ id }) => id).join(":")}:${pending?.id ?? "none"}:${layoutVersion}`;
+  const movableParts = parts.filter(({ movable }) => movable);
+  const hasMovableParts = movableParts.length > 0;
+  const signature = `${imports.map(({ id }) => id).join(":")}:${pending?.id ?? "none"}:${layoutVersion}:${movableParts.map(({ selectionId }) => selectionId).join(":")}`;
+  const expectedToolCount = 1 + (pending ? 0 : 1) + (hasMovableParts ? 1 : 0);
   const definitions = useMemo<readonly FoundationToolDefinition[]>(() => [
     {
       name: "inspect_component_library",
@@ -45,7 +48,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
           partNumber: pending.partNumber,
         } : null,
         layoutVersion,
-        movable: parts.filter(({ movable }) => movable).map(({ selectionId, label, center }) => ({
+        movable: movableParts.map(({ selectionId, label, center }) => ({
           componentId: selectionId, label, centerMm: center,
         })),
         nextAction: pending ? "Wait for the human to approve or reject the staged import." : "stage_component_import",
@@ -72,7 +75,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
     },
     {
       name: "move_assembly_component",
-      description: "Move one movable component in the shared assembly plane using the exact current layout version. Attached rotor and safety geometry follow visibly.",
+      description: "Move one movable component in the shared assembly plane using the exact current layout version.",
       inputSchema: {
         type: "object",
         properties: {
@@ -85,7 +88,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
-      enabled: true,
+      enabled: hasMovableParts,
       execute: async (input) => {
         try {
           if (!input || typeof input !== "object") throw new Error("Expected a component move object");
@@ -113,7 +116,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
       <h2 id="component-tool-status">Component sourcing tools</h2>
       <p role="status">
         {state.supported
-          ? `${state.registered} of ${pending ? 2 : 3} component tools registered.`
+          ? `${state.registered} of ${expectedToolCount} component tools registered.`
           : "WebMCP is unavailable in this browser context."}
       </p>
       <p>Agents can stage sourced assets and specifications; you approve the assembly change.</p>
