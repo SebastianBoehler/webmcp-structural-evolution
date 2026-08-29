@@ -24,6 +24,7 @@ import {
   type ComponentRenderResource,
   type MotorPlacement,
 } from "./drone-workspace";
+import type { AssemblyVisualRenderer } from "./assembly-workspace-model";
 import { compileParametricGeometry } from "./parametric-geometry";
 import { decodeStepFile, type CadMesh } from "./step-import";
 import { defineImportedComponent, importedFileAsset } from "./workspace-component-import";
@@ -53,6 +54,7 @@ function actionReceipt(action: AssemblyAction): ReceiptSpec {
 export interface AssemblyWorkspaceOptions {
   readonly initialState?: AssemblyAuthoringState;
   readonly inventory?: readonly InventoryItem[];
+  readonly renderParts?: AssemblyVisualRenderer;
 }
 
 function resolvedDraft(state: AssemblyAuthoringState) {
@@ -98,7 +100,11 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
   const queue = useRef<Promise<void>>(Promise.resolve());
   const blobUrls = useRef(new Set<string>());
   const draft = useMemo(() => resolvedDraft(workspace), [workspace]);
-  const parts = useMemo(() => renderPartsForAssembly(draft, workspace.catalog, resources), [draft, resources, workspace.catalog]);
+  const renderParts = options.renderParts ?? renderPartsForAssembly;
+  const parts = useMemo(
+    () => renderParts(draft, workspace.catalog, resources),
+    [draft, renderParts, resources, workspace.catalog],
+  );
   const motors = useMemo(() => draft.components.flatMap((instance): readonly MotorPlacement[] => {
     const definition = workspace.catalog.find(({ revision }) => revision === instance.componentRevision);
     if (definition?.category !== "motor") return [];

@@ -29,6 +29,12 @@ export interface ComponentRenderResource {
   readonly mesh?: CadMesh;
 }
 
+export type AssemblyVisualRenderer = (
+  draft: AssemblyDraft,
+  catalog: readonly ComponentDefinition[],
+  resources: Readonly<Record<string, ComponentRenderResource>>,
+) => readonly AssemblyVisualPart[];
+
 const mm = (value: { readonly value: number; readonly unit: "m" | "mm" }) =>
   Math.round((value.unit === "m" ? value.value * 1_000 : value.value) * 1e9) / 1e9;
 const point = (value: ComponentDefinition["centerOfMass"]): Point3 =>

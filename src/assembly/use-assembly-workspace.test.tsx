@@ -4,7 +4,9 @@ import { expect, test } from "vitest";
 import { defineComponent } from "../domain/component-model";
 import { defineAssemblyDraft, defineInventory } from "../domain/design";
 import { referenceComponent } from "../samples/reference-drone-catalog";
+import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import { createAssemblyAuthoringState } from "./assembly-authoring";
+import type { AssemblyVisualRenderer } from "./assembly-workspace-model";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
 
 const m = (value: number) => ({ value, unit: "m" as const });
@@ -38,6 +40,19 @@ async function workspaceFixture() {
   ]);
   return { initialState, inventory, packageComponent };
 }
+
+test("uses an injected fixture visual renderer", async () => {
+  const { initialState, inventory } = await workspaceFixture();
+  const customPart: AssemblyVisualPart = {
+    id: "custom-visual", selectionId: "fixture", label: "Custom fixture visual",
+    appearance: "component", kind: "box", center: [10, 20, 30], size: [4, 5, 6],
+  };
+  const renderParts: AssemblyVisualRenderer = () => [customPart];
+
+  const { result } = renderHook(() => useAssemblyWorkspace({ initialState, inventory, renderParts }));
+
+  expect(result.current.parts).toEqual([customPart]);
+});
 
 test("stages and places a component through one revisioned workspace", async () => {
   const { initialState, inventory, packageComponent } = await workspaceFixture();
