@@ -34,11 +34,11 @@ const DisplayUnitsSchema = z.object({
   angle: z.enum(["deg", "rad"]),
   mass: z.enum(["g", "kg"]),
 }).strict();
-const ActorSchema = z.object({
+export const ActorSchema = z.object({
   kind: z.enum(["human", "agent"]),
   id: EntityIdSchema,
 }).strict();
-const FrameSchema = z.object({
+export const FrameSchema = z.object({
   id: EntityIdSchema,
   label: z.string().min(1),
   parentId: EntityIdSchema.optional(),
@@ -53,7 +53,7 @@ export const ParameterValueSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("boolean"), value: z.boolean() }).strict(),
   z.object({ kind: z.literal("text"), value: z.string() }).strict(),
 ]);
-const ParameterSchema = z.object({
+export const ParameterSchema = z.object({
   id: EntityIdSchema,
   label: z.string().min(1),
   value: ParameterValueSchema,
@@ -128,7 +128,7 @@ export const DesignDocumentSchema = z
 
 export type DesignDocument = DeepReadonly<z.infer<typeof DesignDocumentSchema>>;
 
-function normalizeParameterValue(value: z.infer<typeof ParameterValueSchema>) {
+export function normalizeParameterValue(value: z.infer<typeof ParameterValueSchema>) {
   switch (value.kind) {
     case "length":
       return { ...value, value: normalizeLength(value.value) };
