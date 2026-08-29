@@ -33,7 +33,7 @@ The assembly contains 52 placed semantic instances across these groups:
 
 1. **Base:** mounting plate, mounting fasteners, pedestal body, turntable, J1 bearing ring, motor cover, and cable entry.
 2. **Shoulder:** two-sided yoke, J2 joint barrel, bearing caps, fasteners, guard, and strain relief.
-3. **Upper arm:** preserved shoulder boss, solver-owned link body, preserved elbow boss, joint fasteners, and central cable/service corridor.
+3. **Upper arm:** preserved shoulder boss, solver-owned topology body, preserved elbow boss, joint fasteners, an external service cover, and a protected central cable corridor. No fixed structural envelope may obscure or duplicate the generated member.
 4. **Elbow and forearm:** J3 barrel and caps, elbow guard, forearm shell, cable covers, and cover fasteners.
 5. **Wrist:** distinct J4 roll, J5 pitch, and J6 tool-roll housings with visible axes, spacers, covers, and fasteners.
 6. **Tooling:** ISO-like but explicitly generic tool flange, parallel gripper body, two jaws, fingertip pads, and a mechanically mounted calibration payload.

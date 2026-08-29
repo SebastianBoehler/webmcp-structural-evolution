@@ -20,9 +20,10 @@ describe("SE-6 visual adapter", () => {
     expect(components.find(({ id }) => id === "calibration-payload")).toMatchObject({
       material: "payload", semanticGroup: "tooling", selectionId: "calibration-payload",
     });
-    expect(components.find(({ id }) => id === "upper-arm-link")).toMatchObject({
-      material: "structural", semanticGroup: "upper-arm",
+    expect(components.find(({ id }) => id === "upper-arm-service-cover")).toMatchObject({
+      material: "cover", semanticGroup: "upper-arm",
     });
+    expect(components.some(({ id }) => id === "upper-arm-link")).toBe(false);
     expect(Object.values(SE6_INSTANCE_GROUPS).flat()).toHaveLength(52);
   });
 

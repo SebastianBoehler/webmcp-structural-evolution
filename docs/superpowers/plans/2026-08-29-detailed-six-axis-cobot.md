@@ -129,7 +129,7 @@ expect(context.input.protectedVoids).toEqual([
 ]);
 expect(context.input.accessVoids).toHaveLength(4);
 expect(context.input.requiredSolids).toHaveLength(2);
-expect(context.input.assemblyMassKg).toBeCloseTo(24.3, 1);
+expect(context.input.assemblyMassKg).toBeCloseTo(23.7, 1);
 ```
 
 Assert gravity force equals `-SE6_DISTAL_MASS_KG * 9.80665`, emergency X force equals `-SE6_DISTAL_MASS_KG * 2 * 9.80665`, and lateral Y force equals `150`.

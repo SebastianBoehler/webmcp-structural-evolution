@@ -43,7 +43,7 @@ describe("SE-6 upper-arm study", () => {
       expect.objectContaining({ kind: "box", centerM: [0.21, 0, 0.34], sizeM: [0.27, 0.028, 0.028] }),
     ]);
     expect(input.accessVoids).toHaveLength(4);
-    expect(input.assemblyMassKg).toBeCloseTo(24.3, 9);
+    expect(input.assemblyMassKg).toBeCloseTo(23.7, 9);
     expect(input.centerOfMassM[0]).toBeGreaterThan(0.2);
     expect(input.material).toEqual({ youngsModulusPa: 1_700_000_000, failureStressPa: 45_000_000 });
   });
