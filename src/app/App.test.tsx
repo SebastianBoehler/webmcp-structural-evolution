@@ -9,10 +9,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("shows the structural evolution foundation shell", () => {
+test("shows the structural evolution foundation shell", async () => {
   render(<App />);
 
-  expect(screen.getByRole("heading", { name: /structural evolution/i })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: /structural evolution/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   expect(screen.getByRole("button", { name: /generate balanced frame/i })).toBeDisabled();
 });
@@ -20,7 +20,7 @@ test("shows the structural evolution foundation shell", () => {
 test("switches the shared workbench to the detailed SE-6 cobot", async () => {
   render(<App />);
 
-  fireEvent.change(screen.getByRole("combobox", { name: "Demo assembly" }), {
+  fireEvent.change(await screen.findByRole("combobox", { name: "Demo assembly" }), {
     target: { value: "se6-cobot" },
   });
 

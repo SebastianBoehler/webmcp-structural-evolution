@@ -1,11 +1,15 @@
 import type { CadMesh } from "../../assembly/step-import";
-import { decodeStepBytes } from "../../assembly/step-import";
 import type { ArtifactRecord } from "../artifact-contract";
-import { applyDesignSessionTransaction, createDesignSession, type DesignSession } from "../design-session";
+import {
+  applyDesignSessionTransaction, attachDesignSessionArtifacts, createDesignSession,
+  type DesignSession,
+} from "../design-session";
 import { createDesignDocument, type DesignDocument } from "../document-schema";
 import { digestCadOutputPayload, type MassPropertiesPayload, type SemanticMeshPayload } from "../rebuild-payload";
 import {
   defineCadEvaluationRequest,
+  ExactStepImportRequestSchema,
+  ExactStepImportResultSchema,
   type CadEvaluationEvent,
   type CadKernelAdapter,
   type CadOutput,
@@ -22,7 +26,7 @@ type OutputResult = Success["results"][number];
 
 export interface ExactCadGateDependencies {
   readonly createAdapter?: () => CadKernelAdapter;
-  readonly decodeStep?: (bytes: Uint8Array) => Promise<CadMesh>;
+  readonly terminalQuiescenceMs?: number;
   readonly now?: () => number;
 }
 
@@ -45,7 +49,7 @@ export interface ExactCadGateResult {
     readonly envelopeRelativeError: number;
   };
   readonly cancellation: { readonly outcome: "cancelled"; readonly lateSuccess: false };
-  readonly artifacts: { readonly invalidatedCount: number; readonly staleCount: 0 };
+  readonly artifacts: { readonly invalidatedCount: number; readonly staleCount: 0; readonly activeCount: number };
   readonly renderMesh: CadMesh;
 }
 
@@ -92,6 +96,7 @@ async function collectEvaluation(
   document: DesignDocument,
   requestId: string,
   signal: AbortSignal,
+  terminalQuiescenceMs = 0,
 ): Promise<readonly CadEvaluationEvent[]> {
   const request = await defineCadEvaluationRequest({
     requestId, document, sourceRevision: document.revision,
@@ -101,6 +106,9 @@ async function collectEvaluation(
   await adapter.evaluate(request, signal, (event) => {
     if (event.state !== "progress") terminals.push(event);
   });
+  if (terminalQuiescenceMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, terminalQuiescenceMs));
+  }
   if (terminals.length === 0) throw new Error(`Exact CAD rebuild ${requestId} emitted no terminal event`);
   if (terminals.length > 1) {
     const cancelled = terminals.findIndex(({ state }) => state === "cancelled");
@@ -183,26 +191,51 @@ export async function runExactCadGate(
   if (edited.session.artifacts.index.artifacts.length > 0) throw new Error("Stale CAD artifacts survived the dimension edit");
   const dimensionDocument = documentAtHead(edited.session);
   const dimensionRun = await timed(async () => requireSuccess(await collectEvaluation(adapter, dimensionDocument, "dimension", signal)));
-  await verifiedArtifacts(dimensionRun.value, dimensionDocument.revision);
+  const dimensionArtifacts = await verifiedArtifacts(dimensionRun.value, dimensionDocument.revision);
+  let activeSession = attachDesignSessionArtifacts(edited.session, dimensionArtifacts);
   const initialMass = validateMass(resultFor(initialRun.value, "mass-properties").payload, INITIAL_WIDTH_M);
   const dimensionMass = validateMass(resultFor(dimensionRun.value, "mass-properties").payload, EDITED_WIDTH_M);
-  const maximumMassRelativeError = Math.max(initialMass.massError, dimensionMass.massError);
-  const maximumVolumeRelativeError = Math.max(initialMass.volumeError, dimensionMass.volumeError);
+  const stepOutput = resultFor(dimensionRun.value, "step");
+  const stepRun = await timed(async () => ExactStepImportResultSchema.parseAsync(
+    await adapter.importStep(await ExactStepImportRequestSchema.parseAsync({
+      requestId: "step-round-trip", sourceRevision: dimensionDocument.revision,
+      step: { artifact: stepOutput.artifact, payload: stepOutput.payload },
+      settings: { gate: "exact-cad-browser-v1" },
+    }), signal),
+  ));
+  if (stepRun.value.requestId !== "step-round-trip"
+    || stepRun.value.sourceRevision !== dimensionDocument.revision
+    || stepRun.value.sourceArtifactId !== stepOutput.artifact.id
+    || stepRun.value.solidCount !== 1 || stepRun.value.invalidSolidCount !== 0) {
+    throw new Error("Exact STEP import returned invalid ownership or solid evidence");
+  }
+  activeSession = attachDesignSessionArtifacts(activeSession, [stepRun.value.artifact]);
+  const importedMass = validateMass(stepRun.value.massProperties, EDITED_WIDTH_M);
+  const maximumMassRelativeError = Math.max(initialMass.massError, dimensionMass.massError, importedMass.massError);
+  const maximumVolumeRelativeError = Math.max(initialMass.volumeError, dimensionMass.volumeError, importedMass.volumeError);
   if (maximumMassRelativeError > RELATIVE_TOLERANCE) throw new Error(`Exact CAD mass relative error ${maximumMassRelativeError} exceeds ${RELATIVE_TOLERANCE}`);
   if (maximumVolumeRelativeError > RELATIVE_TOLERANCE) throw new Error(`Exact CAD volume relative error ${maximumVolumeRelativeError} exceeds ${RELATIVE_TOLERANCE}`);
-  const stepRun = await timed(() => (dependencies.decodeStep ?? decodeStepBytes)(resultFor(dimensionRun.value, "step").payload.bytes));
   const expectedEnvelopeMm = [100, 40, 20] as const;
-  const envelopeRelativeError = Math.max(...stepRun.value.sizeMm.map((value, axis) => relativeError(value, expectedEnvelopeMm[axis]!)));
+  const importedEnvelopeMm = stepRun.value.envelopeM.maximum.map((maximum, axis) =>
+    (maximum - stepRun.value.envelopeM.minimum[axis]!) * 1_000) as [number, number, number];
+  const envelopeRelativeError = Math.max(...importedEnvelopeMm.map((value, axis) => relativeError(value, expectedEnvelopeMm[axis]!)));
   if (envelopeRelativeError > RELATIVE_TOLERANCE) throw new Error(`STEP envelope relative error ${envelopeRelativeError} exceeds ${RELATIVE_TOLERANCE}`);
   const cancelRun = await timed(async () => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal.addEventListener("abort", abort, { once: true });
-    const evaluation = collectEvaluation(adapter, dimensionDocument, "cancelled", controller.signal);
+    const evaluation = collectEvaluation(
+      adapter, dimensionDocument, "cancelled", controller.signal,
+      dependencies.terminalQuiescenceMs ?? 25,
+    );
     setTimeout(() => controller.abort(), 0);
     try { return await evaluation; } finally { signal.removeEventListener("abort", abort); }
   });
-  if (cancelRun.value[0]?.state !== "cancelled") throw new Error("Exact CAD cancellation did not terminate as cancelled");
+  const cancelledIndex = cancelRun.value.findIndex(({ state }) => state === "cancelled");
+  const lateSuccess = cancelRun.value.findIndex(({ state }, index) =>
+    index > cancelledIndex && state === "succeeded") !== -1;
+  if (lateSuccess) throw new Error("Exact CAD worker emitted success after cancellation");
+  if (cancelledIndex === -1) throw new Error("Exact CAD cancellation did not terminate as cancelled");
   const finalRun = await timed(async () => requireSuccess(await collectEvaluation(adapter, dimensionDocument, "final", signal)));
   await verifiedArtifacts(finalRun.value, dimensionDocument.revision);
   const hashes = {
@@ -219,9 +252,13 @@ export async function runExactCadGate(
     timingsMs: { authoring: authored.elapsedMs, initialRebuild: initialRun.elapsed, dimensionRebuild: dimensionRun.elapsed, stepRoundTrip: stepRun.elapsed, cancellation: cancelRun.elapsed, finalRebuild: finalRun.elapsed, total: now() - started },
     revisions: { initial: initialDocument.revision, dimension: dimensionDocument.revision }, hashes,
     measurements: { maximumMassRelativeError, maximumVolumeRelativeError, invalidSolidCount: 0 },
-    stepRoundTrip: { expectedEnvelopeMm, importedEnvelopeMm: stepRun.value.sizeMm, envelopeRelativeError },
-    cancellation: { outcome: "cancelled", lateSuccess: false },
-    artifacts: { invalidatedCount: edited.session.artifacts.invalidatedIds.length, staleCount: 0 },
+    stepRoundTrip: { expectedEnvelopeMm, importedEnvelopeMm, envelopeRelativeError },
+    cancellation: { outcome: "cancelled", lateSuccess },
+    artifacts: {
+      invalidatedCount: edited.session.artifacts.invalidatedIds.length,
+      staleCount: 0,
+      activeCount: activeSession.artifacts.index.artifacts.length,
+    },
     renderMesh: renderMesh(resultFor(finalRun.value, "semantic-mesh").payload),
   };
 }

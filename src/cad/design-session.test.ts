@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { defineArtifactRecord } from "./artifact-contract";
 import {
   applyDesignSessionTransaction,
+  attachDesignSessionArtifacts,
   createDesignSession,
   inspectDesignSession,
 } from "./design-session";
@@ -95,6 +96,25 @@ describe("design session", () => {
       affectedRevision: root.revision,
       outcome: { status: "succeeded", result: { revision: root.revision, changed: false } },
     });
+  });
+
+  it("attaches verified exact outputs to the active revision with dependency checks", async () => {
+    const root = await document();
+    const source = await dependentBrep(root.revision);
+    const imported = await defineArtifactRecord({
+      kind: "brep", sourceRevision: root.revision,
+      producer: { name: "occt-wasm", version: "4.3.2" },
+      settingsDigest: "c".repeat(64), contentDigest: "d".repeat(64), units: "m",
+      mediaType: "application/vnd.opencascade.brep",
+      dependencies: [{ kind: "artifact", artifactId: source.id }],
+    });
+
+    const attached = attachDesignSessionArtifacts(createDesignSession(root), [source, imported]);
+
+    expect(attached.artifacts.index.artifacts).toEqual(expect.arrayContaining([source, imported]));
+    expect(attached.history).toBeDefined();
+    expect(() => attachDesignSessionArtifacts(createDesignSession(root), [imported]))
+      .toThrow(/dangling artifact dependency/i);
   });
 
   it("moves the head to an existing revision when a transaction converges", async () => {

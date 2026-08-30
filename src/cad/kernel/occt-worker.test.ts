@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { defineDesignDocument } from "../document-schema";
 import { digestCadOutputPayload } from "../rebuild-payload";
-import { CadEvaluationRequestSchema, type CadOutput } from "../runtime-contracts";
+import {
+  CadEvaluationRequestSchema, ExactStepImportRequestSchema, type CadOutput,
+} from "../runtime-contracts";
 import type { OcctWorkerRequest } from "./occt-worker-contract";
 
 const occtWasmPath = vi.hoisted(() => `${process.cwd()}/node_modules/occt-wasm/dist/occt-wasm.wasm`);
@@ -111,7 +113,7 @@ describe("OCCT worker", () => {
       !!message && typeof message === "object" && "type" in message && message.type === "succeeded") as {
       results: Array<{
         output: string;
-        artifact: { contentDigest: string; units: string; dependencies: unknown[] };
+        artifact: { id: string; contentDigest: string; units: string; dependencies: unknown[] };
         payload: unknown;
       }>;
     };
@@ -130,5 +132,32 @@ describe("OCCT worker", () => {
     });
     expect(new TextDecoder().decode((step.payload as { bytes: Uint8Array }).bytes))
       .toContain("SI_UNIT(.MILLI.,.METRE.)");
+
+    const importRequest = await ExactStepImportRequestSchema.parseAsync({
+      requestId: "step-round-trip", sourceRevision: request.sourceRevision,
+      step: { artifact: step.artifact, payload: step.payload }, settings: { gate: "worker-test" },
+    });
+    scope.send({ type: "import-step", request: importRequest });
+    await vi.waitFor(() => {
+      expect(scope.messages).toContainEqual(expect.objectContaining({
+        type: "step-import-succeeded", requestId: "step-round-trip",
+        result: expect.objectContaining({
+          sourceArtifactId: step.artifact.id, solidCount: 1, invalidSolidCount: 0,
+          envelopeM: {
+            minimum: expect.any(Array), maximum: expect.any(Array),
+          },
+        }),
+      }));
+    });
+    const imported = scope.messages.find((message) =>
+      !!message && typeof message === "object" && "type" in message
+      && message.type === "step-import-succeeded") as {
+      result: { artifact: { contentDigest: string; dependencies: unknown[] }; payload: unknown };
+    };
+    await expect(digestCadOutputPayload(imported.result.payload))
+      .resolves.toBe(imported.result.artifact.contentDigest);
+    expect(imported.result.artifact.dependencies).toContainEqual({
+      kind: "artifact", artifactId: step.artifact.id,
+    });
   });
 });

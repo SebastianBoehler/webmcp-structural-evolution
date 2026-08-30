@@ -1,10 +1,11 @@
 import { OcctKernel } from "occt-wasm";
 import occtWasmUrl from "occt-wasm/dist/occt-wasm.wasm?url";
 
-import type { CadEvaluationRequest } from "../runtime-contracts";
+import type { CadEvaluationRequest, ExactStepImportRequest } from "../runtime-contracts";
 import { createOcctBridge, type OcctBridge } from "./occt-bridge";
 import { CadRebuildError, rebuildDocument } from "./feature-rebuild";
 import { buildCadEvaluationResults } from "./rebuild-results";
+import { importExactStep } from "./exact-step-import";
 import {
   OcctWorkerEventSchema,
   OcctWorkerRequestSchema,
@@ -20,6 +21,7 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 let bridge: Promise<OcctBridge> | undefined;
 let evaluationQueue = Promise.resolve();
+let messageQueue = Promise.resolve();
 let activeRequestId: string | undefined;
 let activeController: AbortController | undefined;
 let cancellationRequested = false;
@@ -124,6 +126,53 @@ const evaluate = async (request: CadEvaluationRequest) => {
   }
 };
 
+const importStep = async (request: ExactStepImportRequest) => {
+  const { requestId } = request;
+  activeRequestId = requestId;
+  activeController = new AbortController();
+  cancellationRequested = false;
+  try {
+    let owner: OcctBridge;
+    try {
+      owner = await getBridge();
+    } catch (error) {
+      bridge = undefined;
+      await post({
+        type: "failed", requestId,
+        error: { code: "initialization-failed", message: messageFor(error) },
+      });
+      return;
+    }
+    if (cancellationRequested) {
+      await post({ type: "cancelled", requestId });
+      return;
+    }
+    try {
+      const result = await importExactStep(owner, request, activeController.signal);
+      if (cancellationRequested || activeController.signal.aborted) {
+        await post({ type: "cancelled", requestId });
+        return;
+      }
+      await post({ type: "step-import-succeeded", requestId, result });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        await post({ type: "cancelled", requestId });
+        return;
+      }
+      await post({
+        type: "failed", requestId,
+        error: { code: classifyFailure(error), message: messageFor(error) },
+      });
+    }
+  } finally {
+    if (activeRequestId === requestId) {
+      activeRequestId = undefined;
+      activeController = undefined;
+      cancellationRequested = false;
+    }
+  }
+};
+
 const requestIdFrom = (value: unknown) => {
   if (!value || typeof value !== "object") return "unknown-request";
   const candidate = value as { requestId?: unknown; request?: { requestId?: unknown } };
@@ -131,8 +180,8 @@ const requestIdFrom = (value: unknown) => {
   return typeof requestId === "string" && requestId.length > 0 ? requestId : "unknown-request";
 };
 
-scope.addEventListener("message", ({ data }) => {
-  const parsed = OcctWorkerRequestSchema.safeParse(data);
+const receive = async (data: unknown) => {
+  const parsed = await OcctWorkerRequestSchema.safeParseAsync(data);
   if (!parsed.success) {
     void post({
       type: "failed",
@@ -149,5 +198,11 @@ scope.addEventListener("message", ({ data }) => {
     return;
   }
   const request = parsed.data.request;
-  evaluationQueue = evaluationQueue.then(() => evaluate(request));
+  evaluationQueue = evaluationQueue.then(() => parsed.data.type === "evaluate"
+    ? evaluate(request as CadEvaluationRequest)
+    : importStep(request as ExactStepImportRequest));
+};
+
+scope.addEventListener("message", ({ data }) => {
+  messageQueue = messageQueue.then(() => receive(data));
 });

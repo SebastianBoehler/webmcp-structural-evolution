@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { defineArtifactRecord, type ArtifactRecord } from "../artifact-contract";
 import { digestCadOutputPayload, type SemanticMeshPayload } from "../rebuild-payload";
-import type { CadEvaluationEvent, CadKernelAdapter } from "../runtime-contracts";
+import type {
+  CadEvaluationEvent, CadKernelAdapter, ExactStepImportResult,
+} from "../runtime-contracts";
 import {
   runExactCadGate,
   type ExactCadGateDependencies,
@@ -104,7 +106,9 @@ function dependencies(failure?: Failure): ExactCadGateDependencies {
       }
       if (call === 3) {
         emit({ requestId: request.requestId, state: "cancelled" });
-        if (failure === "late-success") emit(await successEvent(request.requestId, request.sourceRevision, 0.1));
+        if (failure === "late-success") setTimeout(() => {
+          void successEvent(request.requestId, request.sourceRevision, 0.1).then(emit);
+        }, 5);
         return;
       }
       emit(await successEvent(
@@ -114,14 +118,31 @@ function dependencies(failure?: Failure): ExactCadGateDependencies {
         call <= 2 ? failure : undefined,
       ));
     },
+    async importStep(request) {
+      const payload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
+      const imported = await defineArtifactRecord({
+        kind: "brep", sourceRevision: request.sourceRevision,
+        producer: { name: "test-occt", version: "1" }, settingsDigest: "a".repeat(64),
+        contentDigest: await digestCadOutputPayload(payload), units: "m",
+        mediaType: "application/vnd.opencascade.brep",
+        dependencies: [{ kind: "artifact", artifactId: request.step.artifact.id }],
+      });
+      return {
+        requestId: request.requestId, sourceRevision: request.sourceRevision,
+        sourceArtifactId: request.step.artifact.id, artifact: imported, payload,
+        massProperties: {
+          densityKgM3: 1, volumeM3: expectedVolume(0.1), surfaceAreaM2: 0.01,
+          massKg: expectedVolume(0.1), centerOfMassM: [0, 0, 0.01],
+          inertiaKgM2: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        },
+        envelopeM: { minimum: [0, 0, 0], maximum: failure === "step" ? [0.1000002, 0.04, 0.02] : [0.1, 0.04, 0.02] },
+        solidCount: 1, invalidSolidCount: 0,
+      } satisfies ExactStepImportResult;
+    },
   };
   return {
     createAdapter: () => adapter,
-    decodeStep: async () => ({
-      surfaces: [{ name: "round-trip", positions: new Float32Array([0, 0, 0]), indices: new Uint32Array([0, 0, 0]) }],
-      sizeMm: failure === "step" ? [100.0002, 40, 20] : [100, 40, 20],
-      triangleCount: 1,
-    }),
+    terminalQuiescenceMs: 10,
     now: (() => { let tick = 0; return () => ++tick; })(),
   };
 }
@@ -137,6 +158,7 @@ describe("browser exact-CAD gate", () => {
     expect(result.stepRoundTrip.envelopeRelativeError).toBeLessThanOrEqual(1e-6);
     expect(result.cancellation).toEqual({ outcome: "cancelled", lateSuccess: false });
     expect(result.artifacts).toMatchObject({ staleCount: 0, invalidatedCount: 3 });
+    expect(result.artifacts.activeCount).toBe(4);
     expect(result.renderMesh.triangleCount).toBe(1);
   });
 

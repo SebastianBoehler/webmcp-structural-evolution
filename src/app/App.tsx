@@ -1,8 +1,16 @@
-import { Component, useEffect, useState, type ErrorInfo, type JSX, type ReactNode } from "react";
+import {
+  Component, lazy, Suspense, useEffect, useState,
+  type ErrorInfo, type JSX, type ReactNode,
+} from "react";
 
 import { detectWebGpuSingleFlight, type GpuCapability } from "../gpu/capabilities";
 import type { DemoFixtureId } from "../samples/demo-fixtures";
-import { FoundationJourney } from "./FoundationJourney";
+import { ExactCadGateRoute } from "./ExactCadGateRoute";
+
+const FoundationJourney = lazy(async () => {
+  const module = await import("./FoundationJourney");
+  return { default: module.FoundationJourney };
+});
 
 type ErrorBoundaryProps = { children: ReactNode };
 type ErrorBoundaryState = { hasError: boolean };
@@ -25,8 +33,23 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-export function App(): JSX.Element {
+function FoundationRoute({ capability }: { readonly capability: GpuCapability }) {
   const [fixtureId, setFixtureId] = useState<DemoFixtureId>("reference-drone");
+
+  return <Suspense fallback={<p role="status">Loading structural workbench…</p>}>
+    <FoundationJourney
+      key={fixtureId}
+      capability={capability}
+      fixtureId={fixtureId}
+      onFixtureChange={setFixtureId}
+    />
+  </Suspense>;
+}
+
+const exactCadRouteRequested = () => typeof globalThis.location !== "undefined"
+  && new URLSearchParams(globalThis.location.search).has("exact-cad-gate");
+
+export function App(): JSX.Element {
   const [capability, setCapability] = useState<GpuCapability>({
     status: "unavailable",
     code: "api-unavailable",
@@ -43,12 +66,9 @@ export function App(): JSX.Element {
 
   return (
     <ErrorBoundary>
-      <FoundationJourney
-        key={fixtureId}
-        capability={capability}
-        fixtureId={fixtureId}
-        onFixtureChange={setFixtureId}
-      />
+      {exactCadRouteRequested()
+        ? <ExactCadGateRoute capability={capability} />
+        : <FoundationRoute capability={capability} />}
     </ErrorBoundary>
   );
 }

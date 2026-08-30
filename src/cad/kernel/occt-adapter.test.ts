@@ -45,7 +45,7 @@ class LifecycleWorker implements OcctWorkerLike {
       this.emit({ type: "progress", requestId: request.request.requestId, progress: 0 });
       return;
     }
-    if (this.acknowledgeCancellation) {
+    if (request.type === "cancel" && this.acknowledgeCancellation) {
       this.emit({ type: "cancelled", requestId: request.requestId });
     }
   }

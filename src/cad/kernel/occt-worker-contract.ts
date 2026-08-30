@@ -3,20 +3,28 @@ import { z } from "zod";
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
+  ExactStepImportRequestSchema,
+  ExactStepImportResultSchema,
   type CadEvaluationEvent,
   type CadEvaluationRequest,
+  type ExactStepImportResult,
 } from "../runtime-contracts";
 
 const RequestIdSchema = z.string().min(1);
 
 export type OcctWorkerRequest =
   | { readonly type: "evaluate"; readonly request: CadEvaluationRequest }
+  | { readonly type: "import-step"; readonly request: z.infer<typeof ExactStepImportRequestSchema> }
   | { readonly type: "cancel"; readonly requestId: string };
 
 export const OcctWorkerRequestSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("evaluate"),
     request: CadEvaluationRequestSchema,
+  }).strict(),
+  z.object({
+    type: z.literal("import-step"),
+    request: ExactStepImportRequestSchema,
   }).strict(),
   z.object({
     type: z.literal("cancel"),
@@ -71,9 +79,21 @@ const SucceededSchema = z.object({
   }
 });
 
+const StepImportSucceededSchema = z.object({
+  type: z.literal("step-import-succeeded"),
+  requestId: RequestIdSchema,
+  result: z.unknown(),
+}).strict().superRefine(async (value, context) => {
+  const parsed = await ExactStepImportResultSchema.safeParseAsync(value.result);
+  if (!parsed.success || parsed.data.requestId !== value.requestId) {
+    context.addIssue({ code: "custom", path: ["result"], message: "Invalid exact STEP import result" });
+  }
+});
+
 export const OcctWorkerEventSchema = z.discriminatedUnion("type", [
   ProgressSchema,
   SucceededSchema,
+  StepImportSucceededSchema,
   FailedSchema,
   CancelledSchema,
 ]);
@@ -84,5 +104,6 @@ export type OcctWorkerFailureCode = z.infer<typeof OcctWorkerFailureCodeSchema>;
 export type OcctWorkerEvent =
   | Readonly<z.infer<typeof ProgressSchema>>
   | Readonly<{ readonly type: "succeeded" } & Omit<CadSuccess, "state">>
+  | Readonly<{ readonly type: "step-import-succeeded"; readonly requestId: string; readonly result: ExactStepImportResult }>
   | Readonly<z.infer<typeof FailedSchema>>
   | Readonly<z.infer<typeof CancelledSchema>>;

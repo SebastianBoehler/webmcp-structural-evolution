@@ -15,7 +15,8 @@ class BrowserOcctWorker implements OcctWorkerLike {
   >();
 
   postMessage(message: unknown): void {
-    if (message && typeof message === "object" && "type" in message && message.type === "evaluate") {
+    if (message && typeof message === "object" && "type" in message
+      && (message.type === "evaluate" || message.type === "import-step")) {
       const candidate = message as { request?: { requestId?: unknown } };
       if (typeof candidate.request?.requestId === "string") this.requestId = candidate.request.requestId;
     }

@@ -98,6 +98,24 @@ export function createDesignSession(
   });
 }
 
+export function attachDesignSessionArtifacts(
+  session: DesignSession,
+  artifacts: readonly ArtifactRecord[],
+): DesignSession {
+  const document = currentDocument(session);
+  const combined = [...session.artifacts.index.artifacts, ...artifacts];
+  if (combined.some(({ sourceRevision }) => sourceRevision !== document.revision)) {
+    throw new Error("Cannot attach a stale artifact to the active design revision");
+  }
+  return freezeSnapshot({
+    ...session,
+    artifacts: {
+      index: createArtifactIndex(document.revision, combined),
+      invalidatedIds: session.artifacts.invalidatedIds,
+    },
+  });
+}
+
 export async function applyDesignSessionTransaction(
   session: DesignSession,
   transaction: DesignTransaction,

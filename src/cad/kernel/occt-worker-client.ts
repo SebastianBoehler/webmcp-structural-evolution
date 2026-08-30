@@ -1,57 +1,33 @@
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
+  ExactStepImportRequestSchema,
+  ExactStepImportResultSchema,
   type CadEvaluationEvent,
   type CadEvaluationRequest,
+  type ExactStepImportRequest,
+  type ExactStepImportResult,
 } from "../runtime-contracts";
 import {
   OcctWorkerEventSchema,
   OcctWorkerRequestSchema,
   type OcctWorkerEvent,
-  type OcctWorkerFailureCode,
 } from "./occt-worker-contract";
+import type {
+  OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent, PendingOcctOperation,
+} from "./occt-worker-client-types";
+import { cadFailureCode, isFatalOcctFailure } from "./occt-worker-failure";
 
-export interface OcctWorkerMessageEvent {
-  readonly data: unknown;
-}
-
-export interface OcctWorkerLike {
-  postMessage(message: unknown): void;
-  addEventListener(type: "message", listener: (event: OcctWorkerMessageEvent) => void): void;
-  removeEventListener(type: "message", listener: (event: OcctWorkerMessageEvent) => void): void;
-  terminate(): void;
-}
-
-export type OcctWorkerFactory = () => OcctWorkerLike;
-
-interface PendingEvaluation {
-  readonly request: CadEvaluationRequest;
-  readonly signal: AbortSignal;
-  readonly emit: (event: CadEvaluationEvent) => void;
-  readonly resolve: () => void;
-}
-
-const failureCode = (code: OcctWorkerFailureCode) => {
-  switch (code) {
-    case "memory-exhausted": return "resource-limit" as const;
-    case "feature-failed": return "feature-failed" as const;
-    case "invalid-solid": return "invalid-solid" as const;
-    case "reference-requires-repair": return "reference-requires-repair" as const;
-    default: return "internal-error" as const;
-  }
-};
-
-const isFatal = (code: OcctWorkerFailureCode) =>
-  code === "protocol-mismatch" || code === "device-error";
+export type { OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent } from "./occt-worker-client-types";
 
 export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
-  let active: PendingEvaluation | undefined;
-  let settling: PendingEvaluation | undefined;
-  const queue: PendingEvaluation[] = [];
+  let active: PendingOcctOperation | undefined;
+  let settling: PendingOcctOperation | undefined;
+  const queue: PendingOcctOperation[] = [];
 
   const emit = (event: CadEvaluationEvent) => {
-    active?.emit(CadEvaluationEventSchema.parse(event));
+    if (active?.kind === "evaluation") active.emit(CadEvaluationEventSchema.parse(event));
   };
 
   const replaceWorker = () => {
@@ -68,29 +44,30 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     if (settling === completed) settling = undefined;
     active = undefined;
     completed.resolve();
-    startNext();
+    void startNext();
   };
 
   const protocolFailure = (message: string) => {
-    if (active) emit({
-      requestId: active.request.requestId,
-      state: "failed",
+    if (active?.kind === "evaluation") emit({
+      requestId: active.requestId, state: "failed",
       error: { code: "internal-error", message },
     });
+    else active?.reject(new Error(`Exact STEP import protocol failure: ${message}`));
     replaceWorker();
     finish();
   };
 
   const acceptEvent = (event: OcctWorkerEvent) => {
-    if (!active || event.requestId !== active.request.requestId) {
+    if (!active || event.requestId !== active.requestId) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
     if (settling === active) return;
-    if (event.type === "succeeded") return;
+    if (event.type === "succeeded" || event.type === "step-import-succeeded") return;
     if (active.signal.aborted && event.type !== "progress"
-      && !(event.type === "failed" && isFatal(event.error.code))) {
-      emit({ requestId: event.requestId, state: "cancelled" });
+      && !(event.type === "failed" && isFatalOcctFailure(event.error.code))) {
+      if (active.kind === "evaluation") emit({ requestId: event.requestId, state: "cancelled" });
+      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
       finish();
       return;
     }
@@ -100,14 +77,15 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     if (event.type === "cancelled") {
-      emit({ requestId: event.requestId, state: "cancelled" });
+      if (active.kind === "evaluation") emit({ requestId: event.requestId, state: "cancelled" });
+      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
     } else {
-      emit({
-        requestId: event.requestId,
-        state: "failed",
-        error: { code: failureCode(event.error.code), message: event.error.message },
+      if (active.kind === "evaluation") emit({
+        requestId: event.requestId, state: "failed",
+        error: { code: cadFailureCode(event.error.code), message: event.error.message },
       });
-      if (isFatal(event.error.code)) replaceWorker();
+      else active.reject(new Error(`Exact STEP import failed (${event.error.code}): ${event.error.message}`));
+      if (isFatalOcctFailure(event.error.code)) replaceWorker();
     }
     finish();
   };
@@ -119,11 +97,11 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     && request.requestedOutputs.every((output, index) => event.requestedOutputs[index] === output);
 
   async function acceptSuccess(
-    owner: PendingEvaluation,
+    owner: PendingOcctOperation,
     event: Extract<OcctWorkerEvent, { type: "succeeded" }>,
   ) {
     if (active !== owner || settling !== owner) return;
-    if (event.requestId !== owner.request.requestId) {
+    if (owner.kind !== "evaluation" || event.requestId !== owner.requestId) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
@@ -149,6 +127,37 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
   }
 
+  async function acceptStepImportSuccess(
+    owner: PendingOcctOperation,
+    event: Extract<OcctWorkerEvent, { type: "step-import-succeeded" }>,
+  ) {
+    if (active !== owner || settling !== owner) return;
+    if (owner.kind !== "step-import" || event.requestId !== owner.requestId) {
+      protocolFailure("OCCT worker STEP import did not match the active request");
+      return;
+    }
+    if (owner.signal.aborted) {
+      owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
+      finish();
+      return;
+    }
+    try {
+      const result = await ExactStepImportResultSchema.parseAsync(event.result);
+      if (active !== owner || settling !== owner) return;
+      if (result.sourceRevision !== owner.request.sourceRevision
+        || result.sourceArtifactId !== owner.request.step.artifact.id) {
+        protocolFailure("OCCT worker STEP import ownership did not match the active request");
+        return;
+      }
+      owner.resolveResult(result);
+      finish();
+    } catch {
+      if (active === owner && settling === owner) {
+        protocolFailure("OCCT worker returned an invalid STEP import result");
+      }
+    }
+  }
+
   const beginSuccessValidation = (data: object) => {
     const owner = active;
     if (!owner) {
@@ -156,7 +165,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     const requestId = "requestId" in data ? data.requestId : undefined;
-    if (typeof requestId === "string" && requestId !== owner.request.requestId) {
+    if (typeof requestId === "string" && requestId !== owner.requestId) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
@@ -167,14 +176,16 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     settling = owner;
     void OcctWorkerEventSchema.safeParseAsync(data).then((parsed) => {
       if (active !== owner || settling !== owner) return;
-      if (!parsed.success || parsed.data.type !== "succeeded") {
+      if (!parsed.success || (parsed.data.type !== "succeeded"
+        && parsed.data.type !== "step-import-succeeded")) {
         protocolFailure("OCCT worker returned an invalid protocol message");
         return;
       }
-      void acceptSuccess(
+      if (parsed.data.type === "succeeded") void acceptSuccess(
         owner,
         parsed.data as Extract<OcctWorkerEvent, { type: "succeeded" }>,
       );
+      else void acceptStepImportSuccess(owner, parsed.data as Extract<OcctWorkerEvent, { type: "step-import-succeeded" }>);
     }).catch(() => {
       if (active === owner && settling === owner) {
         protocolFailure("OCCT worker success validation failed");
@@ -184,13 +195,14 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
 
   const onMessage = (message: OcctWorkerMessageEvent) => {
     if (message.data && typeof message.data === "object"
-      && "type" in message.data && message.data.type === "succeeded") {
+      && "type" in message.data
+      && (message.data.type === "succeeded" || message.data.type === "step-import-succeeded")) {
       beginSuccessValidation(message.data);
       return;
     }
     if (settling && message.data && typeof message.data === "object"
       && "requestId" in message.data
-      && message.data.requestId === settling.request.requestId) {
+      && message.data.requestId === settling.requestId) {
       OcctWorkerEventSchema.safeParse(message.data);
       return;
     }
@@ -213,23 +225,39 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     if (!active) return;
     const request = OcctWorkerRequestSchema.parse({
       type: "cancel",
-      requestId: active.request.requestId,
+      requestId: active.requestId,
     });
     getWorker().postMessage(request);
   }
 
-  function startNext() {
+  async function startNext() {
     if (active || queue.length === 0) return;
     active = queue.shift();
     if (!active) return;
     if (active.signal.aborted) {
-      emit({ requestId: active.request.requestId, state: "cancelled" });
+      if (active.kind === "evaluation") emit({ requestId: active.requestId, state: "cancelled" });
+      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
       finish();
       return;
     }
     active.signal.addEventListener("abort", onAbort, { once: true });
+    const owner = active;
     try {
-      getWorker().postMessage(OcctWorkerRequestSchema.parse({ type: "evaluate", request: active.request }));
+      const message = {
+        type: active.kind === "evaluation" ? "evaluate" : "import-step",
+        request: active.request,
+      };
+      const validated = active.kind === "evaluation"
+        ? OcctWorkerRequestSchema.parse(message)
+        : await OcctWorkerRequestSchema.parseAsync(message);
+      if (active !== owner) return;
+      if (owner.signal.aborted) {
+        if (owner.kind === "evaluation") emit({ requestId: owner.requestId, state: "cancelled" });
+        else owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
+        finish();
+        return;
+      }
+      getWorker().postMessage(validated);
     } catch (error) {
       protocolFailure(error instanceof Error ? error.message : "OCCT worker device failure");
     }
@@ -243,8 +271,24 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     ): Promise<void> {
       const validated = CadEvaluationRequestSchema.parse(request);
       return new Promise((resolve) => {
-        queue.push({ request: validated, signal, emit: eventEmitter, resolve });
-        startNext();
+        queue.push({
+          kind: "evaluation", requestId: validated.requestId,
+          request: validated, signal, emit: eventEmitter, resolve,
+        });
+        void startNext();
+      });
+    },
+    async importStep(
+      request: ExactStepImportRequest,
+      signal: AbortSignal,
+    ): Promise<ExactStepImportResult> {
+      const validated = await ExactStepImportRequestSchema.parseAsync(request);
+      return new Promise((resolveResult, reject) => {
+        queue.push({
+          kind: "step-import", requestId: validated.requestId,
+          request: validated, signal, resolve: () => undefined, resolveResult, reject,
+        });
+        void startNext();
       });
     },
   };

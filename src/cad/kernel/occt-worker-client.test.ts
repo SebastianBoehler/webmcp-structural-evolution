@@ -5,8 +5,10 @@ import { createDesignDocument } from "../document-schema";
 import { digestCadOutputPayload } from "../rebuild-payload";
 import {
   CadEvaluationRequestSchema,
+  ExactStepImportRequestSchema,
   type CadEvaluationEvent,
   type CadEvaluationRequest,
+  type ExactStepImportRequest,
 } from "../runtime-contracts";
 import { createOcctBridge } from "./occt-bridge";
 import {
@@ -40,6 +42,20 @@ async function request(requestId: string): Promise<CadEvaluationRequest> {
     sourceRevision: document.revision,
     requestedOutputs: ["mass-properties"],
     settings: {},
+  });
+}
+
+async function stepRequest(requestId: string): Promise<ExactStepImportRequest> {
+  const sourceRevision = "e".repeat(64);
+  const payload = { bytes: new TextEncoder().encode("ISO-10303-21") };
+  const artifact = await defineArtifactRecord({
+    kind: "export", sourceRevision,
+    producer: { name: "occt-wasm", version: "4.3.2" }, settingsDigest: "a".repeat(64),
+    contentDigest: await digestCadOutputPayload(payload), units: "mm", mediaType: "model/step",
+    dependencies: [],
+  });
+  return ExactStepImportRequestSchema.parseAsync({
+    requestId, sourceRevision, step: { artifact, payload }, settings: {},
   });
 }
 
@@ -270,5 +286,31 @@ describe("OCCT worker client", () => {
       requestedOutputs: ["brep"],
       results: [{ output: "brep", artifact, payload }],
     }]);
+  });
+
+  it("imports STEP through the serialized worker boundary and validates ownership", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const importRequest = await stepRequest("step-import");
+    const payload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
+    const artifact = await defineArtifactRecord({
+      kind: "brep", sourceRevision: importRequest.sourceRevision,
+      producer: { name: "occt-wasm", version: "4.3.2" }, settingsDigest: "a".repeat(64),
+      contentDigest: await digestCadOutputPayload(payload), units: "m",
+      mediaType: "application/vnd.opencascade.brep",
+      dependencies: [{ kind: "artifact", artifactId: importRequest.step.artifact.id }],
+    });
+    const result = {
+      requestId: importRequest.requestId, sourceRevision: importRequest.sourceRevision,
+      sourceArtifactId: importRequest.step.artifact.id, artifact, payload, massProperties,
+      envelopeM: { minimum: [0, 0, 0], maximum: [0.1, 0.04, 0.02] },
+      solidCount: 1, invalidSolidCount: 0,
+    } as const;
+
+    const imported = client.importStep(importRequest, new AbortController().signal);
+    await vi.waitFor(() => expect(worker.posted).toContainEqual({ type: "import-step", request: importRequest }));
+    worker.emit({ type: "step-import-succeeded", requestId: importRequest.requestId, result });
+
+    await expect(imported).resolves.toMatchObject(result);
   });
 });

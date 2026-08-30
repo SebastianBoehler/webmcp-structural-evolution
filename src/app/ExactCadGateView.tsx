@@ -1,16 +1,24 @@
 import type { GpuCapability } from "../gpu/capabilities";
-import type { FoundationProjectState } from "../webmcp/schemas";
 import { FieldViewer, type FieldViewerEnvironment } from "../viewer/FieldViewer";
 import type { ExactCadProjectGateState } from "./use-exact-cad-project-gate";
 
 interface ExactCadGateViewProps {
   readonly gate: Exclude<ExactCadProjectGateState, { status: "inactive" }>;
   readonly capability: GpuCapability;
-  readonly context: FoundationProjectState["context"];
   readonly viewerEnvironment?: FieldViewerEnvironment;
 }
 
-export function ExactCadGateView({ gate, capability, context, viewerEnvironment }: ExactCadGateViewProps) {
+const grid = {
+  dimensions: { width: 1, height: 1, depth: 1 },
+  cellSize: [0.1, 0.04, 0.02] as const,
+  anchor: { position: [0, 0, 0] as const, orientation: [0, 0, 0, 1] as const },
+};
+const selection = {
+  id: "exact-browser-part", label: "Exact OCCT part",
+  min: [0, 0, 0] as const, maxExclusive: [1, 1, 1] as const,
+};
+
+export function ExactCadGateView({ gate, capability, viewerEnvironment }: ExactCadGateViewProps) {
   if (gate.status === "running") return (
     <main className="workbench-shell" aria-label="Exact CAD browser gate">
       <p className="global-error" role="status">Loading the exact OCCT worker; legacy geometry is withheld.</p>
@@ -35,8 +43,8 @@ export function ExactCadGateView({ gate, capability, context, viewerEnvironment 
         <h1 id="exact-cad-gate-title">Exact CAD browser gate passed</h1>
         <div className="viewport-canvas"><div className="viewport-scene">
           <FieldViewer
-            current={null} alternatives={[]} selectedRegion={context.selection}
-            threshold={0.5} mode="overlay" grid={context.grid} assemblyParts={part}
+            current={null} alternatives={[]} selectedRegion={selection}
+            threshold={0.5} mode="overlay" grid={grid} assemblyParts={part}
             selectedPart="exact-browser-part" environment={viewerEnvironment}
             statusText="Exact OCCT plate, revolved boss, and through-cut · dimension rebuilt · cancellation observed · STEP round-trip passed"
           />
@@ -58,6 +66,8 @@ export function ExactCadGateView({ gate, capability, context, viewerEnvironment 
           <div><dt>Cancellation</dt><dd>{result.cancellation.outcome}; late success {String(result.cancellation.lateSuccess)}</dd></div>
           <div><dt>Stale artifacts</dt><dd>{result.artifacts.staleCount}</dd></div>
           <div><dt>Invalidated artifacts</dt><dd>{result.artifacts.invalidatedCount}</dd></div>
+          <div><dt>Active exact artifacts</dt><dd>{result.artifacts.activeCount}</dd></div>
+          <div><dt>Legacy workspace initialized</dt><dd>false</dd></div>
           <div><dt>Initial rebuild</dt><dd>{result.timingsMs.initialRebuild} ms</dd></div>
           <div><dt>Dimension rebuild</dt><dd>{result.timingsMs.dimensionRebuild} ms</dd></div>
           <div><dt>STEP round-trip</dt><dd>{result.timingsMs.stepRoundTrip} ms</dd></div>

@@ -23,6 +23,7 @@ export const CadOutputSchema = z.enum([
   "step",
 ]);
 const CadOutputsSchema = z.array(CadOutputSchema).min(1);
+const Vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 
 export const CadEvaluationRequestSchema = z
   .object({
@@ -48,6 +49,50 @@ export async function defineCadEvaluationRequest(value: unknown): Promise<CadEva
   const document = await defineDesignDocument(request.document);
   return CadEvaluationRequestSchema.parse({ ...request, document });
 }
+
+export const ExactStepImportRequestSchema = z.object({
+  requestId: z.string().min(1),
+  sourceRevision: RevisionSchema,
+  step: z.object({
+    artifact: ArtifactRecordSchema.refine(({ kind }) => kind === "export", {
+      message: "Exact STEP import requires an export artifact",
+    }),
+    payload: OpaqueBytesPayloadSchema,
+  }).strict(),
+  settings: JsonValueSchema,
+}).strict().superRefine(async (value, context) => {
+  if (value.step.artifact.sourceRevision !== value.sourceRevision) {
+    context.addIssue({ code: "custom", path: ["step", "artifact", "sourceRevision"], message: "STEP artifact revision does not match import revision" });
+  }
+  if (await digestCadOutputPayload(value.step.payload) !== value.step.artifact.contentDigest) {
+    context.addIssue({ code: "custom", path: ["step", "artifact", "contentDigest"], message: "STEP payload does not match its content digest" });
+  }
+});
+
+export const ExactStepImportResultSchema = z.object({
+  requestId: z.string().min(1),
+  sourceRevision: RevisionSchema,
+  sourceArtifactId: RevisionSchema,
+  artifact: ArtifactRecordSchema.refine(({ kind }) => kind === "brep", {
+    message: "Exact STEP import requires a BREP artifact",
+  }),
+  payload: OpaqueBytesPayloadSchema,
+  massProperties: MassPropertiesPayloadSchema,
+  envelopeM: z.object({ minimum: Vec3Schema, maximum: Vec3Schema }).strict(),
+  solidCount: z.literal(1),
+  invalidSolidCount: z.literal(0),
+}).strict().superRefine(async (value, context) => {
+  if (value.artifact.sourceRevision !== value.sourceRevision) {
+    context.addIssue({ code: "custom", path: ["artifact", "sourceRevision"], message: "Imported BREP revision does not match STEP revision" });
+  }
+  if (!value.artifact.dependencies.some((dependency) =>
+    dependency.kind === "artifact" && dependency.artifactId === value.sourceArtifactId)) {
+    context.addIssue({ code: "custom", path: ["artifact", "dependencies"], message: "Imported BREP must depend on its source STEP artifact" });
+  }
+  if (await digestCadOutputPayload(value.payload) !== value.artifact.contentDigest) {
+    context.addIssue({ code: "custom", path: ["artifact", "contentDigest"], message: "Imported BREP payload does not match its content digest" });
+  }
+});
 
 const CadFailureSchema = z.object({
   code: z.enum([
@@ -176,6 +221,8 @@ export const EngineeringJobEventSchema = z.discriminatedUnion("state", [
 export type CadEvaluationRequest = z.infer<typeof CadEvaluationRequestSchema>;
 export type CadEvaluationEvent = z.infer<typeof CadEvaluationEventSchema>;
 export type CadOutput = z.infer<typeof CadOutputSchema>;
+export type ExactStepImportRequest = z.infer<typeof ExactStepImportRequestSchema>;
+export type ExactStepImportResult = z.infer<typeof ExactStepImportResultSchema>;
 export type EngineeringJobRequest = z.infer<typeof EngineeringJobRequestSchema>;
 export type EngineeringJobEvent = z.infer<typeof EngineeringJobEventSchema>;
 
@@ -185,4 +232,5 @@ export interface CadKernelAdapter {
     signal: AbortSignal,
     emit: (event: CadEvaluationEvent) => void,
   ): Promise<void>;
+  importStep(request: ExactStepImportRequest, signal: AbortSignal): Promise<ExactStepImportResult>;
 }

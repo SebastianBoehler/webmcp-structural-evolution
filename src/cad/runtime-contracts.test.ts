@@ -7,6 +7,8 @@ import { digestCadOutputPayload } from "./rebuild-payload";
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
+  ExactStepImportRequestSchema,
+  ExactStepImportResultSchema,
   defineCadEvaluationRequest,
   EngineeringJobEventSchema,
   EngineeringJobRequestSchema,
@@ -133,6 +135,38 @@ describe("CAD runtime contracts", () => {
       ...success,
       results: [{ output: "step", artifact: thumbnail, payload }],
     })).rejects.toThrow(/step.*export/i);
+  });
+
+  it("binds exact STEP imports to their source export and returned BREP bytes", async () => {
+    const stepPayload = { bytes: new TextEncoder().encode("ISO-10303-21") };
+    const step = await outputArtifact("export", await digestCadOutputPayload(stepPayload));
+    const request = {
+      requestId: "step-import-1", sourceRevision: digest,
+      step: { artifact: step, payload: stepPayload }, settings: { gate: "browser" },
+    } as const;
+    const brepPayload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
+    const brep = await defineArtifactRecord({
+      kind: "brep", sourceRevision: digest,
+      producer: { name: "occt-wasm", version: "4.3.2" },
+      settingsDigest: "c".repeat(64), contentDigest: await digestCadOutputPayload(brepPayload),
+      units: "m", mediaType: "application/vnd.opencascade.brep",
+      dependencies: [{ kind: "artifact", artifactId: step.id }],
+    });
+    const result = {
+      requestId: request.requestId, sourceRevision: digest, sourceArtifactId: step.id,
+      artifact: brep, payload: brepPayload, massProperties,
+      envelopeM: { minimum: [0, 0, 0], maximum: [0.1, 0.04, 0.02] },
+      solidCount: 1, invalidSolidCount: 0,
+    } as const;
+
+    await expect(ExactStepImportRequestSchema.parseAsync(request)).resolves.toMatchObject(request);
+    await expect(ExactStepImportResultSchema.parseAsync(result)).resolves.toMatchObject(result);
+    await expect(ExactStepImportRequestSchema.parseAsync({
+      ...request, step: { ...request.step, payload: { bytes: new Uint8Array([0]) } },
+    })).rejects.toThrow(/content digest/i);
+    await expect(ExactStepImportResultSchema.parseAsync({
+      ...result, payload: { bytes: new Uint8Array([0]) },
+    })).rejects.toThrow(/content digest/i);
   });
 
   it("keeps truth levels exclusive to verified engineering events", () => {
