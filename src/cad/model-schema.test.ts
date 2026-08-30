@@ -5,7 +5,7 @@ import { defineDesignDocument } from "./document-schema";
 const baseContent = {
   id: "linkage",
   label: "Linkage",
-  schemaVersion: 1 as const,
+  schemaVersion: 2 as const,
   units: { length: "mm" as const, angle: "deg" as const, mass: "kg" as const },
   createdBy: { kind: "human" as const, id: "sebastian" },
   frames: [{
@@ -216,5 +216,18 @@ describe("exact model schemas", () => {
       ],
       mates: [{ id: "bad-mate", kind: "rigid", firstInstanceId: "first-instance", secondInstanceId: "second-instance", firstSelectionId: "second-face", secondSelectionId: "second-face" }],
     })).rejects.toThrow(/mate selection/i);
+  });
+
+  it("rejects duplicate terminal-feature ownership across exact bodies", async () => {
+    await expect(defineDesignDocument({
+      ...baseContent,
+      sketches: [profile],
+      features: [{ id: "base", kind: "extrude", sketchId: "base-sketch", distanceM: 0.01 }],
+      bodies: [
+        { id: "first-body", featureId: "base" },
+        { id: "second-body", featureId: "base" },
+      ],
+      components: [], instances: [], mates: [], namedSelections: [],
+    })).rejects.toThrow(/multiple body owners|terminal feature/i);
   });
 });

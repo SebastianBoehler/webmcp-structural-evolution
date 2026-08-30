@@ -65,7 +65,7 @@ export const ParameterSchema = z.object({
   value: ParameterValueSchema,
 }).strict();
 
-const documentContentShape = {
+const legacyDocumentContentShape = {
   id: EntityIdSchema,
   label: z.string().min(1),
   schemaVersion: z.literal(1),
@@ -73,6 +73,15 @@ const documentContentShape = {
   createdBy: ActorSchema,
   frames: z.array(FrameSchema),
   parameters: z.array(ParameterSchema),
+};
+const MigrationProvenanceSchema = z.object({
+  sourceSchemaVersion: z.literal(1),
+  sourceRevision: RevisionSchema,
+}).strict();
+const documentContentShape = {
+  ...legacyDocumentContentShape,
+  schemaVersion: z.literal(2),
+  migrationProvenance: MigrationProvenanceSchema.optional(),
   sketches: z.array(SketchSchema),
   features: z.array(FeatureSchema),
   bodies: z.array(BodySchema),
@@ -83,8 +92,10 @@ const documentContentShape = {
 };
 
 type DocumentContent = z.infer<z.ZodObject<typeof documentContentShape>>;
+type LegacyDocumentContent = z.infer<z.ZodObject<typeof legacyDocumentContentShape>>;
+type BaseDocumentContent = Pick<LegacyDocumentContent, "frames" | "parameters">;
 
-function addDocumentIntegrityIssues(value: DocumentContent, context: z.RefinementCtx): void {
+function addBaseIntegrityIssues(value: BaseDocumentContent, context: z.RefinementCtx): void {
   const frameIds = new Set<string>();
   for (const frame of value.frames) {
     if (frameIds.has(frame.id)) {
@@ -128,8 +139,17 @@ function addDocumentIntegrityIssues(value: DocumentContent, context: z.Refinemen
     visited.add(id);
   };
   for (const frame of value.frames) visit(frame.id);
+}
+
+function addDocumentIntegrityIssues(value: DocumentContent, context: z.RefinementCtx): void {
+  addBaseIntegrityIssues(value, context);
   addModelIntegrityIssues(value, context);
 }
+
+const LegacyDesignDocumentContentSchema = z
+  .object(legacyDocumentContentShape)
+  .strict()
+  .superRefine(addBaseIntegrityIssues);
 
 export const DesignDocumentContentSchema = z
   .object(documentContentShape)
@@ -155,7 +175,7 @@ export function normalizeParameterValue(value: z.infer<typeof ParameterValueSche
   }
 }
 
-function normalizeDocument(value: DocumentContent): DocumentContent {
+function normalizeBaseDocument<Content extends BaseDocumentContent>(value: Content): Content {
   return {
     ...value,
     frames: value.frames.map((frame) => ({
@@ -166,11 +186,35 @@ function normalizeDocument(value: DocumentContent): DocumentContent {
       ...parameter,
       value: normalizeParameterValue(parameter.value),
     })),
-  };
+  } as Content;
 }
 
 export async function defineDesignDocument(value: unknown): Promise<DesignDocument> {
-  return defineRevisionedSnapshot(DesignDocumentContentSchema, value, normalizeDocument);
+  const version = z.object({ schemaVersion: z.union([z.literal(1), z.literal(2)]) })
+    .passthrough()
+    .parse(value).schemaVersion;
+  if (version === 2) {
+    return defineRevisionedSnapshot(DesignDocumentContentSchema, value, normalizeBaseDocument);
+  }
+
+  const legacy = await defineRevisionedSnapshot(
+    LegacyDesignDocumentContentSchema,
+    value,
+    normalizeBaseDocument,
+  );
+  const { revision: sourceRevision, ...content } = legacy;
+  return defineRevisionedSnapshot(DesignDocumentContentSchema, {
+    ...content,
+    schemaVersion: 2,
+    migrationProvenance: { sourceSchemaVersion: 1, sourceRevision },
+    sketches: [],
+    features: [],
+    bodies: [],
+    components: [],
+    instances: [],
+    mates: [],
+    namedSelections: [],
+  }, normalizeBaseDocument);
 }
 
 const CreateDesignDocumentInputSchema = z.object({
@@ -184,7 +228,7 @@ export async function createDesignDocument(input: unknown): Promise<DesignDocume
   const value = CreateDesignDocumentInputSchema.parse(input);
   return defineDesignDocument({
     ...value,
-    schemaVersion: 1,
+    schemaVersion: 2,
     frames: [{
       id: "world",
       label: "World",

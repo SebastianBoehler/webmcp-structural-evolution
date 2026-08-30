@@ -38,6 +38,10 @@ export const OcctWorkerFailureCodeSchema = z.enum([
   "feature-failed",
   "invalid-solid",
   "reference-requires-repair",
+  "resource-limit",
+  "sketch-constraint-unsatisfied",
+  "sketch-under-constrained",
+  "sketch-over-constrained",
   "protocol-mismatch",
   "device-error",
 ]);

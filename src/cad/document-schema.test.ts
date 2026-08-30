@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { revisionId } from "../domain/revisions";
 import {
   createDesignDocument,
   defineDesignDocument,
@@ -9,6 +10,44 @@ import {
 } from "./document-schema";
 
 describe("DesignDocument", () => {
+  it("migrates serialized v1 content to a newly addressed v2 document with provenance", async () => {
+    const legacyContent = {
+      id: "legacy-pump",
+      label: "Legacy pump",
+      schemaVersion: 1 as const,
+      units: { length: "mm" as const, angle: "deg" as const, mass: "kg" as const },
+      createdBy: { kind: "human" as const, id: "sebastian" },
+      frames: [{
+        id: "world", label: "World",
+        transform: {
+          position: {
+            x: { value: 0, unit: "m" as const },
+            y: { value: 0, unit: "m" as const },
+            z: { value: 0, unit: "m" as const },
+          },
+          orientation: {
+            roll: { value: 0, unit: "rad" as const },
+            pitch: { value: 0, unit: "rad" as const },
+            yaw: { value: 0, unit: "rad" as const },
+          },
+        },
+      }],
+      parameters: [],
+    };
+    const legacyRevision = await revisionId(legacyContent);
+
+    const migrated = await defineDesignDocument({ ...legacyContent, revision: legacyRevision });
+
+    expect(migrated).toMatchObject({
+      schemaVersion: 2,
+      migrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+      sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+    });
+    expect(migrated.revision).not.toBe(legacyRevision);
+    const { revision: _revision, ...migratedContent } = migrated;
+    expect(migrated.revision).toBe(await revisionId(migratedContent));
+  });
+
   it("normalizes physical parameter values into an immutable revisioned snapshot", async () => {
     const metric = await createDesignDocument({
       id: "pump",
@@ -66,7 +105,7 @@ describe("DesignDocument", () => {
     });
 
     expect(document).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       units: { length: "mm", angle: "deg", mass: "kg" },
       frames: [{
         id: "world",

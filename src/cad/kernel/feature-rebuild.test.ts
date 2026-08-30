@@ -10,7 +10,7 @@ async function plateDocument(widthM = 0.08) {
   return defineDesignDocument({
     id: "exact-plate",
     label: "Exact plate",
-    schemaVersion: 1,
+    schemaVersion: 2,
     units: { length: "mm", angle: "deg", mass: "kg" },
     createdBy: { kind: "agent", id: "test" },
     frames: [{
@@ -30,7 +30,19 @@ async function plateDocument(widthM = 0.08) {
         id: "plate-outline", kind: "rectangle", centerM: [0, 0],
         sizeM: [{ parameterId: "plate-width" }, 0.04],
       }],
-      constraints: [],
+      constraints: [
+        {
+          id: "plate-width", kind: "distance",
+          first: { entityId: "plate-outline", point: "left" },
+          second: { entityId: "plate-outline", point: "right" }, axis: "x",
+          valueM: { parameterId: "plate-width" },
+        },
+        {
+          id: "plate-height", kind: "distance",
+          first: { entityId: "plate-outline", point: "bottom" },
+          second: { entityId: "plate-outline", point: "top" }, axis: "y", valueM: 0.04,
+        },
+      ],
     }],
     features: [{ id: "plate", kind: "extrude", sketchId: "plate-sketch", distanceM: 0.01 }],
     bodies: [{ id: "plate-body", featureId: "plate" }],
@@ -61,12 +73,23 @@ async function mechanicalPartDocument(widthM = 0.08) {
       {
         id: "boss-sketch", plane: "frame:boss-frame",
         entities: [{ id: "boss-profile", kind: "rectangle", centerM: [0.005, 0.005], sizeM: [0.01, 0.01] }],
-        constraints: [],
+        constraints: [
+          {
+            id: "boss-width", kind: "distance",
+            first: { entityId: "boss-profile", point: "left" },
+            second: { entityId: "boss-profile", point: "right" }, axis: "x", valueM: 0.01,
+          },
+          {
+            id: "boss-height", kind: "distance",
+            first: { entityId: "boss-profile", point: "bottom" },
+            second: { entityId: "boss-profile", point: "top" }, axis: "y", valueM: 0.01,
+          },
+        ],
       },
       {
         id: "hole-sketch", plane: "frame:world",
         entities: [{ id: "hole-profile", kind: "circle", centerM: [0, 0], radiusM: 0.003 }],
-        constraints: [],
+        constraints: [{ id: "hole-radius", kind: "radius", entityId: "hole-profile", valueM: 0.003 }],
       },
     ],
     features: [
@@ -169,6 +192,105 @@ describe("exact OCCT feature rebuild", () => {
       setTimeout(() => controller.abort(), 0);
 
       await expect(rebuilding).rejects.toMatchObject({ name: "AbortError" });
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
+  it.each([
+    ["unsatisfied", [
+      {
+        id: "wrong-width", kind: "distance",
+        first: { entityId: "plate-outline", point: "left" },
+        second: { entityId: "plate-outline", point: "right" }, axis: "x", valueM: 0.07,
+      },
+      {
+        id: "plate-height", kind: "distance",
+        first: { entityId: "plate-outline", point: "bottom" },
+        second: { entityId: "plate-outline", point: "top" }, axis: "y", valueM: 0.04,
+      },
+    ], "sketch-constraint-unsatisfied"],
+    ["under-constrained", [{
+      id: "plate-width", kind: "distance",
+      first: { entityId: "plate-outline", point: "left" },
+      second: { entityId: "plate-outline", point: "right" }, axis: "x", valueM: 0.08,
+    }], "sketch-under-constrained"],
+    ["over-constrained", [
+      {
+        id: "plate-width", kind: "distance",
+        first: { entityId: "plate-outline", point: "left" },
+        second: { entityId: "plate-outline", point: "right" }, axis: "x", valueM: 0.08,
+      },
+      {
+        id: "duplicate-width", kind: "distance",
+        first: { entityId: "plate-outline", point: "left" },
+        second: { entityId: "plate-outline", point: "right" }, axis: "x", valueM: 0.08,
+      },
+      {
+        id: "plate-height", kind: "distance",
+        first: { entityId: "plate-outline", point: "bottom" },
+        second: { entityId: "plate-outline", point: "top" }, axis: "y", valueM: 0.04,
+      },
+    ], "sketch-over-constrained"],
+  ] as const)("rejects a %s resolved sketch with a typed diagnostic", async (_label, constraints, code) => {
+    const source = await plateDocument();
+    const content = structuredClone(source) as Record<string, unknown>;
+    delete content.revision;
+    const document = await defineDesignDocument({
+      ...content,
+      sketches: [{ ...source.sketches[0], constraints }],
+    });
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    try {
+      await expect(rebuildDocument(
+        bridge, document, ["brep"], new AbortController().signal,
+      )).rejects.toMatchObject({ code });
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
+  it("rejects a disjoint union instead of publishing a multi-solid body", async () => {
+    const plate = await plateDocument();
+    const content = structuredClone(plate) as Record<string, unknown>;
+    delete content.revision;
+    const document = await defineDesignDocument({
+      ...content,
+      sketches: [
+        ...plate.sketches,
+        {
+          id: "remote-sketch", plane: "frame:world",
+          entities: [{ id: "remote-outline", kind: "rectangle", centerM: [0.2, 0], sizeM: [0.01, 0.01] }],
+          constraints: [
+            {
+              id: "remote-width", kind: "distance",
+              first: { entityId: "remote-outline", point: "left" },
+              second: { entityId: "remote-outline", point: "right" }, axis: "x", valueM: 0.01,
+            },
+            {
+              id: "remote-height", kind: "distance",
+              first: { entityId: "remote-outline", point: "bottom" },
+              second: { entityId: "remote-outline", point: "top" }, axis: "y", valueM: 0.01,
+            },
+          ],
+        },
+      ],
+      features: [
+        ...plate.features,
+        { id: "remote", kind: "extrude", sketchId: "remote-sketch", distanceM: 0.01 },
+        { id: "disjoint", kind: "union", leftFeatureId: "plate", rightFeatureId: "remote" },
+      ],
+      bodies: [{ id: "disjoint-body", featureId: "disjoint" }],
+    });
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    try {
+      await expect(rebuildDocument(
+        bridge, document, ["brep"], new AbortController().signal,
+      )).rejects.toMatchObject({ code: "invalid-solid" });
       expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
     } finally {
       bridge.dispose();

@@ -187,9 +187,14 @@ export function addModelIntegrityIssues(
   const featureIds = new Set(value.features.map(({ id }) => id));
   const consumedFeatures = new Set(value.features.flatMap((feature) => feature.kind === "extrude" || feature.kind === "revolve" ? [] : [feature.leftFeatureId, feature.rightFeatureId]));
   const bodies = new Map(value.bodies.map((body) => [body.id, body]));
+  const terminalFeatureOwners = new Set<string>();
   for (const body of value.bodies) {
     if (!featureIds.has(body.featureId)) context.addIssue({ code: "custom", message: `Body feature is unresolved: ${body.featureId}` });
     else if (consumedFeatures.has(body.featureId)) context.addIssue({ code: "custom", message: `Body feature must be terminal: ${body.featureId}` });
+    if (terminalFeatureOwners.has(body.featureId)) {
+      context.addIssue({ code: "custom", message: `Terminal feature has multiple body owners: ${body.featureId}` });
+    }
+    terminalFeatureOwners.add(body.featureId);
   }
   const ownedBodies = new Set<string>();
   for (const component of value.components) for (const bodyId of component.bodyIds) {

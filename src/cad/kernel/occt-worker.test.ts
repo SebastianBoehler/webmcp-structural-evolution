@@ -29,7 +29,7 @@ class ControlledWorkerScope {
 
 async function evaluation(requestId: string, requestedOutputs: readonly CadOutput[] = ["mass-properties"]) {
   const document = await defineDesignDocument({
-    id: "part", label: "Part", schemaVersion: 1,
+    id: "part", label: "Part", schemaVersion: 2,
     units: { length: "mm", angle: "deg", mass: "kg" }, createdBy: { kind: "agent", id: "test" },
     frames: [{
       id: "world", label: "World",
@@ -45,7 +45,17 @@ async function evaluation(requestId: string, requestedOutputs: readonly CadOutpu
     sketches: [{
       id: "plate-sketch", plane: "frame:world",
       entities: [{ id: "outline", kind: "rectangle", centerM: [0, 0], sizeM: [{ parameterId: "plate-width" }, 0.04] }],
-      constraints: [],
+      constraints: [
+        {
+          id: "width", kind: "distance", first: { entityId: "outline", point: "left" },
+          second: { entityId: "outline", point: "right" }, axis: "x",
+          valueM: { parameterId: "plate-width" },
+        },
+        {
+          id: "height", kind: "distance", first: { entityId: "outline", point: "bottom" },
+          second: { entityId: "outline", point: "top" }, axis: "y", valueM: 0.04,
+        },
+      ],
     }],
     features: [{ id: "plate", kind: "extrude", sketchId: "plate-sketch", distanceM: 0.01 }],
     bodies: [{ id: "plate-body", featureId: "plate" }],

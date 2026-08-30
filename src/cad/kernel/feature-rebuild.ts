@@ -11,6 +11,7 @@ import type {
 import type { OcctBridge } from "./occt-bridge";
 import { assertExactSolid } from "./exact-solid";
 import { CadRebuildError } from "./rebuild-errors";
+import { validateResolvedSketchConstraints } from "./sketch-constraint-validation";
 import {
   directionOnSketch,
   pointOnSketch,
@@ -144,7 +145,10 @@ export async function rebuildDocument(
       const rebuiltFeatures: RebuiltFeatureShape[] = [];
       const resolve = (expression: ScalarExpression, kind: "length" | "angle", label: string) =>
         resolveScalar(document, expression, kind, label);
-      for (const sketch of document.sketches) preflightSketchExpressions(sketch, resolve);
+      for (const sketch of document.sketches) {
+        preflightSketchExpressions(sketch, resolve);
+        validateResolvedSketchConstraints(sketch, resolve);
+      }
       for (const feature of document.features) {
         if (feature.kind === "extrude") {
           if (resolve(feature.distanceM, "length", `${feature.id}.distanceM`) <= 0) {

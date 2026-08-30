@@ -62,6 +62,28 @@ describe("STEP exchange", () => {
     expect(kernel.shapeCount).toBe(0);
   });
 
+  it("rejects STEP containing multiple exact solids without leaking handles", async () => {
+    using kernel = await OcctKernel.init();
+    const first = kernel.makeBox(0.01, 0.01, 0.01);
+    const secondAtOrigin = kernel.makeBox(0.01, 0.01, 0.01);
+    const second = kernel.translate(secondAtOrigin, 0.02, 0, 0);
+    const compound = kernel.makeCompound([first, second]);
+    try {
+      const step = exportStepBytes(kernel, compound);
+      const beforeImport = kernel.shapeCount;
+      expect(() => importStepBytes(kernel, step)).toThrowError(expect.objectContaining({
+        name: "CadRebuildError", code: "invalid-solid",
+      }));
+      expect(kernel.shapeCount).toBe(beforeImport);
+    } finally {
+      kernel.release(compound);
+      kernel.release(second);
+      kernel.release(secondAtOrigin);
+      kernel.release(first);
+    }
+    expect(kernel.shapeCount).toBe(0);
+  });
+
   it("maps malformed STEP data to a typed invalid-solid failure", async () => {
     using kernel = await OcctKernel.init();
     const beforeImport = kernel.shapeCount;
