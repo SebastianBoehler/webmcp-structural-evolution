@@ -157,6 +157,7 @@ export const EngineeringJobEventSchema = z.discriminatedUnion("state", [
 
 export type CadEvaluationRequest = z.infer<typeof CadEvaluationRequestSchema>;
 export type CadEvaluationEvent = z.infer<typeof CadEvaluationEventSchema>;
+export type CadOutput = z.infer<typeof CadOutputSchema>;
 export type EngineeringJobRequest = z.infer<typeof EngineeringJobRequestSchema>;
 export type EngineeringJobEvent = z.infer<typeof EngineeringJobEventSchema>;
 

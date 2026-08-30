@@ -14,6 +14,9 @@ importers:
       occt-import-js:
         specifier: 0.0.23
         version: 0.0.23
+      occt-wasm:
+        specifier: 4.3.2
+        version: 4.3.2
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -487,6 +490,9 @@ packages:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
 
+  comlink@4.4.2:
+    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
+
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
@@ -663,6 +669,9 @@ packages:
 
   occt-import-js@0.0.23:
     resolution: {integrity: sha512-RFfYQXYFX5C1mB1Aywm0ShcUKzXOr/VzTnlzhBSDJOR6YCAPt1HYCzeXWg1vwwjn/cUxwqRNhhtf1dlewoZYCQ==}
+
+  occt-wasm@4.3.2:
+    resolution: {integrity: sha512-bqCr8VbioWYn72WpeZwc7fFAYp++GMv7uHahJJ9DvSBgaxJC8vwiOyrr0Lf/FNvIXD54QjLvj8eaXftaUXVojw==}
 
   parse5@8.0.1:
     resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
@@ -1203,6 +1212,8 @@ snapshots:
 
   chai@6.2.2: {}
 
+  comlink@4.4.2: {}
+
   convert-source-map@2.0.0: {}
 
   css-tree@3.2.1:
@@ -1348,6 +1359,10 @@ snapshots:
   obug@2.1.4: {}
 
   occt-import-js@0.0.23: {}
+
+  occt-wasm@4.3.2:
+    dependencies:
+      comlink: 4.4.2
 
   parse5@8.0.1:
     dependencies:

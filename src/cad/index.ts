@@ -8,6 +8,7 @@ export {
   type ArtifactRecord,
 } from "./artifact-contract";
 export { invalidateArtifacts } from "./artifact-invalidation";
+export { createOcctCadAdapter } from "./kernel/occt-adapter";
 export {
   DesignCommandSchema,
   DesignPreconditionSchema,
@@ -85,6 +86,7 @@ export {
   type CadEvaluationEvent,
   type CadEvaluationRequest,
   type CadKernelAdapter,
+  type CadOutput,
   type EngineeringJobEvent,
   type EngineeringJobRequest,
 } from "./runtime-contracts";

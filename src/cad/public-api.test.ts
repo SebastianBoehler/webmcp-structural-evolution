@@ -60,6 +60,7 @@ describe("CAD public API", () => {
       "createDesignDocument",
       "createDesignHistory",
       "createDesignSession",
+      "createOcctCadAdapter",
       "defineActionReceipt",
       "defineArtifactRecord",
       "defineCadEvaluationRequest",

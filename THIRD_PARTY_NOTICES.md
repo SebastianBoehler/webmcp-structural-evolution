@@ -1,0 +1,14 @@
+# Third-Party Notices
+
+## occt-wasm 4.3.2
+
+The `occt-wasm` TypeScript wrapper and build tooling are available under
+MIT OR Apache-2.0. Source: <https://github.com/andymai/occt-wasm>.
+
+The separately emitted `occt-wasm.wasm` binary contains Open CASCADE
+Technology (OCCT) and is licensed under LGPL-2.1-only. OCCT source and license
+information are available from <https://dev.opencascade.org/resources/download>.
+
+The application loads this Wasm binary by URL through `OcctKernel.init({ wasm })`.
+It is emitted as a separate asset so recipients can replace the LGPL component
+without modifying the application source.
