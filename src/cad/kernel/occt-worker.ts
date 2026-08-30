@@ -1,6 +1,7 @@
 import { OcctKernel } from "occt-wasm";
 import occtWasmUrl from "occt-wasm/dist/occt-wasm.wasm?url";
 
+import { CadResourceLimitError } from "../cad-resource-limits";
 import {
   defineCadEvaluationRequest,
   type CadEvaluationRequest,
@@ -52,6 +53,7 @@ const classifyFailure = (error: unknown): OcctWorkerFailureCode => {
   if (/out of memory|memory access out of bounds|allocation failed/i.test(message)) {
     return "memory-exhausted";
   }
+  if (error instanceof CadResourceLimitError) return "resource-limit";
   if (error instanceof CadRebuildError) return error.code;
   return "feature-failed";
 };

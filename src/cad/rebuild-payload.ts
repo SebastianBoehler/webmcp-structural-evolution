@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  assertCadResourceLimit,
+  assertSemanticMeshUsage,
+  CAD_RESOURCE_LIMITS,
+  CadResourceLimitError,
+} from "./cad-resource-limits";
+
 const finite = z.number().finite();
 const nonnegative = finite.nonnegative();
 const id = z.string().min(1);
@@ -8,6 +15,12 @@ const typedArray = <Value extends ArrayBufferView>(tag: string) => z.custom<Valu
   (value) => Object.prototype.toString.call(value) === `[object ${tag}]`,
   `Expected ${tag}`,
 );
+const someValue = (values: ArrayLike<number>, predicate: (value: number) => boolean) => {
+  for (let index = 0; index < values.length; index += 1) {
+    if (predicate(values[index]!)) return true;
+  }
+  return false;
+};
 
 export const OpaqueBytesPayloadSchema = z.object({
   bytes: typedArray<Uint8Array>("Uint8Array"),
@@ -39,14 +52,29 @@ export const SemanticMeshPayloadSchema = z.object({
   edges: z.array(SemanticTopologySchema),
   polylineEdgeIndices: typedArray<Uint32Array>("Uint32Array"),
 }).strict().superRefine((mesh, context) => {
+  try {
+    assertSemanticMeshUsage({
+      vertices: mesh.positionsM.length / 3,
+      triangles: mesh.indices.length / 3,
+      edgePoints: mesh.edgePointsM.length / 3,
+      topologyRecords: mesh.faces.length + mesh.edges.length,
+      bytes: mesh.positionsM.byteLength + mesh.normals.byteLength + mesh.indices.byteLength
+        + mesh.triangleFaceIndices.byteLength + mesh.edgePointsM.byteLength
+        + mesh.edgePointRanges.byteLength + mesh.polylineEdgeIndices.byteLength,
+    });
+  } catch (error) {
+    if (error instanceof CadResourceLimitError) {
+      context.addIssue({ code: "custom", message: error.message });
+    } else throw error;
+  }
   if (mesh.positionsM.length % 3 !== 0 || mesh.normals.length !== mesh.positionsM.length) {
     context.addIssue({ code: "custom", message: "Semantic mesh vertex buffers are inconsistent" });
   }
   if (mesh.indices.length % 3 !== 0 || mesh.triangleFaceIndices.length !== mesh.indices.length / 3) {
     context.addIssue({ code: "custom", message: "Semantic mesh triangle ownership is inconsistent" });
   }
-  if ([...mesh.indices].some((index) => index >= mesh.positionsM.length / 3)
-    || [...mesh.triangleFaceIndices].some((index) => index >= mesh.faces.length)) {
+  if (someValue(mesh.indices, (index) => index >= mesh.positionsM.length / 3)
+    || someValue(mesh.triangleFaceIndices, (index) => index >= mesh.faces.length)) {
     context.addIssue({ code: "custom", message: "Semantic mesh references an unavailable vertex or face" });
   }
   if (mesh.faces.some(({ signature }) => signature.kind !== "face")
@@ -63,7 +91,7 @@ export const SemanticMeshPayloadSchema = z.object({
       context.addIssue({ code: "custom", message: "Semantic edge range is outside the point buffer" });
     }
   }
-  if ([...mesh.polylineEdgeIndices].some((index) => index >= mesh.edges.length)) {
+  if (someValue(mesh.polylineEdgeIndices, (index) => index >= mesh.edges.length)) {
     context.addIssue({ code: "custom", message: "Semantic edge ownership is unavailable" });
   }
 });
@@ -89,35 +117,85 @@ export const SectionCurvesPayloadSchema = z.object({
 
 const encoder = new TextEncoder();
 
+interface CanonicalChunks {
+  readonly chunks: Uint8Array<ArrayBufferLike>[];
+  byteLength: number;
+  nodes: number;
+}
+
+function pushBounded(context: CanonicalChunks, bytes: Uint8Array<ArrayBufferLike>): void {
+  const nextByteLength = context.byteLength + bytes.byteLength;
+  assertCadResourceLimit(
+    "canonical digest bytes", nextByteLength, CAD_RESOURCE_LIMITS.canonicalDigestBytes,
+  );
+  context.chunks.push(bytes);
+  context.byteLength = nextByteLength;
+}
+
+function encodedByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff
+      && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4;
+      index += 1;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+function encodeCanonicalText(value: string): Uint8Array {
+  assertCadResourceLimit(
+    "canonical text bytes", encodedByteLength(value), CAD_RESOURCE_LIMITS.canonicalDigestBytes,
+  );
+  return encoder.encode(value);
+}
+
 function framed(
-  chunks: Uint8Array<ArrayBufferLike>[],
+  context: CanonicalChunks,
   label: string,
   bytes: Uint8Array<ArrayBufferLike> = new Uint8Array(),
 ): void {
-  chunks.push(encoder.encode(`${label}:${bytes.byteLength}:`), bytes);
+  pushBounded(context, encoder.encode(`${label}:${bytes.byteLength}:`));
+  pushBounded(context, bytes);
 }
 
-function appendCanonical(value: unknown, chunks: Uint8Array<ArrayBufferLike>[]): void {
-  if (value === null) return framed(chunks, "null");
+function appendCanonical(value: unknown, context: CanonicalChunks): void {
+  context.nodes += 1;
+  assertCadResourceLimit(
+    "canonical digest nodes", context.nodes, CAD_RESOURCE_LIMITS.canonicalDigestNodes,
+  );
+  if (value === null) return framed(context, "null");
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
-    return framed(chunks, typeof value, encoder.encode(Object.is(value, -0) ? "-0" : String(value)));
+    return framed(context, typeof value, encodeCanonicalText(Object.is(value, -0) ? "-0" : String(value)));
   }
   if (ArrayBuffer.isView(value)) {
     const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    return framed(chunks, value.constructor.name, bytes);
+    return framed(context, value.constructor.name, bytes);
   }
   if (Array.isArray(value)) {
-    framed(chunks, `array-${value.length}`);
-    for (const item of value) appendCanonical(item, chunks);
+    framed(context, `array-${value.length}`);
+    for (const item of value) appendCanonical(item, context);
     return;
   }
   if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
     const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
-    framed(chunks, `object-${keys.length}`);
+    const keys: string[] = [];
+    for (const key in record) if (Object.hasOwn(record, key)) {
+      assertCadResourceLimit(
+        "canonical digest nodes", context.nodes + keys.length + 1,
+        CAD_RESOURCE_LIMITS.canonicalDigestNodes,
+      );
+      keys.push(key);
+    }
+    keys.sort();
+    framed(context, `object-${keys.length}`);
     for (const key of keys) {
-      framed(chunks, "key", encoder.encode(key));
-      appendCanonical(record[key], chunks);
+      framed(context, "key", encodeCanonicalText(key));
+      appendCanonical(record[key], context);
     }
     return;
   }
@@ -126,12 +204,11 @@ function appendCanonical(value: unknown, chunks: Uint8Array<ArrayBufferLike>[]):
 
 export async function digestCadOutputPayload(payload: unknown): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new Error("Web Crypto SHA-256 is unavailable");
-  const chunks: Uint8Array<ArrayBufferLike>[] = [];
-  appendCanonical(payload, chunks);
-  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-  const bytes = new Uint8Array(size);
+  const context: CanonicalChunks = { chunks: [], byteLength: 0, nodes: 0 };
+  appendCanonical(payload, context);
+  const bytes = new Uint8Array(context.byteLength);
   let offset = 0;
-  for (const chunk of chunks) {
+  for (const chunk of context.chunks) {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }

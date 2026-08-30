@@ -1,5 +1,11 @@
 import type { OcctKernel, ShapeHandle } from "occt-wasm";
 
+import {
+  assertCadResourceLimit,
+  assertSemanticMeshUsage,
+  CAD_RESOURCE_LIMITS,
+  type SemanticMeshUsage,
+} from "../cad-resource-limits";
 import type { SemanticMeshPayload, SemanticTopology } from "../rebuild-payload";
 import {
   matchTopologyReference,
@@ -7,8 +13,19 @@ import {
   type TopologySignature,
 } from "./persistent-references";
 import { CadRebuildError } from "./rebuild-errors";
+import {
+  collectTopology,
+  type CollectedTopology,
+  type HashedSignature,
+} from "./semantic-topology-collection";
+import {
+  concatFloat32,
+  concatOffsetUint32,
+  concatUint32,
+  containsUint32,
+  type OffsetUint32Part,
+} from "./typed-array-assembly";
 
-const HASH_UPPER_BOUND = 2_147_483_647;
 export const SEMANTIC_LINEAR_DEFLECTION_M = 1e-4;
 export const SEMANTIC_ANGULAR_DEFLECTION_RAD = 0.25;
 
@@ -22,79 +39,6 @@ export interface RebuiltBodyShape {
   readonly terminalFeatureId: string;
   readonly lineageFeatureIds: readonly string[];
   readonly shape: ShapeHandle;
-}
-
-interface HashedSignature {
-  readonly hash: number;
-  readonly signature: TopologySignature;
-}
-
-interface CollectedTopology {
-  readonly faces: readonly HashedSignature[];
-  readonly edges: readonly HashedSignature[];
-}
-
-const geometryForSurface = (value: string): TopologySignature["geometry"] =>
-  value === "plane" || value === "cylinder" || value === "cone" || value === "sphere"
-    ? value
-    : "other";
-
-function edgeFaces(kernel: OcctKernel, shape: ShapeHandle): Map<number, number[]> {
-  const flat = kernel.edgeToFaceMap(shape, HASH_UPPER_BOUND);
-  const result = new Map<number, number[]>();
-  for (let index = 0; index < flat.length;) {
-    const edgeHash = flat[index++]!;
-    const count = flat[index++]!;
-    const hashes = flat.slice(index, index + count);
-    index += count;
-    const existing = result.get(edgeHash) ?? [];
-    result.set(edgeHash, [...new Set([...existing, ...hashes])]);
-  }
-  return result;
-}
-
-function collectTopology(
-  kernel: OcctKernel,
-  shape: ShapeHandle,
-  ownerFeatureId: string,
-): CollectedTopology {
-  const faces = kernel.getSubShapes(shape, "face");
-  const faceKinds = new Map<number, string>();
-  for (const face of faces) {
-    faceKinds.set(kernel.hashCode(face, HASH_UPPER_BOUND), kernel.surfaceType(face));
-  }
-  const faceSignatures = faces.map((face): HashedSignature => {
-    const center = kernel.getSurfaceCenterOfMass(face);
-    const adjacentKinds = kernel.adjacentFaces(shape, face).map((adjacent) => kernel.surfaceType(adjacent)).sort();
-    return {
-      hash: kernel.hashCode(face, HASH_UPPER_BOUND),
-      signature: {
-        ownerFeatureId,
-        kind: "face",
-        geometry: geometryForSurface(kernel.surfaceType(face)),
-        centroidM: [center.x, center.y, center.z],
-        measureSI: kernel.getSurfaceArea(face),
-        adjacentKinds,
-      },
-    };
-  });
-  const adjacency = edgeFaces(kernel, shape);
-  const edgeSignatures = kernel.getSubShapes(shape, "edge").map((edge): HashedSignature => {
-    const hash = kernel.hashCode(edge, HASH_UPPER_BOUND);
-    const center = kernel.getLinearCenterOfMass(edge);
-    return {
-      hash,
-      signature: {
-        ownerFeatureId,
-        kind: "edge",
-        geometry: "curve",
-        centroidM: [center.x, center.y, center.z],
-        measureSI: kernel.curveLength(edge),
-        adjacentKinds: (adjacency.get(hash) ?? []).map((faceHash) => faceKinds.get(faceHash) ?? "other").sort(),
-      },
-    };
-  });
-  return { faces: faceSignatures, edges: edgeSignatures };
 }
 
 function assignOwner(
@@ -156,24 +100,6 @@ function semanticRecords(
   return { records, indexByHash };
 }
 
-const concatFloat32 = (values: readonly Float32Array[]) => {
-  const result = new Float32Array(values.reduce((sum, value) => sum + value.length, 0));
-  let offset = 0;
-  for (const value of values) {
-    result.set(value, offset);
-    offset += value.length;
-  }
-  return result;
-};
-
-function appendNumbers(target: number[], values: ArrayLike<number>, offset = 0): void {
-  const start = target.length;
-  target.length += values.length;
-  for (let index = 0; index < values.length; index += 1) {
-    target[start + index] = values[index]! + offset;
-  }
-}
-
 function appendItems<Value>(target: Value[], values: readonly Value[]): void {
   const start = target.length;
   target.length += values.length;
@@ -187,75 +113,139 @@ export function tessellateSemanticBodies(
   features: readonly RebuiltFeatureShape[],
   bodies: readonly RebuiltBodyShape[],
 ): SemanticMeshPayload {
-  const featureTopology = new Map(features.map((feature) => [
-    feature.id,
-    collectTopology(kernel, feature.shape, feature.id),
-  ]));
+  const featureTopology = new Map<string, CollectedTopology>();
+  let featureTopologyRecords = 0;
+  for (const feature of features) {
+    const topology = collectTopology(kernel, feature.shape, feature.id);
+    featureTopologyRecords += topology.faces.length + topology.edges.length;
+    assertCadResourceLimit(
+      "feature topology records", featureTopologyRecords,
+      CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords,
+    );
+    featureTopology.set(feature.id, topology);
+  }
   const positionParts: Float32Array[] = [];
   const normalParts: Float32Array[] = [];
-  const indexValues: number[] = [];
-  const triangleFaceIndices: number[] = [];
+  const indexParts: OffsetUint32Part[] = [];
+  const triangleFaceParts: Uint32Array[] = [];
   const edgePointParts: Float32Array[] = [];
-  const edgePointRanges: number[] = [];
-  const polylineEdgeIndices: number[] = [];
+  const edgeRangeParts: Uint32Array[] = [];
+  const polylineEdgeParts: Uint32Array[] = [];
   const allFaces: SemanticTopology[] = [];
   const allEdges: SemanticTopology[] = [];
   let vertexOffset = 0;
   let edgePointOffset = 0;
+  let positionLength = 0;
+  let normalLength = 0;
+  let indexLength = 0;
+  let triangleOwnerLength = 0;
+  let edgePointLength = 0;
+  let edgeRangeLength = 0;
+  let polylineEdgeLength = 0;
+  let usage: SemanticMeshUsage = {
+    vertices: 0, triangles: 0, edgePoints: 0, topologyRecords: 0, bytes: 0,
+  };
 
   for (const body of bodies) {
     const topology = collectTopology(kernel, body.shape, body.terminalFeatureId);
     const faces = semanticRecords(topology.faces, body, featureTopology);
     const edges = semanticRecords(topology.edges, body, featureTopology);
-    const faceOffset = allFaces.length;
-    const edgeOffset = allEdges.length;
-    appendItems(allFaces, faces.records);
-    appendItems(allEdges, edges.records);
-
     const mesh = kernel.meshShape(body.shape, {
       linearDeflection: SEMANTIC_LINEAR_DEFLECTION_M,
       angularDeflection: SEMANTIC_ANGULAR_DEFLECTION_RAD,
       relative: false,
     });
-    if (!mesh.faceGroups) throw new Error(`OCCT tessellation omitted face groups: ${body.id}`);
+    if (!mesh.faceGroups || mesh.faceGroups.length % 3 !== 0) {
+      throw new Error(`OCCT tessellation omitted valid face groups: ${body.id}`);
+    }
+    const wireframe = kernel.wireframe(body.shape, SEMANTIC_LINEAR_DEFLECTION_M);
+    if (wireframe.edgeGroups.length % 3 !== 0 || wireframe.points.length % 3 !== 0) {
+      throw new Error(`OCCT tessellation returned invalid edge buffers: ${body.id}`);
+    }
+    const edgeGroupCount = wireframe.edgeGroups.length / 3;
+    const nextUsage = {
+      vertices: usage.vertices + mesh.vertexCount,
+      triangles: usage.triangles + mesh.triangleCount,
+      edgePoints: usage.edgePoints + wireframe.points.length / 3,
+      topologyRecords: usage.topologyRecords + faces.records.length + edges.records.length,
+      bytes: usage.bytes + mesh.positions.byteLength + mesh.normals.byteLength
+        + mesh.indices.byteLength + mesh.triangleCount * Uint32Array.BYTES_PER_ELEMENT
+        + wireframe.points.byteLength + edgeGroupCount * 3 * Uint32Array.BYTES_PER_ELEMENT,
+    } satisfies SemanticMeshUsage;
+    assertSemanticMeshUsage(nextUsage);
+    usage = nextUsage;
+    if (mesh.positions.length !== mesh.vertexCount * 3
+      || mesh.normals.length !== mesh.positions.length
+      || mesh.indices.length !== mesh.triangleCount * 3
+      || containsUint32(mesh.indices, (index) => index >= mesh.vertexCount)) {
+      throw new Error(`OCCT tessellation returned inconsistent mesh buffers: ${body.id}`);
+    }
+    const faceOffset = allFaces.length;
+    const edgeOffset = allEdges.length;
+    appendItems(allFaces, faces.records);
+    appendItems(allEdges, edges.records);
     positionParts.push(mesh.positions);
     normalParts.push(mesh.normals);
-    appendNumbers(indexValues, mesh.indices, vertexOffset);
-    const localOwners = new Array<number>(mesh.triangleCount).fill(-1);
+    indexParts.push({ values: mesh.indices, offset: vertexOffset });
+    const localOwners = new Uint32Array(mesh.triangleCount);
+    localOwners.fill(0xffff_ffff);
     for (let index = 0; index < mesh.faceGroups.length; index += 3) {
-      const start = mesh.faceGroups[index]! / 3;
-      const count = mesh.faceGroups[index + 1]! / 3;
+      const rawStart = mesh.faceGroups[index]!;
+      const rawCount = mesh.faceGroups[index + 1]!;
+      if (rawStart % 3 !== 0 || rawCount % 3 !== 0
+        || rawStart + rawCount > mesh.indices.length) {
+        throw new Error(`OCCT tessellation returned an invalid face range: ${body.id}`);
+      }
+      const start = rawStart / 3;
+      const count = rawCount / 3;
       const owner = faces.indexByHash.get(mesh.faceGroups[index + 2]!);
       if (owner === undefined) throw new Error(`Tessellated face has no semantic owner: ${body.id}`);
       localOwners.fill(faceOffset + owner, start, start + count);
     }
-    if (localOwners.some((owner) => owner < 0)) throw new Error(`Triangle has no semantic owner: ${body.id}`);
-    appendNumbers(triangleFaceIndices, localOwners);
+    if (containsUint32(localOwners, (owner) => owner === 0xffff_ffff)) {
+      throw new Error(`Triangle has no semantic owner: ${body.id}`);
+    }
+    triangleFaceParts.push(localOwners);
+    positionLength += mesh.positions.length;
+    normalLength += mesh.normals.length;
+    indexLength += mesh.indices.length;
+    triangleOwnerLength += localOwners.length;
     vertexOffset += mesh.vertexCount;
 
-    const wireframe = kernel.wireframe(body.shape, SEMANTIC_LINEAR_DEFLECTION_M);
     edgePointParts.push(wireframe.points);
+    const localRanges = new Uint32Array(edgeGroupCount * 2);
+    const localEdges = new Uint32Array(edgeGroupCount);
     for (let index = 0; index < wireframe.edgeGroups.length; index += 3) {
+      const rawStart = wireframe.edgeGroups[index]!;
+      const rawCount = wireframe.edgeGroups[index + 1]!;
+      if (rawStart % 3 !== 0 || rawCount % 3 !== 0
+        || rawStart + rawCount > wireframe.points.length) {
+        throw new Error(`OCCT tessellation returned an invalid edge range: ${body.id}`);
+      }
       const owner = edges.indexByHash.get(wireframe.edgeGroups[index + 2]!);
       if (owner === undefined) throw new Error(`Tessellated edge has no semantic owner: ${body.id}`);
-      edgePointRanges.push(
-        edgePointOffset + wireframe.edgeGroups[index]! / 3,
-        wireframe.edgeGroups[index + 1]! / 3,
-      );
-      polylineEdgeIndices.push(edgeOffset + owner);
+      const group = index / 3;
+      localRanges[group * 2] = edgePointOffset + rawStart / 3;
+      localRanges[group * 2 + 1] = rawCount / 3;
+      localEdges[group] = edgeOffset + owner;
     }
+    edgeRangeParts.push(localRanges);
+    polylineEdgeParts.push(localEdges);
+    edgePointLength += wireframe.points.length;
+    edgeRangeLength += localRanges.length;
+    polylineEdgeLength += localEdges.length;
     edgePointOffset += wireframe.points.length / 3;
   }
 
   return {
-    positionsM: concatFloat32(positionParts),
-    normals: concatFloat32(normalParts),
-    indices: Uint32Array.from(indexValues),
+    positionsM: concatFloat32(positionParts, positionLength),
+    normals: concatFloat32(normalParts, normalLength),
+    indices: concatOffsetUint32(indexParts, indexLength),
     faces: allFaces,
-    triangleFaceIndices: Uint32Array.from(triangleFaceIndices),
-    edgePointsM: concatFloat32(edgePointParts),
-    edgePointRanges: Uint32Array.from(edgePointRanges),
+    triangleFaceIndices: concatUint32(triangleFaceParts, triangleOwnerLength),
+    edgePointsM: concatFloat32(edgePointParts, edgePointLength),
+    edgePointRanges: concatUint32(edgeRangeParts, edgeRangeLength),
     edges: allEdges,
-    polylineEdgeIndices: Uint32Array.from(polylineEdgeIndices),
+    polylineEdgeIndices: concatUint32(polylineEdgeParts, polylineEdgeLength),
   };
 }

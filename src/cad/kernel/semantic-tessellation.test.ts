@@ -1,11 +1,12 @@
 import type { OcctKernel, ShapeHandle } from "occt-wasm";
 import { describe, expect, it } from "vitest";
 
+import { CAD_RESOURCE_LIMITS } from "../cad-resource-limits";
 import { tessellateSemanticBodies } from "./semantic-tessellation";
 
 const handle = (id: string) => ({ id }) as unknown as ShapeHandle;
 
-function semanticKernel(baseFaceCount: number, meshIndexCount = 3) {
+function semanticKernel(baseFaceCount: number, meshIndexCount = 3, vertexCount = 1) {
   const baseShape = handle("base-shape");
   const bodyShape = handle("body-shape");
   const baseFaces = Array.from({ length: baseFaceCount }, (_, index) => handle(`base-face-${index}`));
@@ -30,7 +31,7 @@ function semanticKernel(baseFaceCount: number, meshIndexCount = 3) {
       positions: new Float32Array([0, 0, 0]),
       normals: new Float32Array([0, 0, 1]),
       indices: new Uint32Array(meshIndexCount),
-      vertexCount: 1,
+      vertexCount,
       triangleCount: meshIndexCount / 3,
       faceGroups: new Uint32Array([0, meshIndexCount, bodyFaceHash]),
     }),
@@ -78,5 +79,20 @@ describe("semantic tessellation", () => {
     expect(mesh.indices).toHaveLength(200_001);
     expect(mesh.triangleFaceIndices).toHaveLength(66_667);
     expect(mesh.triangleFaceIndices.every((owner) => owner === 0)).toBe(true);
+  });
+
+  it("rejects a mesh over the explicit vertex capability before ownership allocation", () => {
+    const { kernel, baseShape, bodyShape } = semanticKernel(
+      1, 3, CAD_RESOURCE_LIMITS.semanticMeshVertices + 1,
+    );
+
+    expect(() => tessellateSemanticBodies(
+      kernel,
+      [{ id: "base", shape: baseShape }],
+      [{
+        id: "body", terminalFeatureId: "base",
+        lineageFeatureIds: ["base"], shape: bodyShape,
+      }],
+    )).toThrow(expect.objectContaining({ code: "resource-limit" }));
   });
 });

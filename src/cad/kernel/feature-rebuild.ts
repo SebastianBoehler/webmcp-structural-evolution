@@ -1,5 +1,6 @@
 import type { OcctKernel, ShapeHandle } from "occt-wasm";
 
+import { CadResourceLimitError } from "../cad-resource-limits";
 import type { DesignDocument } from "../document-schema";
 import type { CadOutput } from "../runtime-contracts";
 import type {
@@ -241,7 +242,7 @@ export async function rebuildDocument(
         ...(outputs.includes("step") ? { step: { bytes: exportStepBytes(kernel, resultShape) } } : {}),
       };
     } catch (error) {
-      if (error instanceof CadRebuildError
+      if (error instanceof CadRebuildError || error instanceof CadResourceLimitError
         || (error instanceof DOMException && error.name === "AbortError")) throw error;
       const message = error instanceof Error && error.message.length > 0
         ? error.message
