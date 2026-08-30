@@ -10,7 +10,7 @@ import {
   type ExactCadGateDependencies,
 } from "./browser-cad-gate";
 
-type Failure = "missing" | "invalid-solid" | "mass" | "volume" | "step" | "stale" | "late-success";
+type Failure = "missing" | "invalid-solid" | "mass" | "volume" | "step" | "stale" | "late-success" | "unquarantined";
 
 const semanticMesh: SemanticMeshPayload = {
   positionsM: new Float32Array([-0.05, -0.02, 0, 0.05, -0.02, 0, 0.05, 0.02, 0.02]),
@@ -105,7 +105,10 @@ function dependencies(failure?: Failure): ExactCadGateDependencies {
         return;
       }
       if (call === 3) {
-        emit({ requestId: request.requestId, state: "cancelled" });
+        emit({
+          requestId: request.requestId, state: "cancelled",
+          workerDisposition: failure === "unquarantined" ? "not-started" : "quarantined",
+        } as CadEvaluationEvent);
         if (failure === "late-success") setTimeout(() => {
           void successEvent(request.requestId, request.sourceRevision, 0.1).then(emit);
         }, 5);
@@ -156,7 +159,9 @@ describe("browser exact-CAD gate", () => {
     expect(result.measurements.maximumMassRelativeError).toBeLessThanOrEqual(1e-6);
     expect(result.measurements.maximumVolumeRelativeError).toBeLessThanOrEqual(1e-6);
     expect(result.stepRoundTrip.envelopeRelativeError).toBeLessThanOrEqual(1e-6);
-    expect(result.cancellation).toEqual({ outcome: "cancelled", lateSuccess: false });
+    expect(result.cancellation).toEqual({
+      outcome: "cancelled", lateSuccess: false, workerDisposition: "quarantined",
+    });
     expect(result.artifacts).toMatchObject({ staleCount: 0, invalidatedCount: 3 });
     expect(result.artifacts.activeCount).toBe(4);
     expect(result.renderMesh.triangleCount).toBe(1);
@@ -170,6 +175,7 @@ describe("browser exact-CAD gate", () => {
     ["step", /STEP envelope relative error/i],
     ["stale", /stale CAD artifact/i],
     ["late-success", /success after cancellation/i],
+    ["unquarantined", /worker was not quarantined/i],
   ] as const)("rejects %s gate evidence", async (failure, message) => {
     await expect(runExactCadGate(
       new AbortController().signal,

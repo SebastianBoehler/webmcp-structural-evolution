@@ -47,6 +47,16 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     void startNext();
   };
 
+  const cancelOperation = (owner: PendingOcctOperation, workerDisposition: "quarantined" | "not-started") => {
+    if (active !== owner) return;
+    if (workerDisposition === "quarantined") replaceWorker();
+    if (owner.kind === "evaluation") emit({
+      requestId: owner.requestId, state: "cancelled", workerDisposition,
+    });
+    else owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
+    finish();
+  };
+
   const protocolFailure = (message: string) => {
     if (active?.kind === "evaluation") emit({
       requestId: active.requestId, state: "failed",
@@ -66,9 +76,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     if (event.type === "succeeded" || event.type === "step-import-succeeded") return;
     if (active.signal.aborted && event.type !== "progress"
       && !(event.type === "failed" && isFatalOcctFailure(event.error.code))) {
-      if (active.kind === "evaluation") emit({ requestId: event.requestId, state: "cancelled" });
-      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
-      finish();
+      cancelOperation(active, "quarantined");
       return;
     }
     if (event.type === "progress") {
@@ -77,8 +85,8 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     if (event.type === "cancelled") {
-      if (active.kind === "evaluation") emit({ requestId: event.requestId, state: "cancelled" });
-      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
+      cancelOperation(active, "quarantined");
+      return;
     } else {
       if (active.kind === "evaluation") emit({
         requestId: event.requestId, state: "failed",
@@ -110,8 +118,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     if (owner.signal.aborted) {
-      emit({ requestId: event.requestId, state: "cancelled" });
-      finish();
+      cancelOperation(owner, "quarantined");
       return;
     }
     try {
@@ -137,8 +144,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     if (owner.signal.aborted) {
-      owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
-      finish();
+      cancelOperation(owner, "quarantined");
       return;
     }
     try {
@@ -222,12 +228,14 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   };
 
   function onAbort() {
-    if (!active) return;
+    const owner = active;
+    if (!owner) return;
     const request = OcctWorkerRequestSchema.parse({
       type: "cancel",
-      requestId: active.requestId,
+      requestId: owner.requestId,
     });
-    getWorker().postMessage(request);
+    try { getWorker().postMessage(request); } catch { /* quarantine below */ }
+    finally { cancelOperation(owner, "quarantined"); }
   }
 
   async function startNext() {
@@ -235,9 +243,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     active = queue.shift();
     if (!active) return;
     if (active.signal.aborted) {
-      if (active.kind === "evaluation") emit({ requestId: active.requestId, state: "cancelled" });
-      else active.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
-      finish();
+      cancelOperation(active, "not-started");
       return;
     }
     active.signal.addEventListener("abort", onAbort, { once: true });
@@ -252,9 +258,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
         : await OcctWorkerRequestSchema.parseAsync(message);
       if (active !== owner) return;
       if (owner.signal.aborted) {
-        if (owner.kind === "evaluation") emit({ requestId: owner.requestId, state: "cancelled" });
-        else owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
-        finish();
+        cancelOperation(owner, "quarantined");
         return;
       }
       getWorker().postMessage(validated);

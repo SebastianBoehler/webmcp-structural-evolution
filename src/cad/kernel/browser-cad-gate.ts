@@ -48,7 +48,10 @@ export interface ExactCadGateResult {
     readonly importedEnvelopeMm: readonly [number, number, number];
     readonly envelopeRelativeError: number;
   };
-  readonly cancellation: { readonly outcome: "cancelled"; readonly lateSuccess: false };
+  readonly cancellation: {
+    readonly outcome: "cancelled"; readonly lateSuccess: false;
+    readonly workerDisposition: "quarantined";
+  };
   readonly artifacts: { readonly invalidatedCount: number; readonly staleCount: 0; readonly activeCount: number };
   readonly renderMesh: CadMesh;
 }
@@ -236,6 +239,10 @@ export async function runExactCadGate(
     index > cancelledIndex && state === "succeeded") !== -1;
   if (lateSuccess) throw new Error("Exact CAD worker emitted success after cancellation");
   if (cancelledIndex === -1) throw new Error("Exact CAD cancellation did not terminate as cancelled");
+  const cancellation = cancelRun.value[cancelledIndex]!;
+  if (cancellation.state !== "cancelled" || cancellation.workerDisposition !== "quarantined") {
+    throw new Error("Exact CAD cancelled worker was not quarantined");
+  }
   const finalRun = await timed(async () => requireSuccess(await collectEvaluation(adapter, dimensionDocument, "final", signal)));
   await verifiedArtifacts(finalRun.value, dimensionDocument.revision);
   const hashes = {
@@ -253,7 +260,10 @@ export async function runExactCadGate(
     revisions: { initial: initialDocument.revision, dimension: dimensionDocument.revision }, hashes,
     measurements: { maximumMassRelativeError, maximumVolumeRelativeError, invalidSolidCount: 0 },
     stepRoundTrip: { expectedEnvelopeMm, importedEnvelopeMm, envelopeRelativeError },
-    cancellation: { outcome: "cancelled", lateSuccess },
+    cancellation: {
+      outcome: "cancelled", lateSuccess,
+      workerDisposition: cancellation.workerDisposition,
+    },
     artifacts: {
       invalidatedCount: edited.session.artifacts.invalidatedIds.length,
       staleCount: 0,

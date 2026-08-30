@@ -63,7 +63,7 @@ export function ExactCadGateView({ gate, capability, viewerEnvironment }: ExactC
           <div><dt>Invalid solids</dt><dd>{result.measurements.invalidSolidCount}</dd></div>
           <div><dt>STEP envelope relative error</dt><dd>{result.stepRoundTrip.envelopeRelativeError}</dd></div>
           <div><dt>Imported STEP envelope</dt><dd>{result.stepRoundTrip.importedEnvelopeMm.join(" × ")} mm</dd></div>
-          <div><dt>Cancellation</dt><dd>{result.cancellation.outcome}; late success {String(result.cancellation.lateSuccess)}</dd></div>
+          <div><dt>Cancellation</dt><dd>{result.cancellation.outcome}; worker {result.cancellation.workerDisposition}; late success {String(result.cancellation.lateSuccess)}</dd></div>
           <div><dt>Stale artifacts</dt><dd>{result.artifacts.staleCount}</dd></div>
           <div><dt>Invalidated artifacts</dt><dd>{result.artifacts.invalidatedCount}</dd></div>
           <div><dt>Active exact artifacts</dt><dd>{result.artifacts.activeCount}</dd></div>

@@ -22,23 +22,23 @@ Verdict: **passed**
 | Initial BREP SHA-256 | `0c72d3608fe4b4b1fdec869b1b45dd96971f8f2eba26a3b9e4af87d4d02a6df0` | digest-bound |
 | Dimension BREP SHA-256 | `5e5269d56f5044321499b1f0a9a95d9eeee5b5cddcb396643e0af4308f34e174` | differs from initial |
 | Final BREP SHA-256 | `5e5269d56f5044321499b1f0a9a95d9eeee5b5cddcb396643e0af4308f34e174` | deterministic final rebuild |
-| Initial STEP SHA-256 | `6610e33a109d2e6f22e923780092a9050bec283bc75e4348d2cc3af25b00f7b7` | digest-bound |
-| Dimension STEP SHA-256 | `8bf0b55f60eb034c8869ae9c274153d6aecf5bd1ac219893dfd23c06acab4c47` | differs from initial |
+| Initial STEP SHA-256 | `e0cc1245126ad5e2a2a7ed0ce824da258f29e71a6e9293ac1720b535263fa7d0` | digest-bound |
+| Dimension STEP SHA-256 | `cdfea4340c728ff4887f96b930ac8220e9dc4a2eca84b206a759f1673daf4f25` | differs from initial |
 | Maximum mass relative error | `2.7056603272190553e-15` | ≤ `1e-6` |
 | Maximum volume relative error | `2.7056603272190553e-15` | ≤ `1e-6` |
 | Invalid-solid count | `0` | `0` |
 | Imported STEP envelope | `100 × 40 × 20 mm` | exact expected envelope |
 | STEP envelope relative error | `0` | ≤ `1e-6` |
-| Cancellation | `cancelled`; late success `false` | no later success |
+| Cancellation | `cancelled`; worker `quarantined`; late success `false` | old worker detached and terminated |
 | Invalidated artifacts | `3` | initial BREP, semantic mesh, STEP removed on edit |
 | Stale artifacts | `0` | `0` |
 | Active exact artifacts | `4` | edited outputs plus exact imported BREP |
-| Initial rebuild | `372.785000 ms` | measured |
-| Dimension rebuild | `164.305000 ms` | measured |
-| STEP round-trip | `75.295000 ms` | measured |
-| Cancellation settle | `37.285000 ms` | includes bounded terminal quiescence |
-| Final rebuild | `145.285000 ms` | measured |
-| Total gate | `806.680000 ms` | measured |
+| Initial rebuild | `496.730000 ms` | measured |
+| Dimension rebuild | `164.285000 ms` | measured |
+| STEP round-trip | `64.270000 ms` | measured |
+| Cancellation settle | `33.025000 ms` | terminate/quarantine plus bounded observation |
+| Final rebuild | `552.265000 ms` | fresh worker initialization and rebuild |
+| Total gate | `1325.350000 ms` | measured |
 
 The STEP browser round-trip uses the serialized OCCT worker/adapter boundary. The worker exact-imports the exported bytes, rejects non-solids, measures mass and surface-precise bounds from the exact shape, returns a digest-bound BREP artifact dependent on the source STEP artifact, and the gate attaches it to the active `DesignSession`. The live asset inventory contained `exact-step-import.ts` and `step-exchange.ts`, with no `assembly/step-import`, `occt-import-js`, `FoundationJourney`, or demo-fixture asset loaded.
 
@@ -48,7 +48,7 @@ The STEP browser round-trip uses the serialized OCCT worker/adapter boundary. Th
 mise exec node@24.19.0 -- pnpm vitest run src/cad/kernel src/cad/runtime-contracts.test.ts src/cad/design-session.test.ts src/app/App.exact-cad-route.test.tsx src/app/App.test.tsx src/app/useProjectState.test.tsx src/app/FoundationJourney.test.tsx
 ```
 
-Result: PASS — 14 files, 69 tests.
+Result: PASS — 14 files, 73 tests.
 
 ```text
 mise exec node@24.19.0 -- pnpm build
@@ -61,4 +61,4 @@ The dev-server terminal also printed missing-source sourcemap notices from the p
 
 ## Explicit failure state
 
-The gate route starts in a visible `Loading the exact OCCT worker; legacy geometry is withheld.` state. A Wasm/worker error becomes a typed visible alert beginning `Exact CAD is unavailable`. `App` selects this route before lazy-loading the legacy journey, so demo fixture/workspace/topology initialization never runs. Deterministic tests cover missing outputs, invalid solids, mass/volume tolerance failure, STEP envelope tolerance failure, stale artifacts, and a success emitted 5 ms after cancellation resolves.
+The gate route starts in a visible `Loading the exact OCCT worker; legacy geometry is withheld.` state. A Wasm/worker error becomes a typed visible alert beginning `Exact CAD is unavailable`. `App` selects this route before lazy-loading the legacy journey, so demo fixture/workspace/topology initialization never runs. Cancellation detaches listeners and terminates the owning worker before publishing the terminal event; the next request uses a new worker. Deterministic tests cover a 60-second-delayed success attempt from the terminated worker, fresh-worker follow-up success, normal success/failure reuse, missing outputs, invalid solids, mass/volume tolerance failure, STEP envelope tolerance failure, and stale artifacts.

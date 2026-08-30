@@ -168,7 +168,10 @@ export const CadEvaluationEventSchema = z.discriminatedUnion("state", [
   z.object({ requestId: z.string().min(1), state: z.literal("progress"), progress: z.number().min(0).max(1) }).strict(),
   CadEvaluationSuccessSchema,
   z.object({ requestId: z.string().min(1), state: z.literal("failed"), error: CadFailureSchema }).strict(),
-  z.object({ requestId: z.string().min(1), state: z.literal("cancelled") }).strict(),
+  z.object({
+    requestId: z.string().min(1), state: z.literal("cancelled"),
+    workerDisposition: z.enum(["quarantined", "not-started"]),
+  }).strict(),
 ]);
 
 export const EngineeringJobKindSchema = z.enum([

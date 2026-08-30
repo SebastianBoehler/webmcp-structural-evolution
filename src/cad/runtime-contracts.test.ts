@@ -92,6 +92,15 @@ describe("CAD runtime contracts", () => {
     })).rejects.toThrow();
   });
 
+  it("requires cancelled evaluations to carry worker-quarantine evidence", () => {
+    expect(CadEvaluationEventSchema.parse({
+      requestId: "cancelled-1", state: "cancelled", workerDisposition: "quarantined",
+    })).toMatchObject({ workerDisposition: "quarantined" });
+    expect(() => CadEvaluationEventSchema.parse({
+      requestId: "cancelled-1", state: "cancelled",
+    })).toThrow(/workerDisposition/i);
+  });
+
   it("requires transferable exact bytes to match their artifact content digest", async () => {
     const payload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
     const artifact = await defineArtifactRecord({

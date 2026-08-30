@@ -80,6 +80,10 @@ class ControlledWorker implements OcctWorkerLike {
     this.terminateCount += 1;
   }
 
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
   emit(data: unknown): void {
     for (const listener of this.listeners) listener({ data });
   }
@@ -146,6 +150,77 @@ describe("OCCT worker client", () => {
     expect(factoryCalls).toBe(2);
     workers[1]!.emit({ type: "cancelled", requestId: "second" });
     await second;
+  });
+
+  it("quarantines an aborted worker before completion and isolates arbitrarily late success", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers = [new ControlledWorker(), new ControlledWorker()];
+      let factoryCalls = 0;
+      const client = createOcctWorkerClient(() => workers[factoryCalls++]!);
+      const events: CadEvaluationEvent[] = [];
+      const terminationCountAtCancellation: number[] = [];
+      const controller = new AbortController();
+      const first = client.evaluate(
+        await request("cancelled"), controller.signal, (event) => {
+          events.push(event);
+          if (event.state === "cancelled") {
+            terminationCountAtCancellation.push(workers[0]!.terminateCount);
+          }
+        },
+      );
+
+      controller.abort();
+      await first;
+      expect(workers[0]!.terminateCount).toBe(1);
+      expect(workers[0]!.listenerCount).toBe(0);
+      expect(events).toContainEqual({
+        requestId: "cancelled", state: "cancelled", workerDisposition: "quarantined",
+      });
+      expect(terminationCountAtCancellation).toEqual([1]);
+
+      const second = client.evaluate(
+        await request("following"), new AbortController().signal, (event) => events.push(event),
+      );
+      setTimeout(() => workers[0]!.emit({
+        type: "succeeded", requestId: "cancelled",
+        requestedOutputs: ["mass-properties"],
+        results: [{ output: "mass-properties", payload: massProperties }],
+      }), 60_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+      workers[1]!.emit({
+        type: "succeeded", requestId: "following",
+        requestedOutputs: ["mass-properties"],
+        results: [{ output: "mass-properties", payload: massProperties }],
+      });
+      await second;
+
+      expect(factoryCalls).toBe(2);
+      expect(workers[1]!.terminateCount).toBe(0);
+      expect(events.filter(({ requestId }) => requestId === "cancelled"))
+        .toHaveLength(1);
+      expect(events.at(-1)?.state).toBe("succeeded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reuses a worker after an ordinary typed failure", async () => {
+    const worker = new ControlledWorker();
+    let factoryCalls = 0;
+    const client = createOcctWorkerClient(() => { factoryCalls += 1; return worker; });
+    const first = client.evaluate(await request("failed"), new AbortController().signal, () => undefined);
+    worker.emit({ type: "failed", requestId: "failed", error: { code: "feature-failed", message: "bad feature" } });
+    await first;
+    const second = client.evaluate(await request("following"), new AbortController().signal, () => undefined);
+    worker.emit({
+      type: "succeeded", requestId: "following", requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: massProperties }],
+    });
+    await second;
+
+    expect(factoryCalls).toBe(1);
+    expect(worker.terminateCount).toBe(0);
   });
 
   it("rejects malformed worker messages as protocol failures", async () => {

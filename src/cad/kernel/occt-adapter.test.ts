@@ -77,9 +77,10 @@ class LifecycleWorker implements OcctWorkerLike {
 }
 
 describe("OCCT CAD adapter", () => {
-  it("cancels one rebuild without terminating later rebuilds", async () => {
-    const worker = new LifecycleWorker();
-    const adapter = createOcctCadAdapter(() => worker);
+  it("quarantines a cancelled worker and runs the next rebuild on a fresh worker", async () => {
+    const workers = [new LifecycleWorker(), new LifecycleWorker()];
+    let factoryCalls = 0;
+    const adapter = createOcctCadAdapter(() => workers[factoryCalls++]!);
     const events: CadEvaluationEvent[] = [];
     const controller = new AbortController();
     const first = adapter.evaluate(await request("first"), controller.signal, (event) => events.push(event));
@@ -87,7 +88,7 @@ describe("OCCT CAD adapter", () => {
     controller.abort();
     await first;
     const second = adapter.evaluate(await request("second"), new AbortController().signal, (event) => events.push(event));
-    worker.succeed("second");
+    workers[1]!.succeed("second");
     await second;
 
     const statesFor = (requestId: string) => events
@@ -95,7 +96,11 @@ describe("OCCT CAD adapter", () => {
       .map((event) => event.state);
     expect(statesFor("first")).toEqual(["progress", "cancelled"]);
     expect(statesFor("second")).toEqual(["progress", "succeeded"]);
-    expect(worker.terminateCount).toBe(0);
+    expect(events.find((event) => event.requestId === "first" && event.state === "cancelled"))
+      .toMatchObject({ workerDisposition: "quarantined" });
+    expect(workers[0]!.terminateCount).toBe(1);
+    expect(workers[1]!.terminateCount).toBe(0);
+    expect(factoryCalls).toBe(2);
   });
 
   it("serializes access to the shared OCCT worker", async () => {
@@ -127,7 +132,10 @@ describe("OCCT CAD adapter", () => {
     worker.succeed("race");
     await evaluation;
 
-    expect(events.map((event) => event.state)).toEqual(["progress", "cancelled"]);
-    expect(worker.terminateCount).toBe(0);
+    expect(events).toEqual([
+      { requestId: "race", state: "progress", progress: 0 },
+      { requestId: "race", state: "cancelled", workerDisposition: "quarantined" },
+    ]);
+    expect(worker.terminateCount).toBe(1);
   });
 });
