@@ -29,6 +29,7 @@ export const OcctWorkerFailureCodeSchema = z.enum([
   "memory-exhausted",
   "feature-failed",
   "invalid-solid",
+  "reference-requires-repair",
   "protocol-mismatch",
   "device-error",
 ]);

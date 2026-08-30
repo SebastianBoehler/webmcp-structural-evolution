@@ -57,12 +57,17 @@ export {
   type DesignDocument,
 } from "./document-schema";
 export {
+  AngleExpressionSchema,
   AssemblyInstanceSchema,
   BodySchema,
   ComponentSchema,
   FeatureSchema,
+  LengthExpressionSchema,
   MateSchema,
   NamedSelectionSchema,
+  ParameterExpressionSchema,
+  PositiveAngleExpressionSchema,
+  PositiveLengthExpressionSchema,
   SketchConstraintSchema,
   SketchEntitySchema,
   SketchSchema,
@@ -74,6 +79,19 @@ export {
   type NamedSelection,
   type Sketch,
 } from "./model-schema";
+export {
+  digestCadOutputPayload,
+  MassPropertiesPayloadSchema,
+  OpaqueBytesPayloadSchema,
+  SectionCurvesPayloadSchema,
+  SemanticMeshPayloadSchema,
+  TopologySignaturePayloadSchema,
+  type MassPropertiesPayload,
+  type OpaqueBytesPayload,
+  type SectionCurvesPayload,
+  type SemanticMeshPayload,
+  type SemanticTopology,
+} from "./rebuild-payload";
 export {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,

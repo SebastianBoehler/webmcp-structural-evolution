@@ -10,6 +10,11 @@ import { createOcctCadAdapter } from "./occt-adapter";
 import type { OcctWorkerLike, OcctWorkerMessageEvent } from "./occt-worker-client";
 import type { OcctWorkerRequest } from "./occt-worker-contract";
 
+const massProperties = {
+  densityKgM3: 1, volumeM3: 1, surfaceAreaM2: 1, massKg: 1,
+  centerOfMassM: [0, 0, 0], inertiaKgM2: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+};
+
 async function request(requestId: string): Promise<CadEvaluationRequest> {
   const document = await createDesignDocument({
     id: "pump",
@@ -62,7 +67,7 @@ class LifecycleWorker implements OcctWorkerLike {
       type: "succeeded",
       requestId,
       requestedOutputs: ["mass-properties"],
-      results: [{ output: "mass-properties", payload: {} }],
+      results: [{ output: "mass-properties", payload: massProperties }],
     });
   }
 

@@ -4,6 +4,13 @@ import { ActionReceiptSchema } from "../domain/receipts";
 import { RevisionSchema } from "../domain/snapshots";
 import { ArtifactRecordSchema, type ArtifactKind } from "./artifact-contract";
 import { defineDesignDocument, DesignDocumentSchema } from "./document-schema";
+import {
+  digestCadOutputPayload,
+  MassPropertiesPayloadSchema,
+  OpaqueBytesPayloadSchema,
+  SectionCurvesPayloadSchema,
+  SemanticMeshPayloadSchema,
+} from "./rebuild-payload";
 
 const JsonValueSchema = ActionReceiptSchema.shape.validatedInputs;
 const JobIdSchema = z.string().min(1);
@@ -64,22 +71,25 @@ const CadEvaluationResultSchema = z.discriminatedUnion("output", [
   z.object({
     output: z.literal("brep"),
     artifact: artifactForOutput("brep", "brep"),
+    payload: OpaqueBytesPayloadSchema,
   }).strict(),
   z.object({
     output: z.literal("semantic-mesh"),
     artifact: artifactForOutput("semantic-mesh", "render-mesh"),
+    payload: SemanticMeshPayloadSchema,
   }).strict(),
   z.object({
     output: z.literal("mass-properties"),
-    payload: z.record(z.string(), JsonValueSchema),
+    payload: MassPropertiesPayloadSchema,
   }).strict(),
   z.object({
     output: z.literal("section-curves"),
-    payload: z.record(z.string(), JsonValueSchema),
+    payload: SectionCurvesPayloadSchema,
   }).strict(),
   z.object({
     output: z.literal("step"),
     artifact: artifactForOutput("step", "export"),
+    payload: OpaqueBytesPayloadSchema,
   }).strict(),
 ]);
 const CadEvaluationSuccessSchema = z.object({
@@ -87,7 +97,7 @@ const CadEvaluationSuccessSchema = z.object({
   state: z.literal("succeeded"),
   requestedOutputs: CadOutputsSchema,
   results: z.array(CadEvaluationResultSchema).min(1),
-}).strict().superRefine((value, context) => {
+}).strict().superRefine(async (value, context) => {
   const returned = new Set(value.results.map((result) => result.output));
   for (const output of value.requestedOutputs) {
     if (!returned.has(output)) {
@@ -97,6 +107,14 @@ const CadEvaluationSuccessSchema = z.object({
   for (const [index, result] of value.results.entries()) {
     if (!value.requestedOutputs.includes(result.output)) {
       context.addIssue({ code: "custom", path: ["results", index, "output"], message: `Unexpected output: ${result.output}` });
+    }
+    if ("artifact" in result
+      && await digestCadOutputPayload(result.payload) !== result.artifact.contentDigest) {
+      context.addIssue({
+        code: "custom",
+        path: ["results", index, "artifact", "contentDigest"],
+        message: `${result.output} payload does not match its content digest`,
+      });
     }
   }
 });

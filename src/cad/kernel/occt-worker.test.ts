@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDesignDocument } from "../document-schema";
-import { CadEvaluationRequestSchema } from "../runtime-contracts";
+import { defineDesignDocument } from "../document-schema";
+import { digestCadOutputPayload } from "../rebuild-payload";
+import { CadEvaluationRequestSchema, type CadOutput } from "../runtime-contracts";
 import type { OcctWorkerRequest } from "./occt-worker-contract";
 
-const occt = vi.hoisted(() => ({ init: vi.fn() }));
-
-vi.mock("occt-wasm", () => ({ OcctKernel: { init: occt.init } }));
-vi.mock("occt-wasm/dist/occt-wasm.wasm?url", () => ({ default: "/occt-wasm.wasm" }));
+const occtWasmPath = vi.hoisted(() => `${process.cwd()}/node_modules/occt-wasm/dist/occt-wasm.wasm`);
+vi.mock("occt-wasm/dist/occt-wasm.wasm?url", () => ({ default: occtWasmPath }));
 
 class ControlledWorkerScope {
   readonly messages: unknown[] = [];
@@ -26,18 +25,32 @@ class ControlledWorkerScope {
   }
 }
 
-async function evaluation(requestId: string) {
-  const document = await createDesignDocument({
-    id: "part",
-    label: "Part",
-    units: { length: "mm", angle: "deg", mass: "kg" },
-    createdBy: { kind: "agent", id: "test" },
+async function evaluation(requestId: string, requestedOutputs: readonly CadOutput[] = ["mass-properties"]) {
+  const document = await defineDesignDocument({
+    id: "part", label: "Part", schemaVersion: 1,
+    units: { length: "mm", angle: "deg", mass: "kg" }, createdBy: { kind: "agent", id: "test" },
+    frames: [{
+      id: "world", label: "World",
+      transform: {
+        position: { x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0, unit: "m" } },
+        orientation: { roll: { value: 0, unit: "rad" }, pitch: { value: 0, unit: "rad" }, yaw: { value: 0, unit: "rad" } },
+      },
+    }],
+    parameters: [],
+    sketches: [{
+      id: "plate-sketch", plane: "frame:world",
+      entities: [{ id: "outline", kind: "rectangle", centerM: [0, 0], sizeM: [0.08, 0.04] }],
+      constraints: [],
+    }],
+    features: [{ id: "plate", kind: "extrude", sketchId: "plate-sketch", distanceM: 0.01 }],
+    bodies: [{ id: "plate-body", featureId: "plate" }],
+    components: [], instances: [], mates: [], namedSelections: [],
   });
   return CadEvaluationRequestSchema.parse({
     requestId,
     document,
     sourceRevision: document.revision,
-    requestedOutputs: ["mass-properties"],
+    requestedOutputs,
     settings: {},
   });
 }
@@ -45,14 +58,13 @@ async function evaluation(requestId: string) {
 describe("OCCT worker", () => {
   beforeEach(() => {
     vi.resetModules();
-    occt.init.mockResolvedValue({ [Symbol.dispose]: () => undefined });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("does not let a cancellation without an active owner poison a reused request ID", async () => {
+  it("does not let a cancellation without an active owner poison a real exact rebuild", async () => {
     const scope = new ControlledWorkerScope();
     vi.stubGlobal("self", scope);
     await import("./occt-worker");
@@ -62,15 +74,51 @@ describe("OCCT worker", () => {
     scope.send({ type: "evaluate", request });
 
     await vi.waitFor(() => {
-      expect(scope.messages).toContainEqual({
+      expect(scope.messages).toContainEqual(expect.objectContaining({
+        type: "succeeded",
+        requestId: "reused",
+        requestedOutputs: ["mass-properties"],
+        results: [expect.objectContaining({
+          output: "mass-properties",
+          payload: expect.objectContaining({ volumeM3: expect.closeTo(0.000032, 12) }),
+        })],
+      }));
+      expect(scope.messages).not.toContainEqual({
         type: "failed",
         requestId: "reused",
-        error: {
-          code: "feature-failed",
-          message: "Exact OCCT feature evaluation is not implemented",
-        },
+        error: expect.anything(),
       });
     });
     expect(scope.messages).not.toContainEqual({ type: "cancelled", requestId: "reused" });
+  });
+
+  it("publishes digest-bound transferable BREP, semantic mesh, and STEP artifacts", async () => {
+    const scope = new ControlledWorkerScope();
+    vi.stubGlobal("self", scope);
+    await import("./occt-worker");
+    const request = await evaluation("artifacts", ["brep", "semantic-mesh", "step"]);
+
+    scope.send({ type: "evaluate", request });
+    await vi.waitFor(() => {
+      expect(scope.messages.some((message) =>
+        !!message && typeof message === "object" && "type" in message && message.type === "succeeded"))
+        .toBe(true);
+    });
+    const success = scope.messages.find((message) =>
+      !!message && typeof message === "object" && "type" in message && message.type === "succeeded") as {
+      results: Array<{ output: string; artifact: { contentDigest: string; units: string }; payload: unknown }>;
+    };
+    const brep = success.results.find(({ output }) => output === "brep")!;
+    const semantic = success.results.find(({ output }) => output === "semantic-mesh")!;
+    const step = success.results.find(({ output }) => output === "step")!;
+
+    await expect(digestCadOutputPayload(brep.payload)).resolves.toBe(brep.artifact.contentDigest);
+    await expect(digestCadOutputPayload(semantic.payload)).resolves.toBe(semantic.artifact.contentDigest);
+    await expect(digestCadOutputPayload(step.payload)).resolves.toBe(step.artifact.contentDigest);
+    expect(brep.artifact.units).toBe("m");
+    expect(semantic.artifact.units).toBe("m");
+    expect(step.artifact.units).toBe("mm");
+    expect(new TextDecoder().decode((step.payload as { bytes: Uint8Array }).bytes))
+      .toContain("SI_UNIT(.MILLI.,.METRE.)");
   });
 });

@@ -40,7 +40,7 @@ describe("exact model schemas", () => {
       sketches: [profile],
       features: [
         { id: "base", kind: "extrude", sketchId: "base-sketch", distanceM: 0.01 },
-        { id: "boss", kind: "revolve", sketchId: "base-sketch", angleRad: Math.PI * 2 },
+        { id: "boss", kind: "revolve", sketchId: "base-sketch", angleRad: Math.PI * 2, axis: { originM: [0, 0], direction: [0, 1] } },
       ],
       bodies: [{ id: "link-body", featureId: "boss" }],
       components: [{ id: "link-component", bodyIds: ["link-body"] }],
@@ -50,6 +50,36 @@ describe("exact model schemas", () => {
     });
 
     expect(document.features.map(({ id }) => id)).toEqual(["base", "boss"]);
+  });
+
+  it("accepts parameterized SI geometry and an explicit sketch-local revolve axis", async () => {
+    const document = await defineDesignDocument({
+      ...baseContent,
+      parameters: [
+        { id: "boss-radius", label: "Boss radius", value: { kind: "length", value: { value: 0.01, unit: "m" } } },
+        { id: "full-turn", label: "Full turn", value: { kind: "angle", value: { value: Math.PI * 2, unit: "rad" } } },
+      ],
+      sketches: [{
+        id: "boss-sketch", plane: "frame:world",
+        entities: [{
+          id: "boss-profile", kind: "rectangle", centerM: [{ parameterId: "boss-radius" }, 0.005],
+          sizeM: [{ parameterId: "boss-radius" }, 0.01],
+        }],
+        constraints: [],
+      }],
+      features: [{
+        id: "boss", kind: "revolve", sketchId: "boss-sketch",
+        angleRad: { parameterId: "full-turn" },
+        axis: { originM: [0, 0], direction: [0, 1] },
+      }],
+      bodies: [{ id: "boss-body", featureId: "boss" }],
+      components: [], instances: [], mates: [], namedSelections: [],
+    });
+
+    expect(document.features[0]).toMatchObject({
+      kind: "revolve",
+      axis: { originM: [0, 0], direction: [0, 1] },
+    });
   });
 
   it("rejects unresolved profile and assembly references, open solid profiles, and forward feature dependencies", async () => {

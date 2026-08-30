@@ -6,23 +6,32 @@ const entityIdPattern = /^[a-z][a-z0-9-]{0,79}$/;
 
 export const EntityIdSchema = z.string().regex(entityIdPattern, "Entity ID must be lowercase kebab-case");
 
-const Point2Schema = z.tuple([finite, finite]);
+export const ParameterExpressionSchema = z.object({ parameterId: EntityIdSchema }).strict();
+export const LengthExpressionSchema = z.union([finite, ParameterExpressionSchema]);
+export const PositiveLengthExpressionSchema = z.union([positive, ParameterExpressionSchema]);
+export const AngleExpressionSchema = z.union([finite, ParameterExpressionSchema]);
+export const PositiveAngleExpressionSchema = z.union([positive, ParameterExpressionSchema]);
+const Point2Schema = z.tuple([LengthExpressionSchema, LengthExpressionSchema]);
+const Direction2Schema = z.tuple([finite, finite]).refine(
+  ([x, y]) => Math.hypot(x, y) > 0,
+  "Axis direction must be nonzero",
+);
 const PointNameSchema = z.enum(["start", "end", "center", "left", "right", "bottom", "top"]);
 const PointReferenceSchema = z.object({ entityId: EntityIdSchema, point: PointNameSchema }).strict();
 
 export const SketchEntitySchema = z.discriminatedUnion("kind", [
   z.object({ id: EntityIdSchema, kind: z.literal("line"), startM: Point2Schema, endM: Point2Schema }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("arc"), centerM: Point2Schema, radiusM: positive, startAngleRad: finite, endAngleRad: finite }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("circle"), centerM: Point2Schema, radiusM: positive }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("rectangle"), centerM: Point2Schema, sizeM: z.tuple([positive, positive]) }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("arc"), centerM: Point2Schema, radiusM: PositiveLengthExpressionSchema, startAngleRad: AngleExpressionSchema, endAngleRad: AngleExpressionSchema }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("circle"), centerM: Point2Schema, radiusM: PositiveLengthExpressionSchema }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("rectangle"), centerM: Point2Schema, sizeM: z.tuple([PositiveLengthExpressionSchema, PositiveLengthExpressionSchema]) }).strict(),
 ]);
 
 export const SketchConstraintSchema = z.discriminatedUnion("kind", [
   z.object({ id: EntityIdSchema, kind: z.literal("coincident"), first: PointReferenceSchema, second: PointReferenceSchema }).strict(),
   z.object({ id: EntityIdSchema, kind: z.enum(["horizontal", "vertical"]), entityId: EntityIdSchema }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("distance"), first: PointReferenceSchema, second: PointReferenceSchema, axis: z.enum(["x", "y"]).optional(), valueM: positive }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("radius"), entityId: EntityIdSchema, valueM: positive }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("angle"), vertex: PointReferenceSchema, firstDirection: PointReferenceSchema, secondDirection: PointReferenceSchema, valueRad: finite }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("distance"), first: PointReferenceSchema, second: PointReferenceSchema, axis: z.enum(["x", "y"]).optional(), valueM: PositiveLengthExpressionSchema }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("radius"), entityId: EntityIdSchema, valueM: PositiveLengthExpressionSchema }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("angle"), vertex: PointReferenceSchema, firstDirection: PointReferenceSchema, secondDirection: PointReferenceSchema, valueRad: AngleExpressionSchema }).strict(),
 ]);
 
 export const SketchSchema = z.object({
@@ -33,8 +42,12 @@ export const SketchSchema = z.object({
 }).strict();
 
 export const FeatureSchema = z.discriminatedUnion("kind", [
-  z.object({ id: EntityIdSchema, kind: z.literal("extrude"), sketchId: EntityIdSchema, distanceM: positive }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("revolve"), sketchId: EntityIdSchema, angleRad: positive.max(Math.PI * 2) }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("extrude"), sketchId: EntityIdSchema, distanceM: PositiveLengthExpressionSchema }).strict(),
+  z.object({
+    id: EntityIdSchema, kind: z.literal("revolve"), sketchId: EntityIdSchema,
+    angleRad: z.union([positive.max(Math.PI * 2), ParameterExpressionSchema]),
+    axis: z.object({ originM: Point2Schema, direction: Direction2Schema }).strict(),
+  }).strict(),
   z.object({ id: EntityIdSchema, kind: z.enum(["union", "cut", "intersect"]), leftFeatureId: EntityIdSchema, rightFeatureId: EntityIdSchema }).strict(),
 ]);
 
@@ -116,17 +129,21 @@ function sketchHasClosedProfile(sketch: ParsedSketch): boolean {
     const key = pointKey(point);
     endpoints.set(key, (endpoints.get(key) ?? 0) + 1);
   };
-  const arcPoint = (entity: Extract<z.infer<typeof SketchEntitySchema>, { kind: "arc" }>, angle: number) => [
-    entity.centerM[0] + entity.radiusM * Math.cos(angle),
-    entity.centerM[1] + entity.radiusM * Math.sin(angle),
-  ];
+  const literalPoint = (point: readonly z.infer<typeof LengthExpressionSchema>[]) =>
+    point.every((value) => typeof value === "number") ? point as readonly number[] : undefined;
   for (const entity of sketch.entities) {
     if (entity.kind === "line") {
-      count(entity.startM);
-      count(entity.endM);
+      const start = literalPoint(entity.startM);
+      const end = literalPoint(entity.endM);
+      if (!start || !end) return true;
+      count(start);
+      count(end);
     } else if (entity.kind === "arc") {
-      count(arcPoint(entity, entity.startAngleRad));
-      count(arcPoint(entity, entity.endAngleRad));
+      const center = literalPoint(entity.centerM);
+      if (!center || typeof entity.radiusM !== "number"
+        || typeof entity.startAngleRad !== "number" || typeof entity.endAngleRad !== "number") return true;
+      count([center[0]! + entity.radiusM * Math.cos(entity.startAngleRad), center[1]! + entity.radiusM * Math.sin(entity.startAngleRad)]);
+      count([center[0]! + entity.radiusM * Math.cos(entity.endAngleRad), center[1]! + entity.radiusM * Math.sin(entity.endAngleRad)]);
     }
   }
   return [...endpoints.values()].every((value) => value === 2)

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { defineArtifactRecord } from "../artifact-contract";
 import { createDesignDocument } from "../document-schema";
+import { digestCadOutputPayload } from "../rebuild-payload";
 import {
   CadEvaluationRequestSchema,
   type CadEvaluationEvent,
@@ -17,6 +18,14 @@ import {
   OcctWorkerEventSchema,
   type OcctWorkerRequest,
 } from "./occt-worker-contract";
+
+const massProperties = {
+  densityKgM3: 1, volumeM3: 1, surfaceAreaM2: 1, massKg: 1,
+  centerOfMassM: [0, 0, 0], inertiaKgM2: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+};
+const emptySections = {
+  pointsM: new Float32Array(), curvePointRanges: new Uint32Array(), curveIds: [],
+};
 
 async function request(requestId: string): Promise<CadEvaluationRequest> {
   const document = await createDesignDocument({
@@ -79,6 +88,7 @@ describe("OCCT worker client", () => {
     ["memory-exhausted", "resource-limit"],
     ["feature-failed", "feature-failed"],
     ["invalid-solid", "invalid-solid"],
+    ["reference-requires-repair", "reference-requires-repair"],
   ] as const)("maps %s into a typed CAD failure", async (workerCode, cadCode) => {
     const worker = new ControlledWorker();
     const client = createOcctWorkerClient(() => worker);
@@ -153,7 +163,7 @@ describe("OCCT worker client", () => {
       type: "succeeded",
       requestId: "wrong-outputs",
       requestedOutputs: ["section-curves"],
-      results: [{ output: "section-curves", payload: {} }],
+      results: [{ output: "section-curves", payload: emptySections }],
     });
     await evaluation;
 
@@ -194,7 +204,7 @@ describe("OCCT worker client", () => {
       type: "succeeded",
       requestId: "first",
       requestedOutputs: ["mass-properties"],
-      results: [{ output: "mass-properties", payload: {} }],
+      results: [{ output: "mass-properties", payload: massProperties }],
     });
     await validationStarted;
     worker.emit({ type: "cancelled", requestId: "first" });
@@ -211,7 +221,7 @@ describe("OCCT worker client", () => {
       type: "succeeded",
       requestId: "second",
       requestedOutputs: ["mass-properties"],
-      results: [{ output: "mass-properties", payload: {} }],
+      results: [{ output: "mass-properties", payload: massProperties }],
     });
     await second;
 
@@ -229,13 +239,14 @@ describe("OCCT worker client", () => {
       ...evaluationRequest,
       requestedOutputs: ["brep"],
     });
+    const payload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
     const artifact = await defineArtifactRecord({
       kind: "brep",
       sourceRevision: brepRequest.sourceRevision,
       producer: { name: "occt-wasm", version: "4.3.2" },
       settingsDigest: "a".repeat(64),
-      contentDigest: "b".repeat(64),
-      units: "mm",
+      contentDigest: await digestCadOutputPayload(payload),
+      units: "m",
       mediaType: "application/vnd.opencascade.brep",
       dependencies: [],
     });
@@ -249,7 +260,7 @@ describe("OCCT worker client", () => {
       type: "succeeded",
       requestId: "brep",
       requestedOutputs: ["brep"],
-      results: [{ output: "brep", artifact }],
+      results: [{ output: "brep", artifact, payload }],
     });
     await evaluation;
 
@@ -257,7 +268,7 @@ describe("OCCT worker client", () => {
       requestId: "brep",
       state: "succeeded",
       requestedOutputs: ["brep"],
-      results: [{ output: "brep", artifact }],
+      results: [{ output: "brep", artifact, payload }],
     }]);
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "../domain/canonical-json";
 import { defineArtifactRecord, type ArtifactKind } from "./artifact-contract";
 import { createDesignDocument } from "./document-schema";
+import { digestCadOutputPayload } from "./rebuild-payload";
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
@@ -13,18 +14,27 @@ import {
 
 const digest = "a".repeat(64);
 
-async function outputArtifact(kind: ArtifactKind) {
+async function outputArtifact(kind: ArtifactKind, contentDigest = "d".repeat(64)) {
   return defineArtifactRecord({
     kind,
     sourceRevision: digest,
     producer: { name: "cad-kernel", version: "1" },
     settingsDigest: "c".repeat(64),
-    contentDigest: "d".repeat(64),
+    contentDigest,
     units: "mm",
     mediaType: "application/octet-stream",
     dependencies: [],
   });
 }
+
+const massProperties = {
+  densityKgM3: 1,
+  volumeM3: 0.000032,
+  surfaceAreaM2: 0.0088,
+  massKg: 0.000032,
+  centerOfMassM: [0.04, 0.02, 0.005] as [number, number, number],
+  inertiaKgM2: [1, 0, 0, 0, 1, 0, 0, 0, 1] as [number, number, number, number, number, number, number, number, number],
+};
 
 async function evaluationRequest() {
   const document = await createDesignDocument({
@@ -63,36 +73,65 @@ describe("CAD runtime contracts", () => {
   });
 
   it("requires every CAD success result to cover a declared output", async () => {
-    const brep = await outputArtifact("brep");
     const success = {
       requestId: "request-1",
       state: "succeeded",
-      requestedOutputs: ["brep"],
-      results: [{ output: "brep", artifact: brep }],
+      requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: massProperties }],
     } as const;
 
     await expect(CadEvaluationEventSchema.parseAsync(success)).resolves.toEqual(success);
     await expect(CadEvaluationEventSchema.parseAsync({ ...success, results: [] })).rejects.toThrow();
     await expect(CadEvaluationEventSchema.parseAsync({
       ...success,
-      results: [{ output: "mass-properties", artifact: brep }],
+      results: [{ output: "section-curves", payload: {
+        pointsM: new Float32Array(), curvePointRanges: new Uint32Array(), curveIds: [],
+      } }],
     })).rejects.toThrow();
   });
 
+  it("requires transferable exact bytes to match their artifact content digest", async () => {
+    const payload = { bytes: new Uint8Array([0x42, 0x52, 0x45, 0x50]) };
+    const artifact = await defineArtifactRecord({
+      kind: "brep",
+      sourceRevision: digest,
+      producer: { name: "occt-wasm", version: "4.3.2" },
+      settingsDigest: "c".repeat(64),
+      contentDigest: await digestCadOutputPayload(payload),
+      units: "m",
+      mediaType: "application/vnd.opencascade.brep",
+      dependencies: [],
+    });
+    const success = {
+      requestId: "request-1",
+      state: "succeeded",
+      requestedOutputs: ["brep"],
+      results: [{ output: "brep", artifact, payload }],
+    } as const;
+
+    await expect(CadEvaluationEventSchema.parseAsync(success)).resolves.toMatchObject(success);
+    await expect(CadEvaluationEventSchema.parseAsync({
+      ...success,
+      results: [{ ...success.results[0], payload: { bytes: new Uint8Array([0]) } }],
+    })).rejects.toThrow(/content digest/i);
+  });
+
   it("rejects CAD outputs backed by an incompatible artifact kind", async () => {
-    const step = await outputArtifact("export");
-    const thumbnail = await outputArtifact("thumbnail");
+    const payload = { bytes: new TextEncoder().encode("ISO-10303-21") };
+    const contentDigest = await digestCadOutputPayload(payload);
+    const step = await outputArtifact("export", contentDigest);
+    const thumbnail = await outputArtifact("thumbnail", contentDigest);
     const success = {
       requestId: "request-1",
       state: "succeeded",
       requestedOutputs: ["step"],
-      results: [{ output: "step", artifact: step }],
+      results: [{ output: "step", artifact: step, payload }],
     } as const;
 
     await expect(CadEvaluationEventSchema.parseAsync(success)).resolves.toEqual(success);
     await expect(CadEvaluationEventSchema.parseAsync({
       ...success,
-      results: [{ output: "step", artifact: thumbnail }],
+      results: [{ output: "step", artifact: thumbnail, payload }],
     })).rejects.toThrow(/step.*export/i);
   });
 
