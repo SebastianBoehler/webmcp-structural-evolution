@@ -22,6 +22,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
   let active: PendingOcctOperation | undefined;
   let settling: PendingOcctOperation | undefined;
+  let evaluationIngress = Promise.resolve();
   const queue: PendingOcctOperation[] = [];
   const emit = (event: CadEvaluationEvent) => {
     if (active?.kind === "evaluation") active.emit(CadEvaluationEventSchema.parse(event));
@@ -133,7 +134,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       }
     }
   }
-
   async function acceptStepImportSuccess(
     owner: PendingOcctOperation,
     event: Extract<OcctWorkerEvent, { type: "step-import-succeeded" }>,
@@ -163,7 +163,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       }
     }
   }
-
   const beginSuccessValidation = (data: object) => {
     const owner = active;
     if (!owner) {
@@ -198,7 +197,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       }
     });
   };
-
   const onMessage = (message: OcctWorkerMessageEvent) => {
     if (message.data && typeof message.data === "object"
       && "type" in message.data
@@ -219,14 +217,12 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
     acceptEvent(parsed.data as OcctWorkerEvent);
   };
-
   const getWorker = () => {
     if (worker) return worker;
     worker = factory();
     worker.addEventListener("message", onMessage);
     return worker;
   };
-
   function onAbort() {
     const owner = active;
     if (!owner) return;
@@ -273,7 +269,10 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       signal: AbortSignal,
       eventEmitter: (event: CadEvaluationEvent) => void,
     ): Promise<void> {
-      const validated = await verifiedCadEvaluationRequest(request, eventEmitter);
+      const ingress = evaluationIngress.then(() =>
+        verifiedCadEvaluationRequest(request, eventEmitter));
+      evaluationIngress = ingress.then(() => undefined, () => undefined);
+      const validated = await ingress;
       if (!validated) return;
       await new Promise<void>((resolve) => {
         queue.push({

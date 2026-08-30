@@ -266,6 +266,42 @@ describe("OCCT worker client", () => {
     expect(worker.terminateCount).toBe(0);
   });
 
+  it("preserves submission order while document verification settles", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const firstRequest = await request("first-ingress");
+    const secondRequest = await request("second-ingress");
+    const originalDigest = globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle);
+    let digestCalls = 0;
+    let releaseFirstDigest: () => void = () => undefined;
+    const firstDigestGate = new Promise<void>((resolve) => { releaseFirstDigest = resolve; });
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+      digestCalls += 1;
+      if (digestCalls === 1) await firstDigestGate;
+      return originalDigest(algorithm, data);
+    });
+
+    const first = client.evaluate(firstRequest, new AbortController().signal, () => undefined);
+    const second = client.evaluate(secondRequest, new AbortController().signal, () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseFirstDigest();
+
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    const postedIds = () => worker.posted.flatMap((message) =>
+      message.type === "evaluate" ? [message.request.requestId] : []);
+    const complete = (requestId: string) => worker.emit({
+      type: "succeeded", requestId, sourceRevision: revisionFor(requestId),
+      requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: massProperties }],
+    });
+    complete(postedIds()[0]!);
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(2));
+    complete(postedIds()[1]!);
+    await Promise.all([first, second]);
+
+    expect(postedIds()).toEqual(["first-ingress", "second-ingress"]);
+  });
+
   it("rejects malformed worker messages as protocol failures", async () => {
     const worker = new ControlledWorker();
     const client = createOcctWorkerClient(() => worker);

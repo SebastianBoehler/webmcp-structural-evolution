@@ -12,8 +12,11 @@ export async function verifiedCadEvaluationRequest(
   try {
     return await defineCadEvaluationRequest(request);
   } catch (error) {
+    const requestId = typeof request?.requestId === "string" && request.requestId.length > 0
+      ? request.requestId
+      : "unknown-request";
     emit(CadEvaluationEventSchema.parse({
-      requestId: request.requestId || "unknown-request", state: "failed",
+      requestId, state: "failed",
       error: {
         code: "invalid-document",
         message: error instanceof Error ? error.message : "Invalid CAD document",

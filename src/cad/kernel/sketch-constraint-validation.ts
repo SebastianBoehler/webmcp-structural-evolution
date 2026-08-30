@@ -130,7 +130,8 @@ function equationsFor(sketch: Sketch, entities: ReadonlyMap<string, ResolvedEnti
 
 function matrixRank(matrix: number[][]): number {
   const rows = matrix.map((row) => {
-    const scale = Math.max(...row.map(Math.abs), 1);
+    let scale = 1;
+    for (const value of row) scale = Math.max(scale, Math.abs(value));
     return row.map((value) => value / scale);
   });
   let rank = 0;
