@@ -9,6 +9,8 @@ import type {
   SemanticMeshPayload,
 } from "../rebuild-payload";
 import type { OcctBridge } from "./occt-bridge";
+import { assertExactSolid } from "./exact-solid";
+import { CadRebuildError } from "./rebuild-errors";
 import {
   directionOnSketch,
   pointOnSketch,
@@ -24,17 +26,7 @@ import { exportStepBytes } from "./step-exchange";
 
 type DocumentFeature = DesignDocument["features"][number];
 
-export type CadRebuildFailureCode =
-  | "feature-failed"
-  | "invalid-solid"
-  | "reference-requires-repair";
-
-export class CadRebuildError extends Error {
-  constructor(readonly code: CadRebuildFailureCode, message: string) {
-    super(message);
-    this.name = "CadRebuildError";
-  }
-}
+export { CadRebuildError, type CadRebuildFailureCode } from "./rebuild-errors";
 
 export interface CadRebuildPayload {
   readonly featureIds: readonly string[];
@@ -66,10 +58,7 @@ function resolveScalar(
 }
 
 function ensureValidSolid(kernel: OcctKernel, shape: ShapeHandle, feature: DocumentFeature): void {
-  const hasSolid = kernel.isSolid(shape) || kernel.subShapeCount(shape, "solid") > 0;
-  if (!hasSolid || !kernel.isValid(shape)) {
-    throw new CadRebuildError("invalid-solid", `Feature produced an invalid solid: ${feature.id}`);
-  }
+  assertExactSolid(kernel, shape, `Feature produced an invalid solid: ${feature.id}`);
 }
 
 function combineSolids(kernel: OcctKernel, shapes: readonly ShapeHandle[], feature: DocumentFeature): ShapeHandle {

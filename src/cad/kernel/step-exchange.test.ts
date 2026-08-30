@@ -30,4 +30,53 @@ describe("STEP exchange", () => {
 
     expect(kernel.shapeCount).toBe(0);
   });
+
+  it("rejects an imported shell without leaking the rejected shape", async () => {
+    using kernel = await OcctKernel.init();
+    const face = kernel.buildTriFace(
+      { x: 0, y: 0, z: 0 },
+      { x: 0.01, y: 0, z: 0 },
+      { x: 0, y: 0.01, z: 0 },
+    );
+    try {
+      const step = exportStepBytes(kernel, face);
+      const beforeImport = kernel.shapeCount;
+      let imported: ReturnType<typeof importStepBytes> | undefined;
+      let failure: unknown;
+      try {
+        imported = importStepBytes(kernel, step);
+      } catch (error) {
+        failure = error;
+      } finally {
+        if (imported) kernel.release(imported);
+      }
+
+      expect(failure).toMatchObject({
+        name: "CadRebuildError",
+        code: "invalid-solid",
+      });
+      expect(kernel.shapeCount).toBe(beforeImport);
+    } finally {
+      kernel.release(face);
+    }
+    expect(kernel.shapeCount).toBe(0);
+  });
+
+  it("maps malformed STEP data to a typed invalid-solid failure", async () => {
+    using kernel = await OcctKernel.init();
+    const beforeImport = kernel.shapeCount;
+    let failure: unknown;
+
+    try {
+      importStepBytes(kernel, new TextEncoder().encode("not a STEP exchange"));
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      name: "CadRebuildError",
+      code: "invalid-solid",
+    });
+    expect(kernel.shapeCount).toBe(beforeImport);
+  });
 });

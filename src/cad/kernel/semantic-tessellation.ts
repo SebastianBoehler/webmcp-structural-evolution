@@ -2,10 +2,11 @@ import type { OcctKernel, ShapeHandle } from "occt-wasm";
 
 import type { SemanticMeshPayload, SemanticTopology } from "../rebuild-payload";
 import {
-  sameTopologyGeometry,
+  matchTopologyReference,
   topologyGeometryKey,
   type TopologySignature,
 } from "./persistent-references";
+import { CadRebuildError } from "./rebuild-errors";
 
 const HASH_UPPER_BOUND = 2_147_483_647;
 export const SEMANTIC_LINEAR_DEFLECTION_M = 1e-4;
@@ -105,11 +106,23 @@ function assignOwner(
     const candidates = signature.kind === "face"
       ? featureTopology.get(featureId)?.faces
       : featureTopology.get(featureId)?.edges;
-    if (candidates?.filter((candidate) => sameTopologyGeometry(signature, candidate.signature)).length === 1) {
-      return featureId;
+    if (!candidates) continue;
+    const match = matchTopologyReference(
+      { ...signature, ownerFeatureId: featureId },
+      candidates.map((candidate, index) => ({
+        id: `${featureId}:${signature.kind}:${candidate.hash}:${index}`,
+        signature: candidate.signature,
+      })),
+    );
+    if (match.ok) return featureId;
+    if (match.error.candidateIds.length > 0) {
+      throw new CadRebuildError("reference-requires-repair", match.error.message);
     }
   }
-  return signature.ownerFeatureId;
+  throw new CadRebuildError(
+    "reference-requires-repair",
+    `Topology owner matched no feature lineage candidate: ${topologyGeometryKey(signature)}`,
+  );
 }
 
 function semanticRecords(
@@ -126,12 +139,14 @@ function semanticRecords(
       adjacentKinds: [...signature.adjacentKinds],
     },
   }));
-  const occurrences = new Map<string, number>();
+  const semanticIds = new Set<string>();
   const records = owned.map(({ signature }) => {
-    const base = `${signature.kind}:${body.id}:${signature.ownerFeatureId}:${topologyGeometryKey(signature)}`;
-    const occurrence = occurrences.get(base) ?? 0;
-    occurrences.set(base, occurrence + 1);
-    return { id: occurrence === 0 ? base : `${base}:${occurrence}`, bodyId: body.id, signature };
+    const id = `${signature.kind}:${body.id}:${signature.ownerFeatureId}:${topologyGeometryKey(signature)}`;
+    if (semanticIds.has(id)) {
+      throw new CadRebuildError("reference-requires-repair", `Semantic topology ID is ambiguous: ${id}`);
+    }
+    semanticIds.add(id);
+    return { id, bodyId: body.id, signature };
   });
   const indexByHash = new Map<number, number>();
   owned.forEach(({ hash }, index) => {
@@ -150,6 +165,22 @@ const concatFloat32 = (values: readonly Float32Array[]) => {
   }
   return result;
 };
+
+function appendNumbers(target: number[], values: ArrayLike<number>, offset = 0): void {
+  const start = target.length;
+  target.length += values.length;
+  for (let index = 0; index < values.length; index += 1) {
+    target[start + index] = values[index]! + offset;
+  }
+}
+
+function appendItems<Value>(target: Value[], values: readonly Value[]): void {
+  const start = target.length;
+  target.length += values.length;
+  for (let index = 0; index < values.length; index += 1) {
+    target[start + index] = values[index]!;
+  }
+}
 
 export function tessellateSemanticBodies(
   kernel: OcctKernel,
@@ -178,8 +209,8 @@ export function tessellateSemanticBodies(
     const edges = semanticRecords(topology.edges, body, featureTopology);
     const faceOffset = allFaces.length;
     const edgeOffset = allEdges.length;
-    allFaces.push(...faces.records);
-    allEdges.push(...edges.records);
+    appendItems(allFaces, faces.records);
+    appendItems(allEdges, edges.records);
 
     const mesh = kernel.meshShape(body.shape, {
       linearDeflection: SEMANTIC_LINEAR_DEFLECTION_M,
@@ -189,7 +220,7 @@ export function tessellateSemanticBodies(
     if (!mesh.faceGroups) throw new Error(`OCCT tessellation omitted face groups: ${body.id}`);
     positionParts.push(mesh.positions);
     normalParts.push(mesh.normals);
-    indexValues.push(...mesh.indices.map((index) => index + vertexOffset));
+    appendNumbers(indexValues, mesh.indices, vertexOffset);
     const localOwners = new Array<number>(mesh.triangleCount).fill(-1);
     for (let index = 0; index < mesh.faceGroups.length; index += 3) {
       const start = mesh.faceGroups[index]! / 3;
@@ -199,7 +230,7 @@ export function tessellateSemanticBodies(
       localOwners.fill(faceOffset + owner, start, start + count);
     }
     if (localOwners.some((owner) => owner < 0)) throw new Error(`Triangle has no semantic owner: ${body.id}`);
-    triangleFaceIndices.push(...localOwners);
+    appendNumbers(triangleFaceIndices, localOwners);
     vertexOffset += mesh.vertexCount;
 
     const wireframe = kernel.wireframe(body.shape, SEMANTIC_LINEAR_DEFLECTION_M);
