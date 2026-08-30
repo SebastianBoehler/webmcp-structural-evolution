@@ -1,6 +1,6 @@
 # Browser-Native Mechanical CAD Platform Design
 
-**Status:** Approved architecture, pending written-spec review  
+**Status:** Approved architecture; September engineering-alpha scope approved
 **Date:** 2026-08-29  
 **First benchmark:** Editable rocket turbopump assembly
 
@@ -218,6 +218,67 @@ Persistent multi-device projects add:
 - WebSocket or equivalent collaboration transport for presence and revision events.
 
 Long-running or memory-intensive solvers do not run inside ordinary request functions. Local-first documents remain usable without the backend; unavailable remote capabilities fail explicitly.
+
+## September 4 engineering alpha
+
+The deadline deliverable is a coherent engineering alpha, not desktop-CAD parity
+and not a collection of decorative solver panels. CAD, simulation, optimization,
+and agent actions operate on the same revisioned design document and semantic
+selections. The UI does not designate one physics discipline as primary.
+
+The browser runtime combines WebGPU with Wasm workers deliberately:
+
+- WebGPU owns the target viewport, field visualization, parallel numerical
+  operators, and topology iterations suited to GPU execution;
+- the exact B-rep kernel runs as OCCT-backed Wasm in a dedicated worker;
+- deterministic CPU/Wasm references check bounded GPU numerical paths;
+- every unavailable capability fails visibly instead of substituting a mesh,
+  cached result, or synthetic response.
+
+The alpha exposes three real solver tools through one `SolverAdapter` and job
+contract:
+
+1. **Structural and topology:** bounded linear-static elasticity with explicit
+   materials, supports, and loads; displacement, compliance, balance, and stress
+   outputs; topology iterations and post-extraction re-analysis.
+2. **Mechanism dynamics:** deterministic rigid bodies, mates, joints, limits,
+   collision, clearance, gravity, and applied-force stepping for assemblies.
+3. **Steady-state thermal:** bounded conduction with explicit material
+   conductivity, temperature and heat-flux boundaries, energy-balance evidence,
+   and temperature-field output.
+
+Each adapter declares the geometry classes, material model, boundary conditions,
+precision, hardware, and problem size it supports. A valid study outside that
+envelope is reported as unsupported. The alpha does not claim nonlinear FEA,
+transient thermal analysis, CFD, contact FEA, fatigue life, or experimentally
+validated predictions.
+
+The human and agent share a hybrid authoring surface. The minimum exact-CAD path
+supports constrained 2D profiles, named dimensions, extrude, revolve, boolean
+union/cut/intersection, ordered rebuild history, component placement, rigid mates,
+and STEP import/export. Direct manipulation and WebMCP tools produce the same
+typed transactions, diagnostics, undo/redo history, and artifact invalidations.
+
+The deadline acceptance journey must demonstrate all of the following without a
+fixture-specific runtime branch:
+
+1. Author and parameter-edit an exact mechanical component, then rebuild and
+   preserve valid semantic references.
+2. Place the component in an assembly and exercise a joint with collision and
+   clearance feedback.
+3. Attach structural and thermal studies to named selections, run both, and
+   inspect truth-labelled fields and evidence.
+4. Run topology optimization from the structural study, generate and export a
+   manufacturable body, and re-analyze the accepted result.
+5. Perform the same inspect, edit, launch, cancel, compare, and export operations
+   through visible UI controls and WebMCP tools.
+6. Complete a live browser pass with real WebGPU capability, worker execution,
+   no console errors, and no hidden saved-result or CPU fallback.
+
+The existing drone, cobot/link, and fixture examples are benchmark documents,
+not privileged product modes. The alpha is considered general only when the same
+document, transaction, solver, and artifact contracts serve more than one of
+those geometries.
 
 ## Turbopump benchmark
 
