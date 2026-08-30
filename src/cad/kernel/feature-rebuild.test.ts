@@ -178,6 +178,67 @@ describe("exact OCCT feature rebuild", () => {
     }
   });
 
+  it("intersects overlapping exact solids with valid BREP, volume, mass, and no leaked handles", async () => {
+    const plate = await plateDocument();
+    const content = structuredClone(plate) as Record<string, unknown>;
+    delete content.revision;
+    const document = await defineDesignDocument({
+      ...content,
+      id: "exact-intersection",
+      label: "Overlapping solid intersection",
+      sketches: [
+        plate.sketches[0],
+        {
+          id: "tool-sketch", plane: "frame:world",
+          entities: [{ id: "tool-outline", kind: "rectangle", centerM: [0.03, 0], sizeM: [0.04, 0.02] }],
+          constraints: [
+            {
+              id: "tool-width", kind: "distance",
+              first: { entityId: "tool-outline", point: "left" },
+              second: { entityId: "tool-outline", point: "right" }, axis: "x", valueM: 0.04,
+            },
+            {
+              id: "tool-height", kind: "distance",
+              first: { entityId: "tool-outline", point: "bottom" },
+              second: { entityId: "tool-outline", point: "top" }, axis: "y", valueM: 0.02,
+            },
+          ],
+        },
+      ],
+      features: [
+        plate.features[0],
+        { id: "tool", kind: "extrude", sketchId: "tool-sketch", distanceM: 0.01 },
+        { id: "overlap", kind: "intersect", leftFeatureId: "plate", rightFeatureId: "tool" },
+      ],
+      bodies: [{ id: "overlap-body", featureId: "overlap" }],
+    });
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    try {
+      const payload = await rebuildDocument(
+        bridge, document, ["brep", "mass-properties"], new AbortController().signal,
+      );
+      expect(payload.brep?.bytes.byteLength).toBeGreaterThan(100);
+      expect(payload.massProperties).toMatchObject({
+        densityKgM3: 1,
+        volumeM3: expect.closeTo(0.000006, 12),
+        massKg: expect.closeTo(0.000006, 12),
+        surfaceAreaM2: expect.closeTo(0.0022, 12),
+      });
+      const restored = bridge.withKernel((owned) => owned.fromBREPBinary(payload.brep!.bytes));
+      try {
+        expect(bridge.withKernel((owned) => owned.isValid(restored))).toBe(true);
+        expect(bridge.withKernel((owned) => owned.subShapeCount(restored, "solid"))).toBe(1);
+        expect(bridge.withKernel((owned) => owned.getVolume(restored))).toBeCloseTo(0.000006, 12);
+      } finally {
+        bridge.withKernel((owned) => owned.release(restored));
+      }
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
   it("resolves upstream-lineage named selections and reports affected consumers when repair is required", async () => {
     const source = await mechanicalPartDocument();
     const kernel = await OcctKernel.init();

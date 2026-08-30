@@ -8,6 +8,11 @@ export {
   type ArtifactRecord,
 } from "./artifact-contract";
 export { invalidateArtifacts } from "./artifact-invalidation";
+export {
+  CAD_RESOURCE_LIMITS,
+  CadResourceLimitError,
+  type SemanticMeshUsage,
+} from "./cad-resource-limits";
 export { createOcctCadAdapter } from "./kernel/occt-adapter";
 export {
   DesignCommandSchema,
@@ -66,17 +71,21 @@ export {
   MateSchema,
   NamedSelectionSchema,
   ParameterExpressionSchema,
+  PersistentTopologyReferenceSchema,
   PositiveAngleExpressionSchema,
   PositiveLengthExpressionSchema,
   SketchConstraintSchema,
   SketchEntitySchema,
   SketchSchema,
+  TopologyGeometrySchema,
+  TopologyKindSchema,
   type AssemblyInstance,
   type Body,
   type Component,
   type Feature,
   type Mate,
   type NamedSelection,
+  type PersistentTopologyReference,
   type Sketch,
 } from "./model-schema";
 export {
@@ -101,15 +110,20 @@ export {
   EngineeringJobKindSchema,
   EngineeringJobRequestSchema,
   EngineeringTruthLevelSchema,
+  ExactStepImportRequestSchema,
+  ExactStepImportResultSchema,
   type CadEvaluationEvent,
   type CadEvaluationRequest,
   type CadKernelAdapter,
   type CadOutput,
+  type ExactStepImportRequest,
+  type ExactStepImportResult,
   type EngineeringJobEvent,
   type EngineeringJobRequest,
 } from "./runtime-contracts";
 export {
   applyDesignSessionTransaction,
+  attachDesignSessionArtifacts,
   createDesignSession,
   inspectDesignSession,
   type DesignSession,
