@@ -3,7 +3,9 @@ import { z } from "zod";
 import { ActionReceiptSchema } from "../domain/receipts";
 import { RevisionSchema } from "../domain/snapshots";
 import { ArtifactRecordSchema, type ArtifactKind } from "./artifact-contract";
-import { defineDesignDocument, DesignDocumentSchema } from "./document-schema";
+import {
+  defineDesignDocument, DesignDocumentSchema, SemanticReferenceSchema,
+} from "./document-schema";
 import {
   digestCadOutputPayload,
   MassPropertiesPayloadSchema,
@@ -22,7 +24,10 @@ export const CadOutputSchema = z.enum([
   "section-curves",
   "step",
 ]);
-const CadOutputsSchema = z.array(CadOutputSchema).min(1);
+const CadOutputsSchema = z.array(CadOutputSchema).min(1).refine(
+  (outputs) => new Set(outputs).size === outputs.length,
+  "Requested CAD outputs must be unique",
+);
 const Vec3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 
 export const CadEvaluationRequestSchema = z
@@ -107,6 +112,7 @@ const CadFailureSchema = z.object({
     "internal-error",
   ]),
   message: z.string().min(1),
+  affectedConsumers: z.array(SemanticReferenceSchema).optional(),
 }).strict();
 const artifactForOutput = (
   output: z.infer<typeof CadOutputSchema>,
@@ -143,13 +149,14 @@ const CadEvaluationResultSchema = z.discriminatedUnion("output", [
 const CadEvaluationSuccessSchema = z.object({
   requestId: z.string().min(1),
   state: z.literal("succeeded"),
+  sourceRevision: RevisionSchema,
   requestedOutputs: CadOutputsSchema,
   results: z.array(CadEvaluationResultSchema).min(1),
 }).strict().superRefine(async (value, context) => {
-  const returned = new Set(value.results.map((result) => result.output));
   for (const output of value.requestedOutputs) {
-    if (!returned.has(output)) {
-      context.addIssue({ code: "custom", path: ["results"], message: `Missing requested output: ${output}` });
+    const count = value.results.filter((result) => result.output === output).length;
+    if (count !== 1) {
+      context.addIssue({ code: "custom", path: ["results"], message: `Expected exactly one result for requested output: ${output}` });
     }
   }
   for (const [index, result] of value.results.entries()) {
@@ -162,6 +169,13 @@ const CadEvaluationSuccessSchema = z.object({
         code: "custom",
         path: ["results", index, "artifact", "contentDigest"],
         message: `${result.output} payload does not match its content digest`,
+      });
+    }
+    if ("artifact" in result && result.artifact.sourceRevision !== value.sourceRevision) {
+      context.addIssue({
+        code: "custom",
+        path: ["results", index, "artifact", "sourceRevision"],
+        message: `${result.output} artifact does not match the success source revision`,
       });
     }
   }

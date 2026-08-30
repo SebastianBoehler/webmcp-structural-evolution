@@ -87,6 +87,7 @@ async function successEvent(
   return {
     requestId,
     state: "succeeded",
+    sourceRevision: revision,
     requestedOutputs: ["brep", "semantic-mesh", "mass-properties", "step"],
     results: failure === "missing" ? results.filter(({ output }) => output !== "step") : results,
   } as CadEvaluationEvent;

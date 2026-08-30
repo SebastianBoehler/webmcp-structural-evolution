@@ -2,6 +2,7 @@ import type { OcctWorkerFailureCode } from "./occt-worker-contract";
 
 export const cadFailureCode = (code: OcctWorkerFailureCode) => {
   switch (code) {
+    case "invalid-document": return "invalid-document" as const;
     case "memory-exhausted": return "resource-limit" as const;
     case "feature-failed": return "feature-failed" as const;
     case "invalid-solid": return "invalid-solid" as const;

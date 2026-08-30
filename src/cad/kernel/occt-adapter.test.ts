@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createDesignDocument } from "../document-schema";
 import {
@@ -63,9 +63,13 @@ class LifecycleWorker implements OcctWorkerLike {
   }
 
   succeed(requestId: string): void {
+    const evaluation = this.posted.find((message) =>
+      message.type === "evaluate" && message.request.requestId === requestId);
+    if (!evaluation || evaluation.type !== "evaluate") throw new Error("Unknown evaluation");
     this.emit({
       type: "succeeded",
       requestId,
+      sourceRevision: evaluation.request.sourceRevision,
       requestedOutputs: ["mass-properties"],
       results: [{ output: "mass-properties", payload: massProperties }],
     });
@@ -76,7 +80,34 @@ class LifecycleWorker implements OcctWorkerLike {
   }
 }
 
+class AutoSuccessWorker extends LifecycleWorker {
+  override postMessage(message: unknown): void {
+    super.postMessage(message);
+    const request = message as OcctWorkerRequest;
+    if (request.type === "evaluate") this.succeed(request.request.requestId);
+  }
+}
+
 describe("OCCT CAD adapter", () => {
+  it("fails a tampered document at verified adapter ingress", async () => {
+    const worker = new AutoSuccessWorker();
+    const adapter = createOcctCadAdapter(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const valid = await request("tampered");
+    const tampered = {
+      ...valid,
+      document: { ...valid.document, label: "Tampered after revision derivation" },
+    } as CadEvaluationRequest;
+
+    await adapter.evaluate(tampered, new AbortController().signal, (event) => events.push(event));
+
+    expect(worker.posted).toEqual([]);
+    expect(events).toEqual([{
+      requestId: "tampered", state: "failed",
+      error: { code: "invalid-document", message: expect.stringMatching(/revision/i) },
+    }]);
+  });
+
   it("quarantines a cancelled worker and runs the next rebuild on a fresh worker", async () => {
     const workers = [new LifecycleWorker(), new LifecycleWorker()];
     let factoryCalls = 0;
@@ -85,9 +116,11 @@ describe("OCCT CAD adapter", () => {
     const controller = new AbortController();
     const first = adapter.evaluate(await request("first"), controller.signal, (event) => events.push(event));
 
+    await vi.waitFor(() => expect(workers[0]!.posted).toHaveLength(1));
     controller.abort();
     await first;
     const second = adapter.evaluate(await request("second"), new AbortController().signal, (event) => events.push(event));
+    await vi.waitFor(() => expect(workers[1]!.posted).toHaveLength(1));
     workers[1]!.succeed("second");
     await second;
 
@@ -109,10 +142,14 @@ describe("OCCT CAD adapter", () => {
     const first = adapter.evaluate(await request("first"), new AbortController().signal, () => undefined);
     const second = adapter.evaluate(await request("second"), new AbortController().signal, () => undefined);
 
-    expect(worker.posted.filter((message) => message.type === "evaluate")).toHaveLength(1);
+    await vi.waitFor(() => expect(
+      worker.posted.filter((message) => message.type === "evaluate"),
+    ).toHaveLength(1));
     worker.succeed("first");
     await first;
-    expect(worker.posted.filter((message) => message.type === "evaluate")).toHaveLength(2);
+    await vi.waitFor(() => expect(
+      worker.posted.filter((message) => message.type === "evaluate"),
+    ).toHaveLength(2));
     worker.succeed("second");
     await second;
   });
@@ -128,6 +165,7 @@ describe("OCCT CAD adapter", () => {
       (event) => events.push(event),
     );
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     controller.abort();
     worker.succeed("race");
     await evaluation;

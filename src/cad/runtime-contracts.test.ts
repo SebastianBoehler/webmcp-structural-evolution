@@ -60,6 +60,9 @@ describe("CAD runtime contracts", () => {
 
     expect(CadEvaluationRequestSchema.parse(request)).toEqual(request);
     expect(() => CadEvaluationRequestSchema.parse({ ...request, requestedOutputs: ["fake-solid"] })).toThrow();
+    expect(() => CadEvaluationRequestSchema.parse({
+      ...request, requestedOutputs: ["brep", "brep"],
+    })).toThrow(/unique/i);
   });
 
   it("re-derives the embedded document revision at verified request ingress", async () => {
@@ -78,6 +81,7 @@ describe("CAD runtime contracts", () => {
     const success = {
       requestId: "request-1",
       state: "succeeded",
+      sourceRevision: digest,
       requestedOutputs: ["mass-properties"],
       results: [{ output: "mass-properties", payload: massProperties }],
     } as const;
@@ -90,6 +94,10 @@ describe("CAD runtime contracts", () => {
         pointsM: new Float32Array(), curvePointRanges: new Uint32Array(), curveIds: [],
       } }],
     })).rejects.toThrow();
+    await expect(CadEvaluationEventSchema.parseAsync({
+      ...success,
+      results: [success.results[0], success.results[0]],
+    })).rejects.toThrow(/exactly one/i);
   });
 
   it("requires cancelled evaluations to carry worker-quarantine evidence", () => {
@@ -116,6 +124,7 @@ describe("CAD runtime contracts", () => {
     const success = {
       requestId: "request-1",
       state: "succeeded",
+      sourceRevision: digest,
       requestedOutputs: ["brep"],
       results: [{ output: "brep", artifact, payload }],
     } as const;
@@ -125,6 +134,9 @@ describe("CAD runtime contracts", () => {
       ...success,
       results: [{ ...success.results[0], payload: { bytes: new Uint8Array([0]) } }],
     })).rejects.toThrow(/content digest/i);
+    await expect(CadEvaluationEventSchema.parseAsync({
+      ...success, sourceRevision: "f".repeat(64),
+    })).rejects.toThrow(/source revision/i);
   });
 
   it("rejects CAD outputs backed by an incompatible artifact kind", async () => {
@@ -135,6 +147,7 @@ describe("CAD runtime contracts", () => {
     const success = {
       requestId: "request-1",
       state: "succeeded",
+      sourceRevision: digest,
       requestedOutputs: ["step"],
       results: [{ output: "step", artifact: step, payload }],
     } as const;

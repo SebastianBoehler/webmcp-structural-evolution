@@ -79,6 +79,27 @@ describe("OCCT worker", () => {
     vi.unstubAllGlobals();
   });
 
+  it("fails a tampered document at the worker boundary", async () => {
+    const scope = new ControlledWorkerScope();
+    vi.stubGlobal("self", scope);
+    await import("./occt-worker");
+    const request = await evaluation("tampered-worker");
+    const tampered = {
+      ...request,
+      document: { ...request.document, label: "Tampered after adapter validation" },
+    };
+
+    scope.send({ type: "evaluate", request: tampered } as OcctWorkerRequest);
+
+    await vi.waitFor(() => expect(scope.messages).toContainEqual({
+      type: "failed", requestId: "tampered-worker",
+      error: { code: "invalid-document", message: expect.stringMatching(/revision/i) },
+    }));
+    expect(scope.messages).not.toContainEqual(expect.objectContaining({
+      type: "succeeded", requestId: "tampered-worker",
+    }));
+  });
+
   it("does not let a cancellation without an active owner poison a real exact rebuild", async () => {
     const scope = new ControlledWorkerScope();
     vi.stubGlobal("self", scope);

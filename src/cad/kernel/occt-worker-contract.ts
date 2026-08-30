@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { RevisionSchema } from "../../domain/snapshots";
+import { SemanticReferenceSchema } from "../document-schema";
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
@@ -33,6 +35,7 @@ export const OcctWorkerRequestSchema = z.discriminatedUnion("type", [
 ]);
 
 export const OcctWorkerFailureCodeSchema = z.enum([
+  "invalid-document",
   "initialization-failed",
   "memory-exhausted",
   "feature-failed",
@@ -49,6 +52,7 @@ export const OcctWorkerFailureCodeSchema = z.enum([
 const OcctWorkerFailureSchema = z.object({
   code: OcctWorkerFailureCodeSchema,
   message: z.string().min(1),
+  affectedConsumers: z.array(SemanticReferenceSchema).optional(),
 }).strict();
 
 const ProgressSchema = z.object({
@@ -71,6 +75,7 @@ const FailedSchema = z.object({
 const SucceededSchema = z.object({
   type: z.literal("succeeded"),
   requestId: RequestIdSchema,
+  sourceRevision: RevisionSchema,
   requestedOutputs: z.array(z.string()).min(1),
   results: z.array(z.unknown()).min(1),
 }).strict().superRefine(async (value, context) => {

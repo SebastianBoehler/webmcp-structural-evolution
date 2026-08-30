@@ -1,7 +1,11 @@
 import { OcctKernel } from "occt-wasm";
 import occtWasmUrl from "occt-wasm/dist/occt-wasm.wasm?url";
 
-import type { CadEvaluationRequest, ExactStepImportRequest } from "../runtime-contracts";
+import {
+  defineCadEvaluationRequest,
+  type CadEvaluationRequest,
+  type ExactStepImportRequest,
+} from "../runtime-contracts";
 import { createOcctBridge, type OcctBridge } from "./occt-bridge";
 import { CadRebuildError, rebuildDocument } from "./feature-rebuild";
 import { buildCadEvaluationResults } from "./rebuild-results";
@@ -51,6 +55,14 @@ const classifyFailure = (error: unknown): OcctWorkerFailureCode => {
   if (error instanceof CadRebuildError) return error.code;
   return "feature-failed";
 };
+
+const failureFor = (error: unknown) => ({
+  code: classifyFailure(error),
+  message: messageFor(error),
+  ...(error instanceof CadRebuildError && error.affectedConsumers.length > 0
+    ? { affectedConsumers: [...error.affectedConsumers] }
+    : {}),
+});
 
 const getBridge = () => {
   bridge ??= OcctKernel.init({ wasm: occtWasmUrl }).then(createOcctBridge);
@@ -103,6 +115,7 @@ const evaluate = async (request: CadEvaluationRequest) => {
       await post({
         type: "succeeded",
         requestId,
+        sourceRevision: request.sourceRevision,
         requestedOutputs: [...request.requestedOutputs],
         results,
       });
@@ -114,7 +127,7 @@ const evaluate = async (request: CadEvaluationRequest) => {
       await post({
         type: "failed",
         requestId,
-        error: { code: classifyFailure(error), message: messageFor(error) },
+        error: failureFor(error),
       });
     }
   } finally {
@@ -161,7 +174,7 @@ const importStep = async (request: ExactStepImportRequest) => {
       }
       await post({
         type: "failed", requestId,
-        error: { code: classifyFailure(error), message: messageFor(error) },
+        error: failureFor(error),
       });
     }
   } finally {
@@ -197,10 +210,22 @@ const receive = async (data: unknown) => {
     }
     return;
   }
-  const request = parsed.data.request;
-  evaluationQueue = evaluationQueue.then(() => parsed.data.type === "evaluate"
-    ? evaluate(request as CadEvaluationRequest)
-    : importStep(request as ExactStepImportRequest));
+  if (parsed.data.type === "evaluate") {
+    let request: CadEvaluationRequest;
+    try {
+      request = await defineCadEvaluationRequest(parsed.data.request);
+    } catch (error) {
+      await post({
+        type: "failed", requestId: parsed.data.request.requestId,
+        error: { code: "invalid-document", message: messageFor(error) },
+      });
+      return;
+    }
+    evaluationQueue = evaluationQueue.then(() => evaluate(request));
+  } else if (parsed.data.type === "import-step") {
+    const request = parsed.data.request as ExactStepImportRequest;
+    evaluationQueue = evaluationQueue.then(() => importStep(request));
+  }
 };
 
 scope.addEventListener("message", ({ data }) => {

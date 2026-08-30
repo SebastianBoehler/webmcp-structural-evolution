@@ -1,6 +1,5 @@
 import {
   CadEvaluationEventSchema,
-  CadEvaluationRequestSchema,
   ExactStepImportRequestSchema,
   ExactStepImportResultSchema,
   type CadEvaluationEvent,
@@ -8,6 +7,7 @@ import {
   type ExactStepImportRequest,
   type ExactStepImportResult,
 } from "../runtime-contracts";
+import { verifiedCadEvaluationRequest } from "./cad-request-ingress";
 import {
   OcctWorkerEventSchema,
   OcctWorkerRequestSchema,
@@ -17,26 +17,21 @@ import type {
   OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent, PendingOcctOperation,
 } from "./occt-worker-client-types";
 import { cadFailureCode, isFatalOcctFailure } from "./occt-worker-failure";
-
 export type { OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent } from "./occt-worker-client-types";
-
 export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
   let active: PendingOcctOperation | undefined;
   let settling: PendingOcctOperation | undefined;
   const queue: PendingOcctOperation[] = [];
-
   const emit = (event: CadEvaluationEvent) => {
     if (active?.kind === "evaluation") active.emit(CadEvaluationEventSchema.parse(event));
   };
-
   const replaceWorker = () => {
     if (!worker) return;
     worker.removeEventListener("message", onMessage);
     worker.terminate();
     worker = undefined;
   };
-
   const finish = () => {
     const completed = active;
     if (!completed) return;
@@ -46,7 +41,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     completed.resolve();
     void startNext();
   };
-
   const cancelOperation = (owner: PendingOcctOperation, workerDisposition: "quarantined" | "not-started") => {
     if (active !== owner) return;
     if (workerDisposition === "quarantined") replaceWorker();
@@ -56,7 +50,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     else owner.reject(new DOMException("Exact STEP import was cancelled", "AbortError"));
     finish();
   };
-
   const protocolFailure = (message: string) => {
     if (active?.kind === "evaluation") emit({
       requestId: active.requestId, state: "failed",
@@ -66,7 +59,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     replaceWorker();
     finish();
   };
-
   const acceptEvent = (event: OcctWorkerEvent) => {
     if (!active || event.requestId !== active.requestId) {
       protocolFailure("OCCT worker response did not match the active request");
@@ -90,14 +82,18 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     } else {
       if (active.kind === "evaluation") emit({
         requestId: event.requestId, state: "failed",
-        error: { code: cadFailureCode(event.error.code), message: event.error.message },
+        error: {
+          code: cadFailureCode(event.error.code), message: event.error.message,
+          ...(event.error.affectedConsumers
+            ? { affectedConsumers: event.error.affectedConsumers }
+            : {}),
+        },
       });
       else active.reject(new Error(`Exact STEP import failed (${event.error.code}): ${event.error.message}`));
       if (isFatalOcctFailure(event.error.code)) replaceWorker();
     }
     finish();
   };
-
   const requestedOutputsMatch = (
     request: CadEvaluationRequest,
     event: Extract<OcctWorkerEvent, { type: "succeeded" }>,
@@ -115,6 +111,10 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
     if (!requestedOutputsMatch(owner.request, event)) {
       protocolFailure("OCCT worker success outputs did not match the active request");
+      return;
+    }
+    if (event.sourceRevision !== owner.request.sourceRevision) {
+      protocolFailure("OCCT worker success revision did not match the active request");
       return;
     }
     if (owner.signal.aborted) {
@@ -268,13 +268,14 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   }
 
   return {
-    evaluate(
+    async evaluate(
       request: CadEvaluationRequest,
       signal: AbortSignal,
       eventEmitter: (event: CadEvaluationEvent) => void,
     ): Promise<void> {
-      const validated = CadEvaluationRequestSchema.parse(request);
-      return new Promise((resolve) => {
+      const validated = await verifiedCadEvaluationRequest(request, eventEmitter);
+      if (!validated) return;
+      await new Promise<void>((resolve) => {
         queue.push({
           kind: "evaluation", requestId: validated.requestId,
           request: validated, signal, emit: eventEmitter, resolve,

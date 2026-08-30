@@ -28,6 +28,7 @@ const massProperties = {
 const emptySections = {
   pointsM: new Float32Array(), curvePointRanges: new Uint32Array(), curveIds: [],
 };
+const requestRevisions = new Map<string, string>();
 
 async function request(requestId: string): Promise<CadEvaluationRequest> {
   const document = await createDesignDocument({
@@ -36,14 +37,18 @@ async function request(requestId: string): Promise<CadEvaluationRequest> {
     units: { length: "mm", angle: "deg", mass: "kg" },
     createdBy: { kind: "agent", id: "test" },
   });
-  return CadEvaluationRequestSchema.parse({
+  const parsed = CadEvaluationRequestSchema.parse({
     requestId,
     document,
     sourceRevision: document.revision,
     requestedOutputs: ["mass-properties"],
     settings: {},
   });
+  requestRevisions.set(requestId, parsed.sourceRevision);
+  return parsed;
 }
+
+const revisionFor = (requestId: string) => requestRevisions.get(requestId)!;
 
 async function stepRequest(requestId: string): Promise<ExactStepImportRequest> {
   const sourceRevision = "e".repeat(64);
@@ -104,6 +109,7 @@ describe("OCCT worker client", () => {
   });
 
   it.each([
+    ["invalid-document", "invalid-document"],
     ["initialization-failed", "internal-error"],
     ["memory-exhausted", "resource-limit"],
     ["feature-failed", "feature-failed"],
@@ -115,6 +121,7 @@ describe("OCCT worker client", () => {
     const events: CadEvaluationEvent[] = [];
     const evaluation = client.evaluate(await request("mapped"), new AbortController().signal, (event) => events.push(event));
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({
       type: "failed",
       requestId: "mapped",
@@ -130,6 +137,33 @@ describe("OCCT worker client", () => {
     expect(worker.terminateCount).toBe(0);
   });
 
+  it("preserves affected consumers on persistent-reference failures", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const evaluation = client.evaluate(
+      await request("repair"), new AbortController().signal, (event) => events.push(event),
+    );
+
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    worker.emit({
+      type: "failed", requestId: "repair",
+      error: {
+        code: "reference-requires-repair", message: "ambiguous face",
+        affectedConsumers: ["named-selection:mount-face", "mate:mount-mate"],
+      },
+    });
+    await evaluation;
+
+    expect(events[0]).toMatchObject({
+      state: "failed",
+      error: {
+        code: "reference-requires-repair",
+        affectedConsumers: ["named-selection:mount-face", "mate:mount-mate"],
+      },
+    });
+  });
+
   it("fails the active request and replaces the worker after a protocol mismatch", async () => {
     const workers = [new ControlledWorker(), new ControlledWorker()];
     let factoryCalls = 0;
@@ -137,6 +171,7 @@ describe("OCCT worker client", () => {
     const events: CadEvaluationEvent[] = [];
     const first = client.evaluate(await request("first"), new AbortController().signal, (event) => events.push(event));
 
+    await vi.waitFor(() => expect(workers[0]!.posted).toHaveLength(1));
     workers[0]!.emit({ type: "progress", requestId: "someone-else", progress: 0.5 });
     await first;
     const second = client.evaluate(await request("second"), new AbortController().signal, (event) => events.push(event));
@@ -147,6 +182,7 @@ describe("OCCT worker client", () => {
       error: { code: "internal-error" },
     });
     expect(workers[0]!.terminateCount).toBe(1);
+    await vi.waitFor(() => expect(workers[1]!.posted).toHaveLength(1));
     expect(factoryCalls).toBe(2);
     workers[1]!.emit({ type: "cancelled", requestId: "second" });
     await second;
@@ -170,6 +206,7 @@ describe("OCCT worker client", () => {
         },
       );
 
+      await vi.waitFor(() => expect(workers[0]!.posted).toHaveLength(1));
       controller.abort();
       await first;
       expect(workers[0]!.terminateCount).toBe(1);
@@ -182,14 +219,17 @@ describe("OCCT worker client", () => {
       const second = client.evaluate(
         await request("following"), new AbortController().signal, (event) => events.push(event),
       );
+      await vi.waitFor(() => expect(workers[1]!.posted).toHaveLength(1));
       setTimeout(() => workers[0]!.emit({
         type: "succeeded", requestId: "cancelled",
+        sourceRevision: revisionFor("cancelled"),
         requestedOutputs: ["mass-properties"],
         results: [{ output: "mass-properties", payload: massProperties }],
       }), 60_000);
       await vi.advanceTimersByTimeAsync(60_000);
       workers[1]!.emit({
         type: "succeeded", requestId: "following",
+        sourceRevision: revisionFor("following"),
         requestedOutputs: ["mass-properties"],
         results: [{ output: "mass-properties", payload: massProperties }],
       });
@@ -210,11 +250,14 @@ describe("OCCT worker client", () => {
     let factoryCalls = 0;
     const client = createOcctWorkerClient(() => { factoryCalls += 1; return worker; });
     const first = client.evaluate(await request("failed"), new AbortController().signal, () => undefined);
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({ type: "failed", requestId: "failed", error: { code: "feature-failed", message: "bad feature" } });
     await first;
     const second = client.evaluate(await request("following"), new AbortController().signal, () => undefined);
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(2));
     worker.emit({
-      type: "succeeded", requestId: "following", requestedOutputs: ["mass-properties"],
+      type: "succeeded", requestId: "following", sourceRevision: revisionFor("following"),
+      requestedOutputs: ["mass-properties"],
       results: [{ output: "mass-properties", payload: massProperties }],
     });
     await second;
@@ -229,6 +272,7 @@ describe("OCCT worker client", () => {
     const events: CadEvaluationEvent[] = [];
     const evaluation = client.evaluate(await request("malformed"), new AbortController().signal, (event) => events.push(event));
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({ type: "succeeded", requestId: "malformed", results: [] });
     await evaluation;
 
@@ -250,9 +294,11 @@ describe("OCCT worker client", () => {
       (event) => events.push(event),
     );
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({
       type: "succeeded",
       requestId: "wrong-outputs",
+      sourceRevision: revisionFor("wrong-outputs"),
       requestedOutputs: ["section-curves"],
       results: [{ output: "section-curves", payload: emptySections }],
     });
@@ -262,6 +308,28 @@ describe("OCCT worker client", () => {
       requestId: "wrong-outputs",
       state: "failed",
       error: { code: "internal-error" },
+    });
+    expect(worker.terminateCount).toBe(1);
+  });
+
+  it("rejects a self-consistent success for a stale source revision", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const evaluation = client.evaluate(
+      await request("stale-success"), new AbortController().signal, (event) => events.push(event),
+    );
+
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    worker.emit({
+      type: "succeeded", requestId: "stale-success", sourceRevision: "f".repeat(64),
+      requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: massProperties }],
+    });
+    await evaluation;
+
+    expect(events[0]).toMatchObject({
+      requestId: "stale-success", state: "failed", error: { code: "internal-error" },
     });
     expect(worker.terminateCount).toBe(1);
   });
@@ -291,9 +359,11 @@ describe("OCCT worker client", () => {
       (event) => events.push(event),
     );
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({
       type: "succeeded",
       requestId: "first",
+      sourceRevision: revisionFor("first"),
       requestedOutputs: ["mass-properties"],
       results: [{ output: "mass-properties", payload: massProperties }],
     });
@@ -306,11 +376,13 @@ describe("OCCT worker client", () => {
         .toEqual(["succeeded"]);
     });
     await first;
-    expect(worker.posted.filter((message) => message.type === "evaluate").map((message) => message.request.requestId))
-      .toEqual(["first", "second"]);
+    await vi.waitFor(() => expect(worker.posted.filter((message) =>
+      message.type === "evaluate").map((message) => message.request.requestId))
+      .toEqual(["first", "second"]));
     worker.emit({
       type: "succeeded",
       requestId: "second",
+      sourceRevision: revisionFor("second"),
       requestedOutputs: ["mass-properties"],
       results: [{ output: "mass-properties", payload: massProperties }],
     });
@@ -347,9 +419,11 @@ describe("OCCT worker client", () => {
       (event) => events.push(event),
     );
 
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
     worker.emit({
       type: "succeeded",
       requestId: "brep",
+      sourceRevision: brepRequest.sourceRevision,
       requestedOutputs: ["brep"],
       results: [{ output: "brep", artifact, payload }],
     });
@@ -358,6 +432,7 @@ describe("OCCT worker client", () => {
     expect(events).toEqual([{
       requestId: "brep",
       state: "succeeded",
+      sourceRevision: brepRequest.sourceRevision,
       requestedOutputs: ["brep"],
       results: [{ output: "brep", artifact, payload }],
     }]);

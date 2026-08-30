@@ -19,16 +19,13 @@ const OUTPUTS = ["brep", "semantic-mesh", "mass-properties", "step"] as const sa
 const RELATIVE_TOLERANCE = 1e-6;
 const INITIAL_WIDTH_M = 0.08;
 const EDITED_WIDTH_M = 0.1;
-
 type Success = Extract<CadEvaluationEvent, { state: "succeeded" }>;
 type OutputResult = Success["results"][number];
-
 export interface ExactCadGateDependencies {
   readonly createAdapter?: () => CadKernelAdapter;
   readonly terminalQuiescenceMs?: number;
   readonly now?: () => number;
 }
-
 export interface ExactCadGateResult {
   readonly status: "passed";
   readonly timingsMs: Readonly<Record<"authoring" | "initialRebuild" | "dimensionRebuild" | "stepRoundTrip" | "cancellation" | "finalRebuild" | "total", number>>;
@@ -54,7 +51,6 @@ export interface ExactCadGateResult {
   readonly artifacts: { readonly invalidatedCount: number; readonly staleCount: 0; readonly activeCount: number };
   readonly renderMesh: CadMesh;
 }
-
 const clock = { now: () => new Date().toISOString(), elapsedMs: () => 0 };
 const expectedVolume = (widthM: number) => widthM * 0.04 * 0.01
   + Math.PI * 0.01 ** 2 * 0.01
@@ -126,6 +122,7 @@ async function collectEvaluation(
   requestId: string,
   signal: AbortSignal,
   terminalQuiescenceMs = 0,
+  onProgress?: () => void,
 ): Promise<readonly CadEvaluationEvent[]> {
   const request = await defineCadEvaluationRequest({
     requestId, document, sourceRevision: document.revision,
@@ -133,7 +130,8 @@ async function collectEvaluation(
   });
   const terminals: CadEvaluationEvent[] = [];
   await adapter.evaluate(request, signal, (event) => {
-    if (event.state !== "progress") terminals.push(event);
+    if (event.state === "progress") onProgress?.();
+    else terminals.push(event);
   });
   if (terminalQuiescenceMs > 0) {
     await new Promise<void>((resolve) => setTimeout(resolve, terminalQuiescenceMs));
@@ -256,8 +254,8 @@ export async function runExactCadGate(
     const evaluation = collectEvaluation(
       adapter, dimensionDocument, "cancelled", controller.signal,
       dependencies.terminalQuiescenceMs ?? 25,
+      () => controller.abort(),
     );
-    setTimeout(() => controller.abort(), 0);
     try { return await evaluation; } finally { signal.removeEventListener("abort", abort); }
   });
   const cancelledIndex = cancelRun.value.findIndex(({ state }) => state === "cancelled");
