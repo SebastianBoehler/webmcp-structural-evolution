@@ -20,9 +20,9 @@ export const SketchEntitySchema = z.discriminatedUnion("kind", [
 export const SketchConstraintSchema = z.discriminatedUnion("kind", [
   z.object({ id: EntityIdSchema, kind: z.literal("coincident"), first: PointReferenceSchema, second: PointReferenceSchema }).strict(),
   z.object({ id: EntityIdSchema, kind: z.enum(["horizontal", "vertical"]), entityId: EntityIdSchema }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("distance"), first: PointReferenceSchema, second: PointReferenceSchema, axis: z.enum(["x", "y"]), valueM: positive }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("distance"), first: PointReferenceSchema, second: PointReferenceSchema, axis: z.enum(["x", "y"]).optional(), valueM: positive }).strict(),
   z.object({ id: EntityIdSchema, kind: z.literal("radius"), entityId: EntityIdSchema, valueM: positive }).strict(),
-  z.object({ id: EntityIdSchema, kind: z.literal("angle"), first: PointReferenceSchema, second: PointReferenceSchema, valueRad: finite }).strict(),
+  z.object({ id: EntityIdSchema, kind: z.literal("angle"), vertex: PointReferenceSchema, firstDirection: PointReferenceSchema, secondDirection: PointReferenceSchema, valueRad: finite }).strict(),
 ]);
 
 export const SketchSchema = z.object({
@@ -89,11 +89,22 @@ function checkSketch(sketch: ParsedSketch, context: z.RefinementCtx): void {
   addUniqueIssues(sketch.constraints, "sketch constraint", context);
   const entities = new Map(sketch.entities.map((entity) => [entity.id, entity]));
   for (const constraint of sketch.constraints) {
-    if (constraint.kind === "coincident" || constraint.kind === "distance" || constraint.kind === "angle") {
+    if (constraint.kind === "coincident" || constraint.kind === "distance") {
       checkPointReference(constraint.first, entities, context);
       checkPointReference(constraint.second, entities, context);
-    } else if (!entities.has(constraint.entityId)) {
-      context.addIssue({ code: "custom", message: `Sketch entity is unresolved: ${constraint.entityId}` });
+    } else if (constraint.kind === "angle") {
+      checkPointReference(constraint.vertex, entities, context);
+      checkPointReference(constraint.firstDirection, entities, context);
+      checkPointReference(constraint.secondDirection, entities, context);
+    } else {
+      const entity = entities.get(constraint.entityId);
+      if (!entity) {
+        context.addIssue({ code: "custom", message: `Sketch entity is unresolved: ${constraint.entityId}` });
+      } else if ((constraint.kind === "horizontal" || constraint.kind === "vertical") && entity.kind !== "line") {
+        context.addIssue({ code: "custom", message: `${constraint.kind} constraint requires a line: ${constraint.entityId}` });
+      } else if (constraint.kind === "radius" && entity.kind !== "arc" && entity.kind !== "circle") {
+        context.addIssue({ code: "custom", message: `Radius constraint requires an arc or circle: ${constraint.entityId}` });
+      }
     }
   }
 }
@@ -169,8 +180,8 @@ export function addModelIntegrityIssues(
     if (ownedBodies.has(bodyId)) context.addIssue({ code: "custom", message: `Body has multiple component owners: ${bodyId}` });
     ownedBodies.add(bodyId);
   }
-  const components = new Set(value.components.map(({ id }) => id));
-  const instances = new Set(value.instances.map(({ id }) => id));
+  const components = new Map(value.components.map((component) => [component.id, new Set(component.bodyIds)]));
+  const instances = new Map(value.instances.map((instance) => [instance.id, instance]));
   for (const instance of value.instances) {
     if (!components.has(instance.componentId)) context.addIssue({ code: "custom", message: `Instance component is unresolved: ${instance.componentId}` });
     if (!frames.has(instance.frameId)) context.addIssue({ code: "custom", message: `Instance frame is unresolved: ${instance.frameId}` });
@@ -182,8 +193,18 @@ export function addModelIntegrityIssues(
     else if (body.featureId !== selection.featureId) context.addIssue({ code: "custom", message: `Named selection feature is not owned by body: ${selection.featureId}` });
   }
   for (const mate of value.mates) {
-    if (!instances.has(mate.firstInstanceId) || !instances.has(mate.secondInstanceId)) context.addIssue({ code: "custom", message: `Mate instance is unresolved: ${mate.id}` });
+    const firstInstance = instances.get(mate.firstInstanceId);
+    const secondInstance = instances.get(mate.secondInstanceId);
+    const firstSelection = selections.get(mate.firstSelectionId);
+    const secondSelection = selections.get(mate.secondSelectionId);
+    if (!firstInstance || !secondInstance) context.addIssue({ code: "custom", message: `Mate instance is unresolved: ${mate.id}` });
     if (!selections.has(mate.firstSelectionId) || !selections.has(mate.secondSelectionId)) context.addIssue({ code: "custom", message: `Mate named selection is unresolved: ${mate.id}` });
+    if (firstInstance && firstSelection && !components.get(firstInstance.componentId)?.has(firstSelection.bodyId)) {
+      context.addIssue({ code: "custom", message: `Mate selection is outside first instance component: ${mate.id}` });
+    }
+    if (secondInstance && secondSelection && !components.get(secondInstance.componentId)?.has(secondSelection.bodyId)) {
+      context.addIssue({ code: "custom", message: `Mate selection is outside second instance component: ${mate.id}` });
+    }
   }
 }
 

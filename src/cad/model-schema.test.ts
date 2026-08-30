@@ -101,4 +101,90 @@ describe("exact model schemas", () => {
       bodies: [], components: [], instances: [], mates: [], namedSelections: [],
     })).rejects.toThrow(/open profile/i);
   });
+
+  it("accepts Euclidean and explicitly projected distance constraints", async () => {
+    const document = await defineDesignDocument({
+      ...baseContent,
+      sketches: [{
+        id: "constraint-sketch",
+        plane: "frame:world",
+        entities: [
+          { id: "diagonal", kind: "line", startM: [0, 0], endM: [0.03, 0.04] },
+          { id: "vertical", kind: "line", startM: [0, 0], endM: [0, 0.04] },
+          { id: "arc", kind: "arc", centerM: [0.04, 0], radiusM: 0.01, startAngleRad: 0, endAngleRad: Math.PI / 2 },
+          { id: "circle", kind: "circle", centerM: [0.06, 0.02], radiusM: 0.01 },
+        ],
+        constraints: [
+          { id: "diagonal-length", kind: "distance", first: { entityId: "diagonal", point: "start" }, second: { entityId: "diagonal", point: "end" }, valueM: 0.05 },
+          { id: "projected-height", kind: "distance", first: { entityId: "diagonal", point: "start" }, second: { entityId: "diagonal", point: "end" }, axis: "y", valueM: 0.04 },
+          { id: "horizontal", kind: "horizontal", entityId: "diagonal" },
+          { id: "vertical", kind: "vertical", entityId: "vertical" },
+          { id: "arc-radius", kind: "radius", entityId: "arc", valueM: 0.01 },
+          { id: "circle-radius", kind: "radius", entityId: "circle", valueM: 0.01 },
+          {
+            id: "corner-angle", kind: "angle", vertex: { entityId: "diagonal", point: "start" },
+            firstDirection: { entityId: "diagonal", point: "end" }, secondDirection: { entityId: "vertical", point: "end" }, valueRad: Math.atan2(3, 4),
+          },
+        ],
+      }],
+      features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+    });
+
+    expect(document.sketches[0]?.constraints).toHaveLength(7);
+  });
+
+  it("rejects incompatible sketch constraints", async () => {
+    const content = {
+      ...baseContent,
+      sketches: [{
+        id: "constraint-sketch", plane: "frame:world",
+        entities: [
+          { id: "outline", kind: "rectangle" as const, centerM: [0, 0], sizeM: [0.08, 0.04] },
+          { id: "circle", kind: "circle" as const, centerM: [0.06, 0.02], radiusM: 0.01 },
+          { id: "edge", kind: "line" as const, startM: [0, 0], endM: [0.04, 0] },
+        ],
+        constraints: [],
+      }],
+      features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+    };
+
+    await expect(defineDesignDocument({
+      ...content,
+      sketches: [{ ...content.sketches[0], constraints: [{ id: "not-line", kind: "horizontal", entityId: "outline" }] }],
+    })).rejects.toThrow(/horizontal/i);
+    await expect(defineDesignDocument({
+      ...content,
+      sketches: [{ ...content.sketches[0], constraints: [{ id: "not-line", kind: "vertical", entityId: "circle" }] }],
+    })).rejects.toThrow(/vertical/i);
+    await expect(defineDesignDocument({
+      ...content,
+      sketches: [{ ...content.sketches[0], constraints: [{ id: "not-round", kind: "radius", entityId: "edge", valueM: 0.01 }] }],
+    })).rejects.toThrow(/radius/i);
+    await expect(defineDesignDocument({
+      ...content,
+      sketches: [{
+        ...content.sketches[0],
+        constraints: [{ id: "ambiguous-angle", kind: "angle", first: { entityId: "edge", point: "start" }, second: { entityId: "edge", point: "end" }, valueRad: 0 }],
+      }],
+    })).rejects.toThrow();
+  });
+
+  it("rejects a mate selection outside its instance component", async () => {
+    await expect(defineDesignDocument({
+      ...baseContent,
+      sketches: [profile],
+      features: [
+        { id: "first-feature", kind: "extrude", sketchId: "base-sketch", distanceM: 0.01 },
+        { id: "second-feature", kind: "extrude", sketchId: "base-sketch", distanceM: 0.01 },
+      ],
+      bodies: [{ id: "first-body", featureId: "first-feature" }, { id: "second-body", featureId: "second-feature" }],
+      components: [{ id: "first-component", bodyIds: ["first-body"] }, { id: "second-component", bodyIds: ["second-body"] }],
+      instances: [{ id: "first-instance", componentId: "first-component", frameId: "world" }, { id: "second-instance", componentId: "second-component", frameId: "world" }],
+      namedSelections: [
+        { id: "first-face", bodyId: "first-body", featureId: "first-feature", query: { kind: "face", selector: "top" } },
+        { id: "second-face", bodyId: "second-body", featureId: "second-feature", query: { kind: "face", selector: "top" } },
+      ],
+      mates: [{ id: "bad-mate", kind: "rigid", firstInstanceId: "first-instance", secondInstanceId: "second-instance", firstSelectionId: "second-face", secondSelectionId: "second-face" }],
+    })).rejects.toThrow(/mate selection/i);
+  });
 });
