@@ -39,7 +39,7 @@ export function ExactCadGateView({ gate, capability, viewerEnvironment }: ExactC
   }];
   return (
     <main className="workbench-shell" aria-label="Exact CAD browser gate">
-      <section className="viewport-workspace" aria-labelledby="exact-cad-gate-title">
+      <section className="viewport-workspace exact-cad-gate-workspace" aria-labelledby="exact-cad-gate-title">
         <h1 id="exact-cad-gate-title">Exact CAD browser gate passed</h1>
         <div className="viewport-canvas"><div className="viewport-scene">
           <FieldViewer
