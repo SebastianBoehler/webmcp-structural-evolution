@@ -28,6 +28,7 @@ import { buildProbeInput } from "./project-probe";
 import { probeCopy } from "./probe-copy";
 import { useVisibleAssemblyParts } from "./use-visible-assembly-parts";
 import type { AssemblyPanel, WorkbenchMode } from "./workbench-mode";
+import { ExactCadGateView } from "./ExactCadGateView";
 export function FoundationJourney({
   capability,
   compute,
@@ -49,7 +50,7 @@ export function FoundationJourney({
     () => fixture.compileTopology(workspace),
     [fixture, workspace.revision],
   );
-  const { state, services, experimentRail } = useProjectState({
+  const { state, services, experimentRail, exactCadGate } = useProjectState({
     contextRevision: workspace.revision,
     context: initialContext,
     acceptedBranchRevision: initialAcceptedRevision,
@@ -166,6 +167,11 @@ export function FoundationJourney({
   const dockOpen = workspaceMode === "simulate"
     || workspaceMode === "review"
     || (workspaceMode === "optimize" && viewerCurrent !== null);
+
+  if (exactCadGate.status !== "inactive") return <ExactCadGateView
+    gate={exactCadGate} capability={capability} context={state.context}
+    viewerEnvironment={viewerEnvironment}
+  />;
 
   return (
     <main className="workbench-shell">

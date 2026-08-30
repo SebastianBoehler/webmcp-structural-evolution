@@ -33,10 +33,16 @@ async function artifactFor(
     contentDigest: await digestCadOutputPayload(payload),
     units: definition.units,
     mediaType: definition.mediaType,
-    dependencies: request.document.bodies.map(({ id }) => ({
-      kind: "entity",
-      reference: `body:${id}`,
-    })),
+    dependencies: [
+      ...request.document.parameters.map(({ id }) => ({
+        kind: "entity" as const,
+        reference: `parameter:${id}`,
+      })),
+      ...request.document.bodies.map(({ id }) => ({
+        kind: "entity" as const,
+        reference: `body:${id}`,
+      })),
+    ],
   });
 }
 

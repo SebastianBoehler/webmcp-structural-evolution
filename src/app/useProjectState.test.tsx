@@ -19,6 +19,27 @@ const runInput = {
   prediction: "Verification stays within the probe budget",
 };
 
+test("surfaces exact CAD worker failure as typed project state", async () => {
+  const exactCadGate = vi.fn(async () => {
+    throw new Error("OCCT Wasm initialization failed");
+  });
+  const { result } = renderHook(() => useProjectState({
+    contextRevision: revisionA,
+    context: testFoundationContext(),
+    acceptedBranchRevision: revisionA,
+    selection: { id: "motor-arm", label: "Motor arm" },
+    locks: ["body-mount"],
+    capability: { status: "available", message: "ready" },
+    exactCadGate,
+  }));
+
+  expect(result.current.exactCadGate.status).toBe("running");
+  await waitFor(() => expect(result.current.exactCadGate).toEqual({
+    status: "failed",
+    message: "OCCT Wasm initialization failed",
+  }));
+});
+
 test("stages an exact immutable branch and stores prediction before measured output", async () => {
   let resolveProbe!: (result: {
     status: "verified";

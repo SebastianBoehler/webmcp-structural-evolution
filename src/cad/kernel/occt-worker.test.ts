@@ -36,10 +36,13 @@ async function evaluation(requestId: string, requestedOutputs: readonly CadOutpu
         orientation: { roll: { value: 0, unit: "rad" }, pitch: { value: 0, unit: "rad" }, yaw: { value: 0, unit: "rad" } },
       },
     }],
-    parameters: [],
+    parameters: [{
+      id: "plate-width", label: "Plate width",
+      value: { kind: "length", value: { value: 0.08, unit: "m" } },
+    }],
     sketches: [{
       id: "plate-sketch", plane: "frame:world",
-      entities: [{ id: "outline", kind: "rectangle", centerM: [0, 0], sizeM: [0.08, 0.04] }],
+      entities: [{ id: "outline", kind: "rectangle", centerM: [0, 0], sizeM: [{ parameterId: "plate-width" }, 0.04] }],
       constraints: [],
     }],
     features: [{ id: "plate", kind: "extrude", sketchId: "plate-sketch", distanceM: 0.01 }],
@@ -106,7 +109,11 @@ describe("OCCT worker", () => {
     });
     const success = scope.messages.find((message) =>
       !!message && typeof message === "object" && "type" in message && message.type === "succeeded") as {
-      results: Array<{ output: string; artifact: { contentDigest: string; units: string }; payload: unknown }>;
+      results: Array<{
+        output: string;
+        artifact: { contentDigest: string; units: string; dependencies: unknown[] };
+        payload: unknown;
+      }>;
     };
     const brep = success.results.find(({ output }) => output === "brep")!;
     const semantic = success.results.find(({ output }) => output === "semantic-mesh")!;
@@ -118,6 +125,9 @@ describe("OCCT worker", () => {
     expect(brep.artifact.units).toBe("m");
     expect(semantic.artifact.units).toBe("m");
     expect(step.artifact.units).toBe("mm");
+    expect(brep.artifact.dependencies).toContainEqual({
+      kind: "entity", reference: "parameter:plate-width",
+    });
     expect(new TextDecoder().decode((step.payload as { bytes: Uint8Array }).bytes))
       .toContain("SI_UNIT(.MILLI.,.METRE.)");
   });

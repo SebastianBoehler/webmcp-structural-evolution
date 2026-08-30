@@ -22,6 +22,7 @@ import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-prob
 import { abandonedProbe, cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
 import type { ExperimentRailApi, ProjectStateApi, ProjectStateOptions } from "./project-state-types";
 import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
+import { useExactCadProjectGate } from "./use-exact-cad-project-gate";
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
 export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
@@ -36,6 +37,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const operationRef = useRef<ActiveProbeOperation | null>(null);
   const interventionGenerationRef = useRef(0);
   const verifiedOutputsRef = useRef(new Map<string, Float32Array>());
+  const exactCadGate = useExactCadProjectGate(options.exactCadGate);
 
   const commit = (next: FoundationProjectState) => {
     const frozen = publishProjectState(next, verifiedOutputsRef.current);
@@ -311,5 +313,5 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     commit,
     addReceipt,
   }), []);
-  return { state, services, experimentRail };
+  return { state, services, experimentRail, exactCadGate };
 }

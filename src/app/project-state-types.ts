@@ -3,6 +3,8 @@ import type { ProbeInput } from "../gpu/probe-contract";
 import type { ContextSelection } from "../domain/foundation-context";
 import type { FoundationServices } from "../webmcp/executors";
 import type { FoundationProjectState, SemanticSelection } from "../webmcp/schemas";
+import type { ExactCadGateResult } from "../cad/kernel/browser-cad-gate";
+import type { ExactCadProjectGateState } from "./use-exact-cad-project-gate";
 
 type ProbeRunner = (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
 
@@ -15,6 +17,7 @@ export interface ProjectStateOptions {
   readonly capability: FoundationProjectState["capability"];
   readonly compute?: ProbeRunner;
   readonly buildProbeInput?: (variant: import("../webmcp/schemas").ProbeVariant) => ProbeInput;
+  readonly exactCadGate?: (signal: AbortSignal) => Promise<ExactCadGateResult>;
 }
 
 export interface ExperimentRailApi {
@@ -26,4 +29,5 @@ export interface ProjectStateApi {
   readonly state: FoundationProjectState;
   readonly services: FoundationServices;
   readonly experimentRail: ExperimentRailApi;
+  readonly exactCadGate: ExactCadProjectGateState;
 }
