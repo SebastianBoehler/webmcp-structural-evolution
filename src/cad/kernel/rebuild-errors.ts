@@ -8,7 +8,11 @@ export type CadRebuildFailureCode =
   | "sketch-over-constrained";
 
 export class CadRebuildError extends Error {
-  constructor(readonly code: CadRebuildFailureCode, message: string) {
+  constructor(
+    readonly code: CadRebuildFailureCode,
+    message: string,
+    readonly affectedConsumers: readonly string[] = [],
+  ) {
     super(message);
     this.name = "CadRebuildError";
   }

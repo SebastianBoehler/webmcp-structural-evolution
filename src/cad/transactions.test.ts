@@ -214,14 +214,27 @@ describe("applyDesignTransaction", () => {
         { id: "define-body", type: "define-body", body: { id: "link-body", featureId: "base" } },
         { id: "define-component", type: "define-component", component: { id: "link-component", bodyIds: ["link-body"] } },
         { id: "place-instance", type: "place-instance", instance: { id: "link-instance", componentId: "link-component", frameId: "world" } },
-        { id: "define-selection", type: "define-named-selection", namedSelection: { id: "mount-face", bodyId: "link-body", featureId: "base", query: { kind: "face", selector: "top" } } },
+        {
+          id: "define-selection", type: "define-named-selection",
+          namedSelection: {
+            id: "mount-face",
+            reference: {
+              bodyId: "link-body", ownerFeatureId: "base", expectedKind: "face",
+              stableId: "face:link-body:base",
+              signature: {
+                geometry: "plane", centroidM: [0, 0, 0.01], measureSI: 0.0032,
+                adjacentKinds: ["plane"],
+              },
+            },
+          },
+        },
       ],
     });
 
     expect(result).toMatchObject({
       ok: true,
       changedReferences: [
-        "body:link-body", "component:link-component", "feature:base", "instance:link-instance",
+        "body:link-body", "component:link-component", "document:pump", "feature:base", "instance:link-instance",
         "named-selection:mount-face", "sketch:base-sketch",
       ],
     });

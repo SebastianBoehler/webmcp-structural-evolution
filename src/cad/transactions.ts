@@ -138,6 +138,7 @@ function applyCommand(
       if (document.bodies.some(({ id }) => id === command.body.id)) return "Body already exists";
       document.bodies = [...document.bodies, command.body];
       changed.add(`body:${command.body.id}`);
+      changed.add(`document:${document.id}`);
       return undefined;
     case "define-component":
       if (document.components.some(({ id }) => id === command.component.id)) return "Component already exists";
@@ -180,7 +181,7 @@ function addDependentReferences(document: DesignDocument, changed: Set<ChangedRe
     for (const body of document.bodies) if (changed.has(`feature:${body.featureId}`)) add(`body:${body.id}`);
     for (const component of document.components) if (component.bodyIds.some((bodyId) => changed.has(`body:${bodyId}`))) add(`component:${component.id}`);
     for (const instance of document.instances) if (changed.has(`component:${instance.componentId}`)) add(`instance:${instance.id}`);
-    for (const selection of document.namedSelections) if (changed.has(`body:${selection.bodyId}`)) add(`named-selection:${selection.id}`);
+    for (const selection of document.namedSelections) if (changed.has(`body:${selection.reference.bodyId}`)) add(`named-selection:${selection.id}`);
     for (const mate of document.mates) if (
       changed.has(`instance:${mate.firstInstanceId}`) || changed.has(`instance:${mate.secondInstanceId}`)
       || changed.has(`named-selection:${mate.firstSelectionId}`) || changed.has(`named-selection:${mate.secondSelectionId}`)

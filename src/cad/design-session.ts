@@ -103,10 +103,10 @@ export function attachDesignSessionArtifacts(
   artifacts: readonly ArtifactRecord[],
 ): DesignSession {
   const document = currentDocument(session);
-  const combined = [...session.artifacts.index.artifacts, ...artifacts];
-  if (combined.some(({ sourceRevision }) => sourceRevision !== document.revision)) {
+  if (artifacts.some(({ sourceRevision }) => sourceRevision !== document.revision)) {
     throw new Error("Cannot attach a stale artifact to the active design revision");
   }
+  const combined = [...session.artifacts.index.artifacts, ...artifacts];
   return freezeSnapshot({
     ...session,
     artifacts: {

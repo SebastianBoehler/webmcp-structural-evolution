@@ -178,6 +178,62 @@ describe("exact OCCT feature rebuild", () => {
     }
   });
 
+  it("resolves upstream-lineage named selections and reports affected consumers when repair is required", async () => {
+    const source = await mechanicalPartDocument();
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    try {
+      const initial = await rebuildDocument(
+        bridge, source, ["semantic-mesh"], new AbortController().signal,
+      );
+      const upstreamFace = initial.semanticMesh!.faces.find(({ signature }) =>
+        signature.ownerFeatureId === "plate" && signature.geometry === "plane")!;
+      const content = structuredClone(source) as Record<string, unknown>;
+      delete content.revision;
+      const selected = await defineDesignDocument({
+        ...content,
+        namedSelections: [{
+          id: "mount-face",
+          reference: {
+            bodyId: upstreamFace.bodyId,
+            ownerFeatureId: upstreamFace.signature.ownerFeatureId,
+            expectedKind: upstreamFace.signature.kind,
+            stableId: upstreamFace.id,
+            signature: {
+              geometry: upstreamFace.signature.geometry,
+              centroidM: upstreamFace.signature.centroidM,
+              measureSI: upstreamFace.signature.measureSI,
+              adjacentKinds: upstreamFace.signature.adjacentKinds,
+            },
+          },
+        }],
+      });
+      await expect(rebuildDocument(
+        bridge, selected, ["brep"], new AbortController().signal,
+      )).resolves.toMatchObject({ bodyIds: ["finished-body"] });
+
+      const brokenContent = structuredClone(selected) as Record<string, unknown>;
+      delete brokenContent.revision;
+      const brokenSelection = structuredClone(selected.namedSelections[0]!) as unknown as {
+        reference: { stableId: string; signature: { centroidM: [number, number, number] } };
+      };
+      brokenSelection.reference.stableId = "missing-topology";
+      brokenSelection.reference.signature.centroidM[0] += 1;
+      const broken = await defineDesignDocument({
+        ...brokenContent, namedSelections: [brokenSelection],
+      });
+      await expect(rebuildDocument(
+        bridge, broken, ["brep"], new AbortController().signal,
+      )).rejects.toMatchObject({
+        code: "reference-requires-repair",
+        affectedConsumers: ["named-selection:mount-face"],
+      });
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
   it("cancels between ordered features and releases every temporary handle", async () => {
     const kernel = await OcctKernel.init();
     const bridge = createOcctBridge(kernel);

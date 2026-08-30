@@ -34,6 +34,7 @@ async function artifactFor(
     units: definition.units,
     mediaType: definition.mediaType,
     dependencies: [
+      { kind: "entity" as const, reference: `document:${request.document.id}` },
       ...request.document.parameters.map(({ id }) => ({
         kind: "entity" as const,
         reference: `parameter:${id}`,

@@ -15,7 +15,6 @@ import {
   type CadOutput,
 } from "../runtime-contracts";
 import { createOcctCadAdapter } from "./occt-adapter";
-
 const OUTPUTS = ["brep", "semantic-mesh", "mass-properties", "step"] as const satisfies readonly CadOutput[];
 const RELATIVE_TOLERANCE = 1e-6;
 const INITIAL_WIDTH_M = 0.08;
@@ -79,9 +78,36 @@ async function authorDocument(now: () => number) {
     commands: [
       { id: "define-width", type: "define-parameter", parameter: { id: "plate-width", label: "Plate width", value: { kind: "length", value: { value: INITIAL_WIDTH_M, unit: "m" } } } },
       { id: "define-boss-frame", type: "define-frame", frame: { id: "boss-frame", label: "Boss profile", parentId: "world", transform: { position: { x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0.01, unit: "m" } }, orientation: { roll: { value: Math.PI / 2, unit: "rad" }, pitch: { value: 0, unit: "rad" }, yaw: { value: 0, unit: "rad" } } } } },
-      { id: "define-plate-sketch", type: "define-sketch", sketch: { id: "plate-sketch", plane: "frame:world", entities: [{ id: "plate-outline", kind: "rectangle", centerM: [0, 0], sizeM: [{ parameterId: "plate-width" }, 0.04] }], constraints: [] } },
-      { id: "define-boss-sketch", type: "define-sketch", sketch: { id: "boss-sketch", plane: "frame:boss-frame", entities: [{ id: "boss-profile", kind: "rectangle", centerM: [0.005, 0.005], sizeM: [0.01, 0.01] }], constraints: [] } },
-      { id: "define-hole-sketch", type: "define-sketch", sketch: { id: "hole-sketch", plane: "frame:world", entities: [{ id: "hole-profile", kind: "circle", centerM: [0, 0], radiusM: 0.003 }], constraints: [] } },
+      {
+        id: "define-plate-sketch", type: "define-sketch",
+        sketch: {
+          id: "plate-sketch", plane: "frame:world",
+          entities: [{ id: "plate-outline", kind: "rectangle", centerM: [0, 0], sizeM: [{ parameterId: "plate-width" }, 0.04] }],
+          constraints: [
+            { id: "plate-width", kind: "distance", first: { entityId: "plate-outline", point: "left" }, second: { entityId: "plate-outline", point: "right" }, axis: "x", valueM: { parameterId: "plate-width" } },
+            { id: "plate-height", kind: "distance", first: { entityId: "plate-outline", point: "bottom" }, second: { entityId: "plate-outline", point: "top" }, axis: "y", valueM: 0.04 },
+          ],
+        },
+      },
+      {
+        id: "define-boss-sketch", type: "define-sketch",
+        sketch: {
+          id: "boss-sketch", plane: "frame:boss-frame",
+          entities: [{ id: "boss-profile", kind: "rectangle", centerM: [0.005, 0.005], sizeM: [0.01, 0.01] }],
+          constraints: [
+            { id: "boss-width", kind: "distance", first: { entityId: "boss-profile", point: "left" }, second: { entityId: "boss-profile", point: "right" }, axis: "x", valueM: 0.01 },
+            { id: "boss-height", kind: "distance", first: { entityId: "boss-profile", point: "bottom" }, second: { entityId: "boss-profile", point: "top" }, axis: "y", valueM: 0.01 },
+          ],
+        },
+      },
+      {
+        id: "define-hole-sketch", type: "define-sketch",
+        sketch: {
+          id: "hole-sketch", plane: "frame:world",
+          entities: [{ id: "hole-profile", kind: "circle", centerM: [0, 0], radiusM: 0.003 }],
+          constraints: [{ id: "hole-radius", kind: "radius", entityId: "hole-profile", valueM: 0.003 }],
+        },
+      },
       { id: "define-plate", type: "define-feature", feature: { id: "plate", kind: "extrude", sketchId: "plate-sketch", distanceM: 0.01 } },
       { id: "define-boss", type: "define-feature", feature: { id: "boss", kind: "revolve", sketchId: "boss-sketch", angleRad: Math.PI * 2, axis: { originM: [0, 0], direction: [0, 1] } } },
       { id: "define-join", type: "define-feature", feature: { id: "join", kind: "union", leftFeatureId: "plate", rightFeatureId: "boss" } },

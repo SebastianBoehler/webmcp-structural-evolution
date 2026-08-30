@@ -105,13 +105,14 @@ function dependencies(failure?: Failure): ExactCadGateDependencies {
         return;
       }
       if (call === 3) {
+        const lateSuccess = failure === "late-success"
+          ? await successEvent(request.requestId, request.sourceRevision, 0.1)
+          : undefined;
         emit({
           requestId: request.requestId, state: "cancelled",
           workerDisposition: failure === "unquarantined" ? "not-started" : "quarantined",
         } as CadEvaluationEvent);
-        if (failure === "late-success") setTimeout(() => {
-          void successEvent(request.requestId, request.sourceRevision, 0.1).then(emit);
-        }, 5);
+        if (lateSuccess) setTimeout(() => emit(lateSuccess), 5);
         return;
       }
       emit(await successEvent(

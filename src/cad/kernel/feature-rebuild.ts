@@ -11,6 +11,7 @@ import type {
 import type { OcctBridge } from "./occt-bridge";
 import { assertExactSolid } from "./exact-solid";
 import { CadRebuildError } from "./rebuild-errors";
+import { resolveNamedSelections } from "./named-selection-resolution";
 import { validateResolvedSketchConstraints } from "./sketch-constraint-validation";
 import {
   directionOnSketch,
@@ -225,13 +226,17 @@ export async function rebuildDocument(
       const resultShape = rebuiltBodies.length === 1
         ? rebuiltBodies[0]!.shape
         : kernel.makeCompound(rebuiltBodies.map(({ shape }) => shape));
+      const semanticMesh = outputs.includes("semantic-mesh") || document.namedSelections.length > 0
+        ? tessellateSemanticBodies(kernel, rebuiltFeatures, rebuiltBodies)
+        : undefined;
+      if (semanticMesh) {
+        resolveNamedSelections(document, [...semanticMesh.faces, ...semanticMesh.edges]);
+      }
       return {
         featureIds: document.features.map(({ id }) => id),
         bodyIds: document.bodies.map(({ id }) => id),
         ...(outputs.includes("brep") ? { brep: { bytes: kernel.toBREPBinary(resultShape) } } : {}),
-        ...(outputs.includes("semantic-mesh")
-          ? { semanticMesh: tessellateSemanticBodies(kernel, rebuiltFeatures, rebuiltBodies) }
-          : {}),
+        ...(outputs.includes("semantic-mesh") ? { semanticMesh: semanticMesh! } : {}),
         ...(outputs.includes("mass-properties") ? { massProperties: massProperties(kernel, resultShape) } : {}),
         ...(outputs.includes("step") ? { step: { bytes: exportStepBytes(kernel, resultShape) } } : {}),
       };

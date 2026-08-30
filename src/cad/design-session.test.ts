@@ -117,6 +117,27 @@ describe("design session", () => {
       .toThrow(/dangling artifact dependency/i);
   });
 
+  it("preserves a retained ancestor artifact while attaching a current exact result", async () => {
+    const root = await document();
+    const retained = await defineArtifactRecord({
+      kind: "thumbnail", sourceRevision: root.revision,
+      producer: { name: "viewport", version: "1.0.0" },
+      settingsDigest: "e".repeat(64), contentDigest: "f".repeat(64), units: "m",
+      mediaType: "image/png", dependencies: [{ kind: "entity", reference: "frame:world" }],
+    });
+    const renamed = await applyDesignSessionTransaction(createDesignSession(root, [retained]), {
+      id: "tx-rename", expectedRevision: root.revision, actor: human, preconditions: [],
+      commands: [{ id: "rename", type: "rename-document", label: "Pump revision" }],
+    }, clock);
+    if (!renamed.result.ok) throw new Error("Expected rename to succeed");
+    const current = await dependentBrep(renamed.result.document.revision);
+
+    const attached = attachDesignSessionArtifacts(renamed.session, [current]);
+
+    expect(attached.artifacts.index.artifacts).toEqual(expect.arrayContaining([retained, current]));
+    expect(attached.artifacts.index.documentRevision).toBe(renamed.result.document.revision);
+  });
+
   it("moves the head to an existing revision when a transaction converges", async () => {
     const root = await document();
     const retained = await dependentBrep(root.revision);

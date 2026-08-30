@@ -33,6 +33,19 @@ const profile = {
   }],
 };
 
+const faceReference = (bodyId: string, ownerFeatureId: string) => ({
+  bodyId,
+  ownerFeatureId,
+  expectedKind: "face" as const,
+  stableId: `face:${bodyId}:${ownerFeatureId}`,
+  signature: {
+    geometry: "plane" as const,
+    centroidM: [0, 0, 0.01] as const,
+    measureSI: 0.0032,
+    adjacentKinds: ["plane"],
+  },
+});
+
 describe("exact model schemas", () => {
   it("accepts a constrained closed profile and ordered exact features", async () => {
     const document = await defineDesignDocument({
@@ -211,8 +224,8 @@ describe("exact model schemas", () => {
       components: [{ id: "first-component", bodyIds: ["first-body"] }, { id: "second-component", bodyIds: ["second-body"] }],
       instances: [{ id: "first-instance", componentId: "first-component", frameId: "world" }, { id: "second-instance", componentId: "second-component", frameId: "world" }],
       namedSelections: [
-        { id: "first-face", bodyId: "first-body", featureId: "first-feature", query: { kind: "face", selector: "top" } },
-        { id: "second-face", bodyId: "second-body", featureId: "second-feature", query: { kind: "face", selector: "top" } },
+        { id: "first-face", reference: faceReference("first-body", "first-feature") },
+        { id: "second-face", reference: faceReference("second-body", "second-feature") },
       ],
       mates: [{ id: "bad-mate", kind: "rigid", firstInstanceId: "first-instance", secondInstanceId: "second-instance", firstSelectionId: "second-face", secondSelectionId: "second-face" }],
     })).rejects.toThrow(/mate selection/i);

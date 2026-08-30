@@ -54,11 +54,23 @@ export const FeatureSchema = z.discriminatedUnion("kind", [
 export const BodySchema = z.object({ id: EntityIdSchema, featureId: EntityIdSchema }).strict();
 export const ComponentSchema = z.object({ id: EntityIdSchema, bodyIds: z.array(EntityIdSchema).min(1) }).strict();
 export const AssemblyInstanceSchema = z.object({ id: EntityIdSchema, componentId: EntityIdSchema, frameId: EntityIdSchema }).strict();
+export const TopologyKindSchema = z.enum(["face", "edge"]);
+export const TopologyGeometrySchema = z.enum(["plane", "cylinder", "cone", "sphere", "curve", "other"]);
+export const PersistentTopologyReferenceSchema = z.object({
+  bodyId: EntityIdSchema,
+  ownerFeatureId: EntityIdSchema,
+  expectedKind: TopologyKindSchema,
+  stableId: z.string().min(1).optional(),
+  signature: z.object({
+    geometry: TopologyGeometrySchema,
+    centroidM: z.tuple([finite, finite, finite]),
+    measureSI: finite.nonnegative(),
+    adjacentKinds: z.array(z.string()),
+  }).strict(),
+}).strict();
 export const NamedSelectionSchema = z.object({
   id: EntityIdSchema,
-  bodyId: EntityIdSchema,
-  featureId: EntityIdSchema,
-  query: z.object({ kind: z.enum(["face", "edge"]), selector: z.string().min(1) }).strict(),
+  reference: PersistentTopologyReferenceSchema,
 }).strict();
 export const MateSchema = z.object({
   id: EntityIdSchema,
@@ -185,6 +197,14 @@ export function addModelIntegrityIssues(
     previousFeatures.add(feature.id);
   }
   const featureIds = new Set(value.features.map(({ id }) => id));
+  const featuresById = new Map(value.features.map((feature) => [feature.id, feature]));
+  const lineageContains = (terminalFeatureId: string, ownerFeatureId: string): boolean => {
+    if (terminalFeatureId === ownerFeatureId) return true;
+    const feature = featuresById.get(terminalFeatureId);
+    return feature !== undefined && feature.kind !== "extrude" && feature.kind !== "revolve"
+      && (lineageContains(feature.leftFeatureId, ownerFeatureId)
+        || lineageContains(feature.rightFeatureId, ownerFeatureId));
+  };
   const consumedFeatures = new Set(value.features.flatMap((feature) => feature.kind === "extrude" || feature.kind === "revolve" ? [] : [feature.leftFeatureId, feature.rightFeatureId]));
   const bodies = new Map(value.bodies.map((body) => [body.id, body]));
   const terminalFeatureOwners = new Set<string>();
@@ -210,9 +230,12 @@ export function addModelIntegrityIssues(
   }
   const selections = new Map(value.namedSelections.map((selection) => [selection.id, selection]));
   for (const selection of value.namedSelections) {
-    const body = bodies.get(selection.bodyId);
-    if (!body) context.addIssue({ code: "custom", message: `Named selection body is unresolved: ${selection.bodyId}` });
-    else if (body.featureId !== selection.featureId) context.addIssue({ code: "custom", message: `Named selection feature is not owned by body: ${selection.featureId}` });
+    const { bodyId, ownerFeatureId } = selection.reference;
+    const body = bodies.get(bodyId);
+    if (!body) context.addIssue({ code: "custom", message: `Named selection body is unresolved: ${bodyId}` });
+    else if (!lineageContains(body.featureId, ownerFeatureId)) {
+      context.addIssue({ code: "custom", message: `Named selection feature is outside body lineage: ${ownerFeatureId}` });
+    }
   }
   for (const mate of value.mates) {
     const firstInstance = instances.get(mate.firstInstanceId);
@@ -221,10 +244,10 @@ export function addModelIntegrityIssues(
     const secondSelection = selections.get(mate.secondSelectionId);
     if (!firstInstance || !secondInstance) context.addIssue({ code: "custom", message: `Mate instance is unresolved: ${mate.id}` });
     if (!selections.has(mate.firstSelectionId) || !selections.has(mate.secondSelectionId)) context.addIssue({ code: "custom", message: `Mate named selection is unresolved: ${mate.id}` });
-    if (firstInstance && firstSelection && !components.get(firstInstance.componentId)?.has(firstSelection.bodyId)) {
+    if (firstInstance && firstSelection && !components.get(firstInstance.componentId)?.has(firstSelection.reference.bodyId)) {
       context.addIssue({ code: "custom", message: `Mate selection is outside first instance component: ${mate.id}` });
     }
-    if (secondInstance && secondSelection && !components.get(secondInstance.componentId)?.has(secondSelection.bodyId)) {
+    if (secondInstance && secondSelection && !components.get(secondInstance.componentId)?.has(secondSelection.reference.bodyId)) {
       context.addIssue({ code: "custom", message: `Mate selection is outside second instance component: ${mate.id}` });
     }
   }
@@ -237,3 +260,4 @@ export type Component = z.infer<typeof ComponentSchema>;
 export type AssemblyInstance = z.infer<typeof AssemblyInstanceSchema>;
 export type Mate = z.infer<typeof MateSchema>;
 export type NamedSelection = z.infer<typeof NamedSelectionSchema>;
+export type PersistentTopologyReference = z.infer<typeof PersistentTopologyReferenceSchema>;
