@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { defineArtifactRecord } from "../artifact-contract";
 import { createDesignDocument } from "../document-schema";
@@ -13,7 +13,10 @@ import {
   type OcctWorkerLike,
   type OcctWorkerMessageEvent,
 } from "./occt-worker-client";
-import type { OcctWorkerRequest } from "./occt-worker-contract";
+import {
+  OcctWorkerEventSchema,
+  type OcctWorkerRequest,
+} from "./occt-worker-contract";
 
 async function request(requestId: string): Promise<CadEvaluationRequest> {
   const document = await createDesignDocument({
@@ -134,6 +137,87 @@ describe("OCCT worker client", () => {
       error: { code: "internal-error" },
     });
     expect(worker.terminateCount).toBe(1);
+  });
+
+  it("rejects a self-consistent success for outputs the active request did not ask for", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const evaluation = client.evaluate(
+      await request("wrong-outputs"),
+      new AbortController().signal,
+      (event) => events.push(event),
+    );
+
+    worker.emit({
+      type: "succeeded",
+      requestId: "wrong-outputs",
+      requestedOutputs: ["section-curves"],
+      results: [{ output: "section-curves", payload: {} }],
+    });
+    await evaluation;
+
+    expect(events[0]).toMatchObject({
+      requestId: "wrong-outputs",
+      state: "failed",
+      error: { code: "internal-error" },
+    });
+    expect(worker.terminateCount).toBe(1);
+  });
+
+  it("gives the first terminal event ownership while success validation settles", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const originalParse = OcctWorkerEventSchema.safeParseAsync.bind(OcctWorkerEventSchema);
+    let releaseValidation: () => void = () => undefined;
+    let markValidationStarted: () => void = () => undefined;
+    const validationGate = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const validationStarted = new Promise<void>((resolve) => { markValidationStarted = resolve; });
+    vi.spyOn(OcctWorkerEventSchema, "safeParseAsync").mockImplementationOnce(async (value) => {
+      markValidationStarted();
+      await validationGate;
+      return originalParse(value);
+    });
+    const first = client.evaluate(
+      await request("first"),
+      new AbortController().signal,
+      (event) => events.push(event),
+    );
+    const second = client.evaluate(
+      await request("second"),
+      new AbortController().signal,
+      (event) => events.push(event),
+    );
+
+    worker.emit({
+      type: "succeeded",
+      requestId: "first",
+      requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: {} }],
+    });
+    await validationStarted;
+    worker.emit({ type: "cancelled", requestId: "first" });
+    releaseValidation();
+
+    await vi.waitFor(() => {
+      expect(events.filter((event) => event.requestId === "first").map((event) => event.state))
+        .toEqual(["succeeded"]);
+    });
+    await first;
+    expect(worker.posted.filter((message) => message.type === "evaluate").map((message) => message.request.requestId))
+      .toEqual(["first", "second"]);
+    worker.emit({
+      type: "succeeded",
+      requestId: "second",
+      requestedOutputs: ["mass-properties"],
+      results: [{ output: "mass-properties", payload: {} }],
+    });
+    await second;
+
+    expect(events.filter((event) => event.requestId === "second").map((event) => event.state))
+      .toEqual(["succeeded"]);
+    expect(worker.terminateCount).toBe(0);
   });
 
   it("validates content-addressed B-rep success events asynchronously", async () => {

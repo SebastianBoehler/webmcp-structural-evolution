@@ -16,9 +16,10 @@ interface WorkerScope {
 }
 
 const scope = self as unknown as WorkerScope;
-const cancelled = new Set<string>();
 let bridge: Promise<OcctBridge> | undefined;
 let evaluationQueue = Promise.resolve();
+let activeRequestId: string | undefined;
+let cancellationRequested = false;
 
 const post = async (event: OcctWorkerEvent) => {
   scope.postMessage(await OcctWorkerEventSchema.parseAsync(event));
@@ -42,43 +43,46 @@ const getBridge = () => {
 
 const evaluate = async (request: CadEvaluationRequest) => {
   const { requestId } = request;
-  if (cancelled.delete(requestId)) {
-    await post({ type: "cancelled", requestId });
-    return;
-  }
-  await post({ type: "progress", requestId, progress: 0 });
-  let owner: OcctBridge;
+  activeRequestId = requestId;
+  cancellationRequested = false;
   try {
-    owner = await getBridge();
-  } catch (error) {
-    const classified = classifyFailure(error);
-    const code = classified === "memory-exhausted" ? classified : "initialization-failed";
-    bridge = undefined;
-    await post({ type: "failed", requestId, error: { code, message: messageFor(error) } });
-    return;
-  }
-  try {
-    if (cancelled.delete(requestId)) {
+    await post({ type: "progress", requestId, progress: 0 });
+    let owner: OcctBridge;
+    try {
+      owner = await getBridge();
+    } catch (error) {
+      const classified = classifyFailure(error);
+      const code = classified === "memory-exhausted" ? classified : "initialization-failed";
+      bridge = undefined;
+      await post({ type: "failed", requestId, error: { code, message: messageFor(error) } });
+      return;
+    }
+    if (cancellationRequested) {
       await post({ type: "cancelled", requestId });
       return;
     }
-    owner.withKernel(() => undefined);
-    await post({
-      type: "failed",
-      requestId,
-      error: {
-        code: "feature-failed",
-        message: "Exact OCCT feature evaluation is not implemented",
-      },
-    });
-  } catch (error) {
-    await post({
-      type: "failed",
-      requestId,
-      error: { code: classifyFailure(error), message: messageFor(error) },
-    });
+    try {
+      owner.withKernel(() => undefined);
+      await post({
+        type: "failed",
+        requestId,
+        error: {
+          code: "feature-failed",
+          message: "Exact OCCT feature evaluation is not implemented",
+        },
+      });
+    } catch (error) {
+      await post({
+        type: "failed",
+        requestId,
+        error: { code: classifyFailure(error), message: messageFor(error) },
+      });
+    }
   } finally {
-    cancelled.delete(requestId);
+    if (activeRequestId === requestId) {
+      activeRequestId = undefined;
+      cancellationRequested = false;
+    }
   }
 };
 
@@ -100,7 +104,7 @@ scope.addEventListener("message", ({ data }) => {
     return;
   }
   if (parsed.data.type === "cancel") {
-    cancelled.add(parsed.data.requestId);
+    if (activeRequestId === parsed.data.requestId) cancellationRequested = true;
     return;
   }
   const request = parsed.data.request;

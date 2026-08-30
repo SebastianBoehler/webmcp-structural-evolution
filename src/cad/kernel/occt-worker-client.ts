@@ -46,6 +46,7 @@ const isFatal = (code: OcctWorkerFailureCode) =>
 export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
   let active: PendingEvaluation | undefined;
+  let settling: PendingEvaluation | undefined;
   const queue: PendingEvaluation[] = [];
 
   const emit = (event: CadEvaluationEvent) => {
@@ -63,6 +64,7 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     const completed = active;
     if (!completed) return;
     completed.signal.removeEventListener("abort", onAbort);
+    if (settling === completed) settling = undefined;
     active = undefined;
     completed.resolve();
     startNext();
@@ -83,10 +85,8 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
-    if (event.type === "succeeded") {
-      void acceptSuccess(event);
-      return;
-    }
+    if (settling === active) return;
+    if (event.type === "succeeded") return;
     if (active.signal.aborted && event.type !== "progress"
       && !(event.type === "failed" && isFatal(event.error.code))) {
       emit({ requestId: event.requestId, state: "cancelled" });
@@ -111,35 +111,86 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     finish();
   };
 
-  async function acceptSuccess(event: Extract<OcctWorkerEvent, { type: "succeeded" }>) {
-    if (!active || active.request.requestId !== event.requestId) {
+  const requestedOutputsMatch = (
+    request: CadEvaluationRequest,
+    event: Extract<OcctWorkerEvent, { type: "succeeded" }>,
+  ) => request.requestedOutputs.length === event.requestedOutputs.length
+    && request.requestedOutputs.every((output, index) => event.requestedOutputs[index] === output);
+
+  async function acceptSuccess(
+    owner: PendingEvaluation,
+    event: Extract<OcctWorkerEvent, { type: "succeeded" }>,
+  ) {
+    if (active !== owner || settling !== owner) return;
+    if (event.requestId !== owner.request.requestId) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
-    if (active.signal.aborted) {
+    if (!requestedOutputsMatch(owner.request, event)) {
+      protocolFailure("OCCT worker success outputs did not match the active request");
+      return;
+    }
+    if (owner.signal.aborted) {
       emit({ requestId: event.requestId, state: "cancelled" });
       finish();
       return;
     }
     try {
       const { type: _type, ...success } = event;
-      active.emit(await CadEvaluationEventSchema.parseAsync({ ...success, state: "succeeded" }));
+      const validated = await CadEvaluationEventSchema.parseAsync({ ...success, state: "succeeded" });
+      if (active !== owner || settling !== owner) return;
+      owner.emit(validated);
       finish();
     } catch {
-      protocolFailure("OCCT worker returned an invalid success event");
+      if (active === owner && settling === owner) {
+        protocolFailure("OCCT worker returned an invalid success event");
+      }
     }
   }
+
+  const beginSuccessValidation = (data: object) => {
+    const owner = active;
+    if (!owner) {
+      protocolFailure("OCCT worker returned a success without an active request");
+      return;
+    }
+    const requestId = "requestId" in data ? data.requestId : undefined;
+    if (typeof requestId === "string" && requestId !== owner.request.requestId) {
+      protocolFailure("OCCT worker response did not match the active request");
+      return;
+    }
+    if (settling === owner) {
+      void OcctWorkerEventSchema.safeParseAsync(data).catch(() => undefined);
+      return;
+    }
+    settling = owner;
+    void OcctWorkerEventSchema.safeParseAsync(data).then((parsed) => {
+      if (active !== owner || settling !== owner) return;
+      if (!parsed.success || parsed.data.type !== "succeeded") {
+        protocolFailure("OCCT worker returned an invalid protocol message");
+        return;
+      }
+      void acceptSuccess(
+        owner,
+        parsed.data as Extract<OcctWorkerEvent, { type: "succeeded" }>,
+      );
+    }).catch(() => {
+      if (active === owner && settling === owner) {
+        protocolFailure("OCCT worker success validation failed");
+      }
+    });
+  };
 
   const onMessage = (message: OcctWorkerMessageEvent) => {
     if (message.data && typeof message.data === "object"
       && "type" in message.data && message.data.type === "succeeded") {
-      void OcctWorkerEventSchema.safeParseAsync(message.data).then((parsed) => {
-        if (!parsed.success) {
-          protocolFailure("OCCT worker returned an invalid protocol message");
-          return;
-        }
-        acceptEvent(parsed.data as OcctWorkerEvent);
-      }).catch(() => protocolFailure("OCCT worker success validation failed"));
+      beginSuccessValidation(message.data);
+      return;
+    }
+    if (settling && message.data && typeof message.data === "object"
+      && "requestId" in message.data
+      && message.data.requestId === settling.request.requestId) {
+      OcctWorkerEventSchema.safeParse(message.data);
       return;
     }
     const parsed = OcctWorkerEventSchema.safeParse(message.data);
