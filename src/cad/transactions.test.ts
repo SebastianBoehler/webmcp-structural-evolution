@@ -195,4 +195,35 @@ describe("applyDesignTransaction", () => {
 
     expect(result).toMatchObject({ ok: false, code: "invalid-transaction" });
   });
+
+  it("propagates exact model changes to dependent consumers", async () => {
+    const design = await document();
+    const result = await applyDesignTransaction(design, {
+      id: "tx-exact-model",
+      expectedRevision: design.revision,
+      actor: human,
+      preconditions: [],
+      commands: [
+        {
+          id: "define-sketch", type: "define-sketch", sketch: {
+            id: "base-sketch", plane: "frame:world",
+            entities: [{ id: "outline", kind: "rectangle", centerM: [0, 0], sizeM: [0.08, 0.04] }], constraints: [],
+          },
+        },
+        { id: "define-base", type: "define-feature", feature: { id: "base", kind: "extrude", sketchId: "base-sketch", distanceM: 0.01 } },
+        { id: "define-body", type: "define-body", body: { id: "link-body", featureId: "base" } },
+        { id: "define-component", type: "define-component", component: { id: "link-component", bodyIds: ["link-body"] } },
+        { id: "place-instance", type: "place-instance", instance: { id: "link-instance", componentId: "link-component", frameId: "world" } },
+        { id: "define-selection", type: "define-named-selection", namedSelection: { id: "mount-face", bodyId: "link-body", featureId: "base", query: { kind: "face", selector: "top" } } },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      changedReferences: [
+        "body:link-body", "component:link-component", "feature:base", "instance:link-instance",
+        "named-selection:mount-face", "sketch:base-sketch",
+      ],
+    });
+  });
 });

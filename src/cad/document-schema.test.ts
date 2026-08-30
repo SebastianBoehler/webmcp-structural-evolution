@@ -119,7 +119,7 @@ describe("DesignDocument", () => {
 
   it("rejects malformed entity references and invalid frame topology", async () => {
     expect(EntityIdSchema.safeParse("Pump").success).toBe(false);
-    expect(SemanticReferenceSchema.safeParse("body:pump").success).toBe(false);
+    expect(SemanticReferenceSchema.parse("body:pump")).toBe("body:pump");
     expect(SemanticReferenceSchema.parse("frame:pump-base")).toBe("frame:pump-base");
 
     const metric = await createDesignDocument({

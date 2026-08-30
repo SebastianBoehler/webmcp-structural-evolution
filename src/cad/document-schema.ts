@@ -16,17 +16,23 @@ import {
   RevisionSchema,
   type DeepReadonly,
 } from "../domain/snapshots";
+import {
+  addModelIntegrityIssues,
+  AssemblyInstanceSchema,
+  BodySchema,
+  ComponentSchema,
+  EntityIdSchema,
+  FeatureSchema,
+  MateSchema,
+  NamedSelectionSchema,
+  SketchSchema,
+} from "./model-schema";
 
 const finite = z.number().finite();
-const entityIdPattern = /^[a-z][a-z0-9-]{0,79}$/;
-
-export const EntityIdSchema = z.string().regex(
-  entityIdPattern,
-  "Entity ID must be lowercase kebab-case",
-);
+export { EntityIdSchema } from "./model-schema";
 export const SemanticReferenceSchema = z.string().regex(
-  /^(document|parameter|frame):[a-z][a-z0-9-]{0,79}$/,
-  "Semantic reference must identify a document, parameter, or frame",
+  /^(document|parameter|frame|sketch|feature|body|component|instance|mate|named-selection):[a-z][a-z0-9-]{0,79}$/,
+  "Semantic reference must identify a document entity",
 );
 
 const DisplayUnitsSchema = z.object({
@@ -67,6 +73,13 @@ const documentContentShape = {
   createdBy: ActorSchema,
   frames: z.array(FrameSchema),
   parameters: z.array(ParameterSchema),
+  sketches: z.array(SketchSchema),
+  features: z.array(FeatureSchema),
+  bodies: z.array(BodySchema),
+  components: z.array(ComponentSchema),
+  instances: z.array(AssemblyInstanceSchema),
+  mates: z.array(MateSchema),
+  namedSelections: z.array(NamedSelectionSchema),
 };
 
 type DocumentContent = z.infer<z.ZodObject<typeof documentContentShape>>;
@@ -115,6 +128,7 @@ function addDocumentIntegrityIssues(value: DocumentContent, context: z.Refinemen
     visited.add(id);
   };
   for (const frame of value.frames) visit(frame.id);
+  addModelIntegrityIssues(value, context);
 }
 
 export const DesignDocumentContentSchema = z
@@ -188,5 +202,12 @@ export async function createDesignDocument(input: unknown): Promise<DesignDocume
       },
     }],
     parameters: [],
+    sketches: [],
+    features: [],
+    bodies: [],
+    components: [],
+    instances: [],
+    mates: [],
+    namedSelections: [],
   });
 }

@@ -8,6 +8,15 @@ import {
   ParameterValueSchema,
   SemanticReferenceSchema,
 } from "./document-schema";
+import {
+  AssemblyInstanceSchema,
+  BodySchema,
+  ComponentSchema,
+  FeatureSchema,
+  MateSchema,
+  NamedSelectionSchema,
+  SketchSchema,
+} from "./model-schema";
 import { RevisionSchema } from "../domain/snapshots";
 
 const CommandIdSchema = EntityIdSchema;
@@ -38,6 +47,46 @@ export const DefineFrameCommandSchema = z.object({
   type: z.literal("define-frame"),
   frame: FrameSchema,
 }).strict();
+export const DefineSketchCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-sketch"),
+  sketch: SketchSchema,
+}).strict();
+export const DefineFeatureCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-feature"),
+  feature: FeatureSchema,
+}).strict();
+export const RemoveFeatureCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("remove-feature"),
+  featureId: EntityIdSchema,
+}).strict();
+export const DefineBodyCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-body"),
+  body: BodySchema,
+}).strict();
+export const DefineComponentCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-component"),
+  component: ComponentSchema,
+}).strict();
+export const PlaceInstanceCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("place-instance"),
+  instance: AssemblyInstanceSchema,
+}).strict();
+export const DefineMateCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-mate"),
+  mate: MateSchema,
+}).strict();
+export const DefineNamedSelectionCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-named-selection"),
+  namedSelection: NamedSelectionSchema,
+}).strict();
 
 export const DesignCommandSchema = z.discriminatedUnion("type", [
   RenameDocumentCommandSchema,
@@ -45,6 +94,14 @@ export const DesignCommandSchema = z.discriminatedUnion("type", [
   SetParameterCommandSchema,
   RemoveParameterCommandSchema,
   DefineFrameCommandSchema,
+  DefineSketchCommandSchema,
+  DefineFeatureCommandSchema,
+  RemoveFeatureCommandSchema,
+  DefineBodyCommandSchema,
+  DefineComponentCommandSchema,
+  PlaceInstanceCommandSchema,
+  DefineMateCommandSchema,
+  DefineNamedSelectionCommandSchema,
 ]);
 
 export const ParameterEqualsPreconditionSchema = z.object({

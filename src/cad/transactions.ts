@@ -51,11 +51,18 @@ function contentOf(document: DesignDocument): Omit<DesignDocument, "revision"> {
 
 function referenceExists(document: DesignDocument, reference: string): boolean {
   const [kind, id] = reference.split(":");
-  return kind === "document"
-    ? id === document.id
-    : kind === "parameter"
-      ? document.parameters.some((parameter) => parameter.id === id)
-      : document.frames.some((frame) => frame.id === id);
+  const collections = {
+    parameter: document.parameters,
+    frame: document.frames,
+    sketch: document.sketches,
+    feature: document.features,
+    body: document.bodies,
+    component: document.components,
+    instance: document.instances,
+    mate: document.mates,
+    "named-selection": document.namedSelections,
+  };
+  return kind === "document" ? id === document.id : collections[kind as keyof typeof collections]?.some((value) => value.id === id) ?? false;
 }
 
 function valuesEqual(left: unknown, right: unknown): boolean {
@@ -110,6 +117,74 @@ function applyCommand(
       document.frames = [...document.frames, command.frame];
       changed.add(`frame:${command.frame.id}`);
       return undefined;
+    case "define-sketch":
+      if (document.sketches.some(({ id }) => id === command.sketch.id)) return "Sketch already exists";
+      document.sketches = [...document.sketches, command.sketch];
+      changed.add(`sketch:${command.sketch.id}`);
+      return undefined;
+    case "define-feature":
+      if (document.features.some(({ id }) => id === command.feature.id)) return "Feature already exists";
+      document.features = [...document.features, command.feature];
+      changed.add(`feature:${command.feature.id}`);
+      return undefined;
+    case "remove-feature":
+      if (!document.features.some(({ id }) => id === command.featureId)) return "Feature does not exist";
+      if (document.bodies.some((body) => body.featureId === command.featureId)
+        || document.features.some((feature) => (feature.kind === "extrude" || feature.kind === "revolve") ? false : feature.leftFeatureId === command.featureId || feature.rightFeatureId === command.featureId)) return "Feature has consumers";
+      document.features = document.features.filter(({ id }) => id !== command.featureId);
+      changed.add(`feature:${command.featureId}`);
+      return undefined;
+    case "define-body":
+      if (document.bodies.some(({ id }) => id === command.body.id)) return "Body already exists";
+      document.bodies = [...document.bodies, command.body];
+      changed.add(`body:${command.body.id}`);
+      return undefined;
+    case "define-component":
+      if (document.components.some(({ id }) => id === command.component.id)) return "Component already exists";
+      document.components = [...document.components, command.component];
+      changed.add(`component:${command.component.id}`);
+      return undefined;
+    case "place-instance":
+      if (document.instances.some(({ id }) => id === command.instance.id)) return "Instance already exists";
+      document.instances = [...document.instances, command.instance];
+      changed.add(`instance:${command.instance.id}`);
+      return undefined;
+    case "define-mate":
+      if (document.mates.some(({ id }) => id === command.mate.id)) return "Mate already exists";
+      document.mates = [...document.mates, command.mate];
+      changed.add(`mate:${command.mate.id}`);
+      return undefined;
+    case "define-named-selection":
+      if (document.namedSelections.some(({ id }) => id === command.namedSelection.id)) return "Named selection already exists";
+      document.namedSelections = [...document.namedSelections, command.namedSelection];
+      changed.add(`named-selection:${command.namedSelection.id}`);
+      return undefined;
+  }
+}
+
+function addDependentReferences(document: DesignDocument, changed: Set<ChangedReference>): void {
+  let added = true;
+  while (added) {
+    added = false;
+    const add = (reference: ChangedReference) => {
+      if (!changed.has(reference)) {
+        changed.add(reference);
+        added = true;
+      }
+    };
+    for (const feature of document.features) {
+      if ((feature.kind === "extrude" || feature.kind === "revolve") && changed.has(`sketch:${feature.sketchId}`)) add(`feature:${feature.id}`);
+      if (feature.kind !== "extrude" && feature.kind !== "revolve"
+        && (changed.has(`feature:${feature.leftFeatureId}`) || changed.has(`feature:${feature.rightFeatureId}`))) add(`feature:${feature.id}`);
+    }
+    for (const body of document.bodies) if (changed.has(`feature:${body.featureId}`)) add(`body:${body.id}`);
+    for (const component of document.components) if (component.bodyIds.some((bodyId) => changed.has(`body:${bodyId}`))) add(`component:${component.id}`);
+    for (const instance of document.instances) if (changed.has(`component:${instance.componentId}`)) add(`instance:${instance.id}`);
+    for (const selection of document.namedSelections) if (changed.has(`body:${selection.bodyId}`)) add(`named-selection:${selection.id}`);
+    for (const mate of document.mates) if (
+      changed.has(`instance:${mate.firstInstanceId}`) || changed.has(`instance:${mate.secondInstanceId}`)
+      || changed.has(`named-selection:${mate.firstSelectionId}`) || changed.has(`named-selection:${mate.secondSelectionId}`)
+    ) add(`mate:${mate.id}`);
   }
 }
 
@@ -141,6 +216,7 @@ export async function applyDesignTransaction(
     if (next.revision === document.revision) {
       return { ok: true, document, changedReferences: [], diagnostics: [] };
     }
+    addDependentReferences(next, changed);
     return { ok: true, document: next, changedReferences: [...changed].sort(), diagnostics: [] };
   } catch (error) {
     return failure("command-failed", error instanceof Error ? error.message : "Command validation failed");
