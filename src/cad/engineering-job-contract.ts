@@ -101,7 +101,7 @@ export type EngineeringSolveRequest<Input> = Readonly<
 export async function defineEngineeringSolveRequest<Input = unknown>(
   value: unknown,
 ): Promise<EngineeringSolveRequest<Input>> {
-  const parsed = EngineeringSolveRequestSchema.parse(value);
+  const parsed = await EngineeringSolveRequestSchema.parseAsync(value);
   const document = await defineDesignDocument(parsed.document);
-  return EngineeringSolveRequestSchema.parse({ ...parsed, document }) as EngineeringSolveRequest<Input>;
+  return await EngineeringSolveRequestSchema.parseAsync({ ...parsed, document }) as EngineeringSolveRequest<Input>;
 }
