@@ -50,6 +50,27 @@ export interface TopologyOptimizationResult {
   };
 }
 
+export interface StructuralReferenceInput {
+  readonly cellDimensions: readonly [number, number, number];
+  readonly cellSizeM: number;
+  readonly activeCells: Uint32Array;
+  readonly fixedDofs: Uint32Array;
+  readonly loadsN: Float64Array;
+  readonly youngsModulusPa: number;
+  readonly poissonRatio: number;
+  readonly maxIterations: number;
+  readonly tolerance: number;
+}
+
+export interface StructuralReferenceResult {
+  readonly displacementM: Float32Array;
+  readonly vonMisesStressPa: Float32Array;
+  readonly iterations: number;
+  readonly relativeResidual: number;
+  readonly forceBalanceErrorN: number;
+  readonly complianceJ: number;
+}
+
 function finite(value: number): boolean {
   return Number.isFinite(value);
 }
@@ -103,5 +124,34 @@ export async function optimizeTopology(
   return {
     dimensions, density: new Float32Array(density),
     displacement: new Float32Array(displacement), stress: new Float32Array(stress), cases, metrics,
+  };
+}
+
+export async function solveStructuralReference(
+  input: StructuralReferenceInput,
+): Promise<StructuralReferenceResult> {
+  const reference = await loadReference();
+  const result = reference.solve_structural_reference(input);
+  const cellCount = input.cellDimensions.reduce((product, value) => product * value, 1);
+  const dofCount = input.cellDimensions.reduce((product, value) => product * (value + 1), 1) * 3;
+  const displacement = result.displacement_m;
+  const stress = result.von_mises_stress_pa;
+  const metrics = {
+    iterations: result.iterations,
+    relativeResidual: result.relative_residual,
+    forceBalanceErrorN: result.force_balance_error_n,
+    complianceJ: result.compliance_j,
+  };
+  const valid = displacement instanceof Float32Array && displacement.length === dofCount
+    && displacement.every(finite) && stress instanceof Float32Array && stress.length === cellCount
+    && stress.every((value) => finite(value) && value >= 0)
+    && Number.isInteger(metrics.iterations) && metrics.iterations > 0
+    && Object.values(metrics).every(finite) && metrics.relativeResidual >= 0
+    && metrics.forceBalanceErrorN >= 0 && metrics.complianceJ >= 0;
+  if (!valid) throw new Error("Invalid structural reference result returned by the Wasm solver.");
+  return {
+    displacementM: new Float32Array(displacement),
+    vonMisesStressPa: new Float32Array(stress),
+    ...metrics,
   };
 }

@@ -1,5 +1,71 @@
 /* @ts-self-types="./webmcp_reference.d.ts" */
 
+export class WasmStructuralReferenceResult {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmStructuralReferenceResult.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmStructuralReferenceResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmStructuralReferenceResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmstructuralreferenceresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get compliance_j() {
+        const ret = wasm.wasmstructuralreferenceresult_compliance_j(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get displacement_m() {
+        const ret = wasm.wasmstructuralreferenceresult_displacement_m(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get force_balance_error_n() {
+        const ret = wasm.wasmstructuralreferenceresult_force_balance_error_n(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get iterations() {
+        const ret = wasm.wasmstructuralreferenceresult_iterations(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get relative_residual() {
+        const ret = wasm.wasmstructuralreferenceresult_relative_residual(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get von_mises_stress_pa() {
+        const ret = wasm.wasmstructuralreferenceresult_von_mises_stress_pa(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) WasmStructuralReferenceResult.prototype[Symbol.dispose] = WasmStructuralReferenceResult.prototype.free;
+
 export class WasmTopologyResult {
     static __wrap(ptr) {
         const obj = Object.create(WasmTopologyResult.prototype);
@@ -188,6 +254,18 @@ export function relative_l2(expected, actual) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return ret[0];
+}
+
+/**
+ * @param {any} input
+ * @returns {WasmStructuralReferenceResult}
+ */
+export function solve_structural_reference(input) {
+    const ret = wasm.solve_structural_reference(input);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmStructuralReferenceResult.__wrap(ret[0]);
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -410,6 +488,9 @@ function __wbg_get_imports() {
     };
 }
 
+const WasmStructuralReferenceResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmstructuralreferenceresult_free(ptr, 1));
 const WasmTopologyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmtopologyresult_free(ptr, 1));

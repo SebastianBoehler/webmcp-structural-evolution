@@ -4,6 +4,7 @@ const wasm = vi.hoisted(() => ({
   initialize: vi.fn<() => Promise<void>>(),
   relativeL2: vi.fn<(expected: Float32Array, actual: Float32Array) => number>(),
   optimize: vi.fn(),
+  structural: vi.fn(),
 }));
 
 vi.mock("./pkg/webmcp_reference.js", () => ({
@@ -11,6 +12,7 @@ vi.mock("./pkg/webmcp_reference.js", () => ({
   relative_l2: wasm.relativeL2,
   optimize_demo_frame: wasm.optimize,
   optimize_assembly_frame: wasm.optimize,
+  solve_structural_reference: wasm.structural,
 }));
 
 describe("relativeL2", () => {
@@ -35,6 +37,14 @@ describe("relativeL2", () => {
       minimum_safety_factor: 4,
       material_fraction: 0.36,
       iterations: 16,
+    });
+    wasm.structural.mockReset().mockReturnValue({
+      displacement_m: new Float32Array(24).map((_value, index) => index === 3 ? 1e-6 : 0),
+      von_mises_stress_pa: new Float32Array([1e6]),
+      iterations: 12,
+      relative_residual: 2e-7,
+      force_balance_error_n: 1e-5,
+      compliance_j: 0.001,
     });
   });
 
@@ -154,5 +164,35 @@ describe("relativeL2", () => {
     });
 
     await expect(optimizeTopology("balanced")).rejects.toThrow(/invalid topology result/i);
+  });
+
+  it("returns independently solved bounded structural fields from Wasm", async () => {
+    const { solveStructuralReference } = await import("./index");
+    const input = {
+      cellDimensions: [1, 1, 1] as [number, number, number], cellSizeM: 0.01,
+      activeCells: new Uint32Array([1]), fixedDofs: new Uint32Array(24),
+      loadsN: new Float64Array(24), youngsModulusPa: 200e9, poissonRatio: 0.3,
+      maxIterations: 512, tolerance: 1e-6,
+    };
+
+    await expect(solveStructuralReference(input)).resolves.toMatchObject({
+      iterations: 12, relativeResidual: 2e-7, forceBalanceErrorN: 1e-5,
+      displacementM: new Float32Array(24).map((_value, index) => index === 3 ? 1e-6 : 0),
+    });
+    expect(wasm.structural).toHaveBeenCalledWith(input);
+  });
+
+  it("rejects malformed structural reference output instead of substituting fields", async () => {
+    wasm.structural.mockReturnValueOnce({
+      displacement_m: new Float32Array([0]), von_mises_stress_pa: new Float32Array(),
+      iterations: 0, relative_residual: Number.NaN, force_balance_error_n: 0, compliance_j: 0,
+    });
+    const { solveStructuralReference } = await import("./index");
+
+    await expect(solveStructuralReference({
+      cellDimensions: [1, 1, 1], cellSizeM: 1, activeCells: new Uint32Array([1]),
+      fixedDofs: new Uint32Array(24), loadsN: new Float64Array(24),
+      youngsModulusPa: 1, poissonRatio: 0.3, maxIterations: 1, tolerance: 1e-5,
+    })).rejects.toThrow(/invalid structural reference result/i);
   });
 });

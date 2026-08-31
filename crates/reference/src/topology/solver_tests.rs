@@ -1,5 +1,7 @@
 use super::grid::Grid;
 use super::solver::{compliance_and_sensitivity, load_case_fields, solve, springs};
+use super::structural::{axial_bar_fixture, axial_fixture, cantilever_fixture, solve_structural};
+use super::structural_element::{apply as apply_structural, stiffness as structural_stiffness};
 
 fn two_node_grid() -> Grid {
     Grid {
@@ -102,4 +104,124 @@ fn exports_one_structural_field_per_load_case() {
         displacement[grid.node_count()..].iter().sum::<f32>()
             > displacement[..grid.node_count()].iter().sum::<f32>()
     );
+}
+
+#[test]
+fn hex8_axial_bar_matches_closed_form_and_equilibrium() {
+    let fixture = axial_bar_fixture();
+    let result = solve_structural(&fixture).expect("axial structural reference must converge");
+    let expected = fixture.applied_force_n * fixture.length_m
+        / (fixture.youngs_modulus_pa * fixture.cross_section_m2);
+    let relative = (result.observed_displacement_m - expected).abs() / expected;
+
+    assert!(
+        relative < 0.02,
+        "axial displacement error was {:.2}%",
+        relative * 100.0
+    );
+    assert!(result.relative_residual <= 1.0e-5);
+    assert!(result.force_balance_error_n <= fixture.applied_force_n * 1.0e-4);
+}
+
+#[test]
+fn hex8_cantilever_matches_euler_bernoulli_within_locked_resolution() {
+    let fixture = cantilever_fixture();
+    let result = solve_structural(&fixture).expect("cantilever structural reference must converge");
+    let expected = fixture.applied_force_n * fixture.length_m.powi(3)
+        / (3.0 * fixture.youngs_modulus_pa * fixture.second_moment_m4);
+    let relative = (result.observed_displacement_m.abs() - expected).abs() / expected;
+
+    assert!(
+        relative < 0.05,
+        "cantilever displacement error was {:.2}%",
+        relative * 100.0
+    );
+    assert!(result.relative_residual <= 1.0e-5);
+    assert!(result.force_balance_error_n <= fixture.applied_force_n * 1.0e-4);
+}
+
+#[test]
+fn axial_reference_scales_with_force_modulus_length_and_section() {
+    let cases = [
+        axial_fixture([20, 2, 2], 0.005, 1_000.0, 70.0e9),
+        axial_fixture([20, 2, 2], 0.005, 2_000.0, 70.0e9),
+        axial_fixture([20, 2, 2], 0.005, 1_000.0, 140.0e9),
+        axial_fixture([30, 2, 2], 0.005, 1_000.0, 70.0e9),
+        axial_fixture([20, 4, 2], 0.005, 1_000.0, 70.0e9),
+    ];
+    for fixture in cases {
+        let result = solve_structural(&fixture).expect("perturbed axial reference must converge");
+        let expected = fixture.applied_force_n * fixture.length_m
+            / (fixture.youngs_modulus_pa * fixture.cross_section_m2);
+        let relative = (result.observed_displacement_m - expected).abs() / expected;
+        assert!(
+            relative < 0.02,
+            "perturbed axial error was {:.2}%",
+            relative * 100.0
+        );
+        independently_check_structural_evidence(&fixture, &result);
+    }
+}
+
+fn independently_check_structural_evidence(
+    fixture: &super::structural::StructuralFixture,
+    result: &super::structural::StructuralReferenceResult,
+) {
+    let input = &fixture.input;
+    let displacement: Vec<f64> = result
+        .displacement_m
+        .iter()
+        .map(|value| f64::from(*value))
+        .collect();
+    let mut product = vec![0.0; displacement.len()];
+    apply_structural(
+        input,
+        &structural_stiffness(input),
+        &displacement,
+        &mut product,
+    );
+    let load_norm = input
+        .loads_n
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    let residual = product
+        .iter()
+        .zip(&input.loads_n)
+        .enumerate()
+        .filter(|(dof, _)| input.fixed_dofs[*dof] == 0)
+        .map(|(_, (force, load))| (force - load).powi(2))
+        .sum::<f64>()
+        .sqrt()
+        / load_norm;
+    let mut balance = [0.0; 3];
+    for (dof, fixed) in input.fixed_dofs.iter().copied().enumerate() {
+        if fixed != 0 {
+            balance[dof % 3] += product[dof];
+        }
+        balance[dof % 3] += input.loads_n[dof];
+    }
+    let compliance = input
+        .loads_n
+        .iter()
+        .zip(&displacement)
+        .map(|(load, u)| load * u)
+        .sum::<f64>();
+    let energy = 0.5
+        * displacement
+            .iter()
+            .zip(&product)
+            .map(|(u, force)| u * force)
+            .sum::<f64>();
+    assert!(residual <= 2.0e-5, "independent residual was {residual:e}");
+    assert!(
+        balance
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt()
+            <= fixture.applied_force_n * 1.0e-4
+    );
+    assert!((compliance - 2.0 * energy).abs() / compliance.abs() < 2.0e-5);
 }

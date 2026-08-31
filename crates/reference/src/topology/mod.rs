@@ -7,6 +7,9 @@ mod raster;
 mod solver;
 #[cfg(test)]
 mod solver_tests;
+mod structural;
+mod structural_element;
+mod structural_wasm;
 
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;

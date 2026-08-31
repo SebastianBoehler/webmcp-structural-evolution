@@ -1,6 +1,18 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class WasmStructuralReferenceResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly compliance_j: number;
+    readonly displacement_m: Float32Array;
+    readonly force_balance_error_n: number;
+    readonly iterations: number;
+    readonly relative_residual: number;
+    readonly von_mises_stress_pa: Float32Array;
+}
+
 export class WasmTopologyResult {
     private constructor();
     free(): void;
@@ -29,11 +41,21 @@ export function optimize_demo_frame(preset: string): WasmTopologyResult;
 
 export function relative_l2(expected: Float32Array, actual: Float32Array): number;
 
+export function solve_structural_reference(input: any): WasmStructuralReferenceResult;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_wasmstructuralreferenceresult_free: (a: number, b: number) => void;
     readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly solve_structural_reference: (a: any) => [number, number, number];
+    readonly wasmstructuralreferenceresult_compliance_j: (a: number) => number;
+    readonly wasmstructuralreferenceresult_displacement_m: (a: number) => [number, number];
+    readonly wasmstructuralreferenceresult_force_balance_error_n: (a: number) => number;
+    readonly wasmstructuralreferenceresult_iterations: (a: number) => number;
+    readonly wasmstructuralreferenceresult_relative_residual: (a: number) => number;
+    readonly wasmstructuralreferenceresult_von_mises_stress_pa: (a: number) => [number, number];
     readonly __wbg_wasmtopologyresult_free: (a: number, b: number) => void;
     readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
