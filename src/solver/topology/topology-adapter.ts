@@ -2,7 +2,9 @@ import type { EngineeringSolveRequest, SolverAdapter } from "../../engineering/s
 import { compileStructuralStudy } from "../structural/compile-structural-study";
 import { StructuralGpuError } from "../structural/structural-gpu-runtime";
 import { createWebGpuStructuralAdapter } from "../structural/webgpu-structural-adapter";
-import { projectTopologyDensity, topologyMask } from "./density-constraints";
+import {
+  assertTopologyScheduleFeasible, projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
+} from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology, validateExtractedTopology } from "./extract-topology";
 import { createTopologyMeshArtifact, packInteractiveTopologyRunResult } from "./topology-artifacts";
 import type { TopologyObjectiveSample, TopologyResult, TopologySolveInput } from "./topology-contract";
@@ -94,6 +96,11 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
           density, 1, study.moveLimit, passive.requiredCells, passive.protectedCells,
           system.activeCells,
         );
+        assertTopologyScheduleFeasible(
+          topologyMask(density, study.extraction.isoValue, system.activeCells),
+          study.maxIterations, study.targetVolumeFraction, study.moveLimit,
+          passive.requiredCells, passive.protectedCells, system.activeCells,
+        );
         await analyze(0);
         for (let iteration = 1; iteration <= study.maxIterations; iteration += 1) {
           checkAbort(signal);
@@ -104,10 +111,15 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
           const filtered = await filterTopologyDensity(
             updated, system.grid.cellDimensions, radiusCells, system.activeCells, signal,
           );
-          density = projectTopologyDensity(
+          const continuous = projectTopologyDensity(
             filtered, density, study.targetVolumeFraction, study.moveLimit,
             passive.requiredCells, passive.protectedCells,
             system.activeCells,
+          );
+          density = projectTopologyAnalysisDensity(
+            continuous, binaryMasks.at(-1)!, study.extraction.isoValue,
+            study.targetVolumeFraction, study.moveLimit,
+            passive.requiredCells, passive.protectedCells, system.activeCells,
           );
           await analyze(iteration);
         }

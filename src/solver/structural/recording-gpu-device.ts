@@ -8,6 +8,7 @@ export class RecordingBuffer {
   constructor(
     readonly descriptor: GPUBufferDescriptor,
     private readonly onMap: () => void = () => undefined,
+    private readonly onRead: () => void = () => undefined,
   ) {
     this.data = new ArrayBuffer(Number(descriptor.size));
   }
@@ -21,7 +22,9 @@ export class RecordingBuffer {
     this.mapped = true;
   }
   getMappedRange(offset = 0, size = this.data.byteLength - offset): ArrayBuffer {
-    return this.data.slice(offset, offset + size);
+    const copy = this.data.slice(offset, offset + size);
+    this.onRead();
+    return copy;
   }
   unmap(): void { this.mapped = false; }
 }
@@ -34,6 +37,8 @@ export interface RecordingGpuOptions {
   readonly scopeError?: "validation" | "internal" | "out-of-memory";
   readonly scopeErrorStage?: RecordingGpuStage;
   readonly afterFirstSubmit?: () => void;
+  readonly afterFirstReadback?: () => void;
+  readonly loseAfterFirstReadback?: boolean;
 }
 
 type RecordingGpuStage =
@@ -56,6 +61,7 @@ export function recordingGpu(options: RecordingGpuOptions = {}) {
   let capturedScope: GPUErrorFilter | undefined;
   let scopeErrorTriggered = false;
   let maxScopeDepth = 0;
+  let firstReadback = true;
   const stage = (name: RecordingGpuStage) => {
     if (errorScopes.length === 3) scopedStages.add(name);
     if (scopeErrorTriggered || options.scopeErrorStage !== name || !options.scopeError) return;
@@ -86,7 +92,18 @@ export function recordingGpu(options: RecordingGpuOptions = {}) {
     }),
     createBuffer: vi.fn((descriptor: GPUBufferDescriptor) => {
       stage("allocation");
-      const buffer = new RecordingBuffer(descriptor, () => stage("readback-map"));
+      const buffer = new RecordingBuffer(
+        descriptor,
+        () => stage("readback-map"),
+        () => {
+          if (!firstReadback || descriptor.label !== "topology-readback") return;
+          firstReadback = false;
+          options.afterFirstReadback?.();
+          if (options.loseAfterFirstReadback) {
+            lose({ reason: "unknown", message: "recording device lost after readback" } as GPUDeviceLostInfo);
+          }
+        },
+      );
       buffers.push(buffer);
       return buffer;
     }),
@@ -158,6 +175,7 @@ export function recordingGpu(options: RecordingGpuOptions = {}) {
     adapter, buffers, device, dispatches, gpu, pipelines, scopedStages, uncapturedErrors,
     errorScopeDepth: () => errorScopes.length,
     maximumErrorScopeDepth: () => maxScopeDepth,
+    submitCount: () => submitCount,
   };
 }
 

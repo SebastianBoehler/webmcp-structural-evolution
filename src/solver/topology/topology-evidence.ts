@@ -4,7 +4,7 @@ import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import { compileStructuralStudy } from "../structural/compile-structural-study";
 import type { StructuralResult } from "../structural/structural-contract";
 import { validateInteractiveStructuralResult } from "../structural/structural-result-validation";
-import { topologyMask } from "./density-constraints";
+import { topologyDiscreteLimits, topologyMask } from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology, validateExtractedTopology } from "./extract-topology";
 import type {
   TopologyObjectiveSample, TopologySolveInput,
@@ -34,6 +34,56 @@ function sameMask(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
     && Array.from(left).every((value, index) => value === right[index]);
 }
 
+function validateProgression(input: Readonly<{
+  density: Float32Array;
+  binaryMasks: readonly Uint8Array[];
+  targetVolumeFraction: number;
+  moveLimit: number;
+  designDomain: Uint32Array;
+  required: ReadonlySet<number>;
+  protectedCells: ReadonlySet<number>;
+}>): void {
+  const limits = topologyDiscreteLimits(
+    input.targetVolumeFraction, input.moveLimit, input.designDomain,
+    input.required, input.protectedCells,
+  );
+  if ([...input.required].some((cell) => input.density[cell] !== 1)) {
+    throw new Error("Topology final density must keep every required passive cell at one");
+  }
+  if ([...input.protectedCells].some((cell) => input.density[cell] !== 0)) {
+    throw new Error("Topology final density must keep every protected void cell at zero");
+  }
+  let previous: Uint8Array | undefined;
+  let previousCount = 0;
+  for (const mask of input.binaryMasks) {
+    if (!(mask instanceof Uint8Array) || mask.length !== input.designDomain.length
+      || mask.some((value, cell) => value !== 0 && value !== 1
+        || value === 1 && input.designDomain[cell] !== 1)) {
+      throw new Error("Topology analysis mask escapes the canonical design domain");
+    }
+    if ([...input.required].some((cell) => mask[cell] !== 1)) {
+      throw new Error("Topology analysis mask omits a required passive cell");
+    }
+    if ([...input.protectedCells].some((cell) => mask[cell] !== 0)) {
+      throw new Error("Topology analysis mask occupies a protected void cell");
+    }
+    const count = mask.reduce((sum, value) => sum + value, 0);
+    if (previous) {
+      let hamming = 0;
+      for (let cell = 0; cell < mask.length; cell += 1) {
+        if (mask[cell] !== previous[cell]) hamming += 1;
+      }
+      if (hamming > limits.moveBudget) throw new Error("Topology analyzed mask exceeds the discrete move budget");
+      if (count > previousCount) throw new Error("Topology analyzed material count must not increase");
+    }
+    previous = mask;
+    previousCount = count;
+  }
+  if (previousCount !== limits.targetCount) {
+    throw new Error("Topology final analyzed mask misses the rounded target volume cell count");
+  }
+}
+
 export async function canonicalTopologyEvidence(input: Readonly<{
   request: Request;
   density: Float32Array;
@@ -56,13 +106,14 @@ export async function canonicalTopologyEvidence(input: Readonly<{
     || input.analyses.length !== input.binaryMasks.length) {
     throw new Error("Topology evidence must contain one analysis per configured iteration");
   }
+  validateProgression({
+    density: input.density, binaryMasks: input.binaryMasks,
+    targetVolumeFraction: study.targetVolumeFraction, moveLimit: study.moveLimit,
+    designDomain: system.activeCells,
+    required: passive.requiredCells, protectedCells: passive.protectedCells,
+  });
   const samples: TopologyObjectiveSample[] = [];
   for (const [iteration, bytes] of input.binaryMasks.entries()) {
-    if (!(bytes instanceof Uint8Array) || bytes.length !== system.activeCells.length
-      || bytes.some((value, cell) => value !== 0 && value !== 1
-        || value === 1 && system.activeCells[cell] !== 1)) {
-      throw new Error("Topology analysis mask escapes the canonical design domain");
-    }
     const mask = Uint32Array.from(bytes);
     const derived = await structuralRequestForTopologyMask(source, mask, `iteration-${iteration}`);
     const compiled = await compileStructuralStudy(derived.request);

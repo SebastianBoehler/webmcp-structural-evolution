@@ -120,7 +120,9 @@ export async function updateTopologyFromCompliance(
         readback.unmap(); return result;
       };
       const energy = await dispatch(energyPipeline, energyBuffer);
+      guard.check();
       device.queue.writeBuffer(directionBuffer, 0, minimumComplianceDirection(energy, system.activeCells));
+      guard.check();
       const output = await dispatch(updatePipeline, outputBuffer);
       if (output.some((value, cell) => !Number.isFinite(value) || value < 0 || value > 1
         || system.activeCells[cell] === 0 && value !== 0)) {

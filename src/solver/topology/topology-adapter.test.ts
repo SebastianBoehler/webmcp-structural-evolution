@@ -72,7 +72,7 @@ describe("WebGPU topology adapter", () => {
     dependencies.filter.mockReset().mockImplementation(async (density: Float32Array) => new Float32Array(density));
     dependencies.update.mockReset().mockImplementation(async (density: Float32Array) => {
       const next = new Float32Array(density);
-      for (const index of [5, 6, 9, 10, 13, 14]) {
+      for (const index of [5, 6, 13, 14]) {
         next[index] = Math.max(0, next[index]! - 0.3);
       }
       return next;
@@ -141,6 +141,29 @@ describe("WebGPU topology adapter", () => {
       }
     },
   );
+
+  it("constructs a monotone mask history within the discrete move budget and rounded target", async () => {
+    const solved = await createWebGpuTopologyAdapter().run(
+      await request("discrete-progression"), new AbortController().signal, () => undefined,
+    );
+    const history = solved.artifacts.find(({ record }) =>
+      record.mediaType === "application/vnd.structural-evolution.topology-history-v1")!;
+    const payload = history.payload as Record<string, ArrayBufferView>;
+    const masks = payload.binaryMasks as Uint8Array;
+    const shape = payload.maskShape as Uint32Array;
+    const counts = [...Array(shape[0]).keys()].map((iteration) =>
+      masks.slice(iteration * shape[1]!, (iteration + 1) * shape[1]!).reduce((sum, value) => sum + value, 0));
+    const hamming = (left: number, right: number) => {
+      let changed = 0;
+      for (let cell = 0; cell < shape[1]!; cell += 1) {
+        if (masks[left * shape[1]! + cell] !== masks[right * shape[1]! + cell]) changed += 1;
+      }
+      return changed;
+    };
+    expect(counts).toEqual([16, 12, 12]);
+    expect([hamming(0, 1), hamming(1, 2)]).toEqual([4, 0]);
+    expect(solved.output.materialFraction).toBe(0.75);
+  });
 
   it("rejects absent manufacturing constraints and non-monotonic objective history", async () => {
     expect(() => TopologyStudySchema.parse({

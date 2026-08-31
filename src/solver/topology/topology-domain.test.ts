@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { projectTopologyDensity, topologyMask } from "./density-constraints";
+import * as densityConstraints from "./density-constraints";
+import {
+  projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
+} from "./density-constraints";
 import { extractTopologyMesh } from "./extract-topology";
 import { validateInitialDensity } from "./topology-input";
 
@@ -34,5 +37,27 @@ describe("canonical topology design domain", () => {
       grid, new Float32Array([1, 1, 1, 0]),
       { isoValue: 0.5, toleranceM: 1e-6 }, domain,
     )).toThrow(/design domain/i);
+  });
+
+  it("removes the lowest-cost active cells to make discrete target progress before iso crossing", () => {
+    const projected = projectTopologyAnalysisDensity(
+      new Float32Array([0.9, 0.6, 0.8, 0.7]), new Uint8Array([1, 1, 1, 1]),
+      0.5, 0.5, 0.5, new Set(), new Set(), new Uint32Array([1, 1, 1, 1]),
+    );
+    expect(topologyMask(projected, 0.5, new Uint32Array([1, 1, 1, 1])))
+      .toEqual(new Uint32Array([1, 0, 1, 0]));
+  });
+
+  it("rejects an integer move schedule that cannot reach its rounded target", () => {
+    const schedule = (densityConstraints as unknown as {
+      assertTopologyScheduleFeasible?: (
+        baseline: Uint32Array, iterations: number, target: number, move: number,
+        required: ReadonlySet<number>, protectedCells: ReadonlySet<number>, domain: Uint32Array,
+      ) => void;
+    }).assertTopologyScheduleFeasible;
+    expect(() => schedule?.(
+      new Uint32Array([1, 1, 1, 1]), 2, 0.5, 0.2,
+      new Set(), new Set(), new Uint32Array([1, 1, 1, 1]),
+    )).toThrow(/move budget/i);
   });
 });
