@@ -24,7 +24,7 @@ export async function structuralDocument(
   materialOverrides: MaterialOverrides = {},
 ): Promise<DesignDocument> {
   return defineDesignDocument({
-    id: "test-bar", label: "Test bar", schemaVersion: 4,
+    id: "test-bar", label: "Test bar", schemaVersion: 5,
     units: { length: "m", angle: "rad", mass: "kg" },
     createdBy: { kind: "human", id: "tester" },
     frames: [{

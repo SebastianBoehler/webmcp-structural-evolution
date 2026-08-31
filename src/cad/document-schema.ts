@@ -6,11 +6,11 @@ import {
   LegacyStudySchema,
   MaterialDefinitionSchema,
   StudySchema,
+  VersionFourStudySchema,
 } from "../engineering/study-schema";
 import {
   ActorSchema,
   addBaseIntegrityIssues,
-  DisplayUnitsSchema,
   LegacyDocumentBaseShape,
   FrameSchema,
   normalizeBaseDocument,
@@ -18,6 +18,7 @@ import {
   ParameterSchema,
   ParameterValueSchema,
 } from "./document-base";
+import { CreateDesignDocumentInputSchema, initialDocumentContent } from "./document-create";
 import {
   addModelIntegrityIssues,
   AssemblyInstanceSchema,
@@ -25,6 +26,7 @@ import {
   ComponentSchema,
   EntityIdSchema,
   FeatureSchema,
+  LegacyMateSchema,
   MateSchema,
   NamedSelectionSchema,
   SketchSchema,
@@ -52,6 +54,10 @@ const V3MigrationProvenanceSchema = z.object({
   sourceRevision: RevisionSchema,
   sourceMigrationProvenance: V2MigrationProvenanceSchema.optional(),
 }).strict();
+const V4MigrationProvenanceSchema = z.object({
+  sourceSchemaVersion: z.literal(4), sourceRevision: RevisionSchema,
+  sourceMigrationProvenance: V3MigrationProvenanceSchema.optional(),
+}).strict();
 
 const legacyDocumentContentShape = {
   ...LegacyDocumentBaseShape,
@@ -66,7 +72,7 @@ const versionTwoDocumentContentShape = {
   bodies: z.array(BodySchema),
   components: z.array(ComponentSchema),
   instances: z.array(AssemblyInstanceSchema),
-  mates: z.array(MateSchema),
+  mates: z.array(LegacyMateSchema),
   namedSelections: z.array(NamedSelectionSchema),
 };
 const versionThreeDocumentContentShape = {
@@ -78,12 +84,12 @@ const versionThreeDocumentContentShape = {
   bodies: z.array(BodySchema),
   components: z.array(ComponentSchema),
   instances: z.array(AssemblyInstanceSchema),
-  mates: z.array(MateSchema),
+  mates: z.array(LegacyMateSchema),
   namedSelections: z.array(NamedSelectionSchema),
   materials: z.array(MaterialDefinitionSchema),
   studies: z.array(LegacyStudySchema),
 };
-const documentContentShape = {
+const versionFourDocumentContentShape = {
   ...LegacyDocumentBaseShape,
   schemaVersion: z.literal(4),
   migrationProvenance: V3MigrationProvenanceSchema.optional(),
@@ -92,9 +98,16 @@ const documentContentShape = {
   bodies: z.array(BodySchema),
   components: z.array(ComponentSchema),
   instances: z.array(AssemblyInstanceSchema),
-  mates: z.array(MateSchema),
+  mates: z.array(LegacyMateSchema),
   namedSelections: z.array(NamedSelectionSchema),
   materials: z.array(MaterialDefinitionSchema),
+  studies: z.array(VersionFourStudySchema),
+};
+const documentContentShape = {
+  ...versionFourDocumentContentShape,
+  schemaVersion: z.literal(5),
+  migrationProvenance: V4MigrationProvenanceSchema.optional(),
+  mates: z.array(MateSchema),
   studies: z.array(StudySchema),
 };
 
@@ -102,9 +115,12 @@ type VersionTwoDocumentContent = z.infer<z.ZodObject<typeof versionTwoDocumentCo
 type VersionTwoDocument = DeepReadonly<VersionTwoDocumentContent & { revision: string }>;
 type VersionThreeDocumentContent = z.infer<z.ZodObject<typeof versionThreeDocumentContentShape>>;
 type VersionThreeDocument = DeepReadonly<VersionThreeDocumentContent & { revision: string }>;
+type VersionFourDocumentContent = z.infer<z.ZodObject<typeof versionFourDocumentContentShape>>;
+type VersionFourDocument = DeepReadonly<VersionFourDocumentContent & { revision: string }>;
 type DocumentContent = z.infer<z.ZodObject<typeof documentContentShape>>;
 type ModelIntegrityDocument = Pick<VersionTwoDocumentContent,
-  "frames" | "parameters" | "sketches" | "features" | "bodies" | "components" | "instances" | "mates" | "namedSelections">;
+  "frames" | "parameters" | "sketches" | "features" | "bodies" | "components" | "instances" | "namedSelections">
+  & { mates: readonly z.infer<typeof MateSchema>[] };
 
 function addModelDocumentIntegrityIssues(value: ModelIntegrityDocument, context: z.RefinementCtx): void {
   addBaseIntegrityIssues(value, context);
@@ -140,6 +156,11 @@ const VersionThreeDesignDocumentContentSchema = z
   .object(versionThreeDocumentContentShape)
   .strict()
   .superRefine(addVersionThreeDocumentIntegrityIssues);
+const VersionFourDesignDocumentContentSchema = z.object(versionFourDocumentContentShape).strict()
+  .superRefine((value, context) => {
+    addModelDocumentIntegrityIssues(value, context);
+    addStudyIntegrityIssues(value as unknown as Parameters<typeof addStudyIntegrityIssues>[0], context);
+  });
 export const DesignDocumentContentSchema = z
   .object(documentContentShape)
   .strict()
@@ -170,9 +191,9 @@ async function migrateVersionTwoDocument(value: VersionTwoDocument): Promise<Ver
   }, normalizeBaseDocument);
 }
 
-async function migrateVersionThreeDocument(value: VersionThreeDocument): Promise<DesignDocument> {
+async function migrateVersionThreeDocument(value: VersionThreeDocument): Promise<VersionFourDocument> {
   const { revision: sourceRevision, migrationProvenance: sourceMigrationProvenance, ...content } = value;
-  return defineRevisionedSnapshot(DesignDocumentContentSchema, {
+  return defineRevisionedSnapshot(VersionFourDesignDocumentContentSchema, {
     ...content,
     schemaVersion: 4,
     migrationProvenance: {
@@ -186,18 +207,44 @@ async function migrateVersionThreeDocument(value: VersionThreeDocument): Promise
   }, normalizeBaseDocument);
 }
 
+async function migrateVersionFourDocument(value: VersionFourDocument): Promise<DesignDocument> {
+  for (const study of value.studies) if (study.kind === "mechanism") {
+    if (study.instanceIds.length > 256) {
+      throw new Error(`Legacy mechanism study exceeds the v5 instance budget: ${study.id}`);
+    }
+    if (study.mateIds.length > 256) throw new Error(`Legacy mechanism study exceeds the v5 mate budget: ${study.id}`);
+  }
+  const { revision: sourceRevision, migrationProvenance: sourceMigrationProvenance, ...content } = value;
+  return defineRevisionedSnapshot(DesignDocumentContentSchema, {
+    ...content, schemaVersion: 5,
+    migrationProvenance: {
+      sourceSchemaVersion: 4, sourceRevision,
+      ...(sourceMigrationProvenance === undefined ? {} : { sourceMigrationProvenance }),
+    },
+    studies: content.studies.map((study) => study.kind === "mechanism"
+      ? { ...study, configurationState: "requires-configuration" as const }
+      : study),
+  }, normalizeBaseDocument);
+}
+
 export async function defineDesignDocument(value: unknown): Promise<DesignDocument> {
-  const version = z.object({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]) })
+  const version = z.object({ schemaVersion: z.union([
+    z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5),
+  ]) })
     .passthrough()
     .parse(value).schemaVersion;
-  if (version === 4) {
+  if (version === 5) {
     return defineRevisionedSnapshot(DesignDocumentContentSchema, value, normalizeBaseDocument);
+  }
+  if (version === 4) {
+    const document = await defineRevisionedSnapshot(VersionFourDesignDocumentContentSchema, value, normalizeBaseDocument);
+    return migrateVersionFourDocument(document);
   }
   if (version === 3) {
     const document = await defineRevisionedSnapshot(
       VersionThreeDesignDocumentContentSchema, value, normalizeBaseDocument,
     );
-    return migrateVersionThreeDocument(document);
+    return migrateVersionFourDocument(await migrateVersionThreeDocument(document));
   }
   if (version === 2) {
     const document = await defineRevisionedSnapshot(
@@ -205,7 +252,7 @@ export async function defineDesignDocument(value: unknown): Promise<DesignDocume
       value,
       normalizeBaseDocument,
     );
-    return migrateVersionThreeDocument(await migrateVersionTwoDocument(document));
+    return migrateVersionFourDocument(await migrateVersionThreeDocument(await migrateVersionTwoDocument(document)));
   }
 
   const legacy = await defineRevisionedSnapshot(
@@ -226,46 +273,10 @@ export async function defineDesignDocument(value: unknown): Promise<DesignDocume
     mates: [],
     namedSelections: [],
   }, normalizeBaseDocument);
-  return migrateVersionThreeDocument(await migrateVersionTwoDocument(versionTwo));
+  return migrateVersionFourDocument(await migrateVersionThreeDocument(await migrateVersionTwoDocument(versionTwo)));
 }
-
-const CreateDesignDocumentInputSchema = z.object({
-  id: EntityIdSchema,
-  label: z.string().min(1),
-  units: DisplayUnitsSchema,
-  createdBy: ActorSchema,
-}).strict();
 
 export async function createDesignDocument(input: unknown): Promise<DesignDocument> {
   const value = CreateDesignDocumentInputSchema.parse(input);
-  return defineDesignDocument({
-    ...value,
-    schemaVersion: 4,
-    frames: [{
-      id: "world",
-      label: "World",
-      transform: {
-        position: {
-          x: { value: 0, unit: "m" },
-          y: { value: 0, unit: "m" },
-          z: { value: 0, unit: "m" },
-        },
-        orientation: {
-          roll: { value: 0, unit: "rad" },
-          pitch: { value: 0, unit: "rad" },
-          yaw: { value: 0, unit: "rad" },
-        },
-      },
-    }],
-    parameters: [],
-    sketches: [],
-    features: [],
-    bodies: [],
-    components: [],
-    instances: [],
-    mates: [],
-    namedSelections: [],
-    materials: [],
-    studies: [],
-  });
+  return defineDesignDocument(initialDocumentContent(value));
 }

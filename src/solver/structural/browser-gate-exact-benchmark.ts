@@ -112,7 +112,7 @@ function baseDocument(definition: BrowserBenchmarkDefinition) {
   }));
   const finalFeatureId = joins.at(-1)?.id ?? extrudes[0]!.id;
   return defineDesignDocument({
-    id: `${definition.id}-exact`, label: `${definition.id} exact benchmark`, schemaVersion: 4,
+    id: `${definition.id}-exact`, label: `${definition.id} exact benchmark`, schemaVersion: 5,
     units: { length: "m", angle: "rad", mass: "kg" },
     createdBy: { kind: "agent", id: "structural-topology-browser-gate" },
     frames: [{

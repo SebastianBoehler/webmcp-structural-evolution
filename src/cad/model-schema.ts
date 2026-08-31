@@ -72,14 +72,28 @@ export const NamedSelectionSchema = z.object({
   id: EntityIdSchema,
   reference: PersistentTopologyReferenceSchema,
 }).strict();
-export const MateSchema = z.object({
+const MateBaseShape = {
   id: EntityIdSchema,
-  kind: z.literal("rigid"),
   firstInstanceId: EntityIdSchema,
   secondInstanceId: EntityIdSchema,
   firstSelectionId: EntityIdSchema,
   secondSelectionId: EntityIdSchema,
-}).strict();
+};
+const currentFinite = z.number().finite().overwrite((value) => Object.is(value, -0) ? 0 : value);
+const JointAxisSchema = z.tuple([currentFinite, currentFinite, currentFinite]).refine(
+  (axis) => axis.some((component) => component !== 0),
+  "Joint local axis must be nonzero",
+);
+export const LegacyMateSchema = z.object({ ...MateBaseShape, kind: z.literal("rigid") }).strict();
+export const MateSchema = z.discriminatedUnion("kind", [
+  LegacyMateSchema,
+  z.object({ ...MateBaseShape, kind: z.literal("revolute"), axisFirstLocal: JointAxisSchema, lowerRad: currentFinite, upperRad: currentFinite }).strict(),
+  z.object({ ...MateBaseShape, kind: z.literal("prismatic"), axisFirstLocal: JointAxisSchema, lowerM: currentFinite, upperM: currentFinite }).strict(),
+]).superRefine((mate, context) => {
+  const ordered = mate.kind === "revolute" ? mate.lowerRad <= mate.upperRad
+    : mate.kind === "prismatic" ? mate.lowerM <= mate.upperM : true;
+  if (!ordered) context.addIssue({ code: "custom", message: "Joint lower limit must not exceed its upper limit" });
+});
 
 type ParsedSketch = z.infer<typeof SketchSchema>;
 
@@ -237,7 +251,16 @@ export function addModelIntegrityIssues(
       context.addIssue({ code: "custom", message: `Named selection feature is outside body lineage: ${ownerFeatureId}` });
     }
   }
+  const mateEndpointPairs = new Set<string>();
   for (const mate of value.mates) {
+    if (mate.firstInstanceId === mate.secondInstanceId) {
+      context.addIssue({ code: "custom", message: `Mate cannot join an instance to itself: ${mate.id}` });
+    }
+    const first = `${mate.firstInstanceId}:${mate.firstSelectionId}`;
+    const second = `${mate.secondInstanceId}:${mate.secondSelectionId}`;
+    const pair = first < second ? `${first}|${second}` : `${second}|${first}`;
+    if (mateEndpointPairs.has(pair)) context.addIssue({ code: "custom", message: `Duplicate mate endpoint pair: ${mate.id}` });
+    mateEndpointPairs.add(pair);
     const firstInstance = instances.get(mate.firstInstanceId);
     const secondInstance = instances.get(mate.secondInstanceId);
     const firstSelection = selections.get(mate.firstSelectionId);

@@ -127,7 +127,7 @@ export async function topologyScenarioRequest(kind: "drone" | "cobot") {
   const selections = [scenario.support, ...scenario.loads];
   const mesh = semanticMesh(scenario);
   const document = await defineDesignDocument({
-    id: scenario.id, label: scenario.id, schemaVersion: 4,
+    id: scenario.id, label: scenario.id, schemaVersion: 5,
     units: { length: "m", angle: "rad", mass: "kg" }, createdBy: { kind: "human", id: "fixture" },
     frames: [{
       id: "world", label: "World", transform: {

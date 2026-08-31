@@ -46,6 +46,7 @@ describe("CAD public API", () => {
       "ExactStepImportResultSchema",
       "FeatureSchema",
       "FrameSchema",
+      "LegacyMateSchema",
       "LengthExpressionSchema",
       "MassPropertiesPayloadSchema",
       "MateSchema",

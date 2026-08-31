@@ -158,7 +158,10 @@ async function symmetricSplitDocument() {
     ],
     bodies: [{ id: "split-body", featureId: "split" }],
     components: [{ id: "split-component", bodyIds: ["split-body"] }],
-    instances: [{ id: "split-instance", componentId: "split-component", frameId: "world" }],
+    instances: [
+      { id: "split-instance", componentId: "split-component", frameId: "world" },
+      { id: "split-peer", componentId: "split-component", frameId: "world" },
+    ],
     namedSelections: [
       {
         id: "mount-face",
@@ -179,7 +182,7 @@ async function symmetricSplitDocument() {
       },
     ],
     mates: [{
-      id: "mount-mate", kind: "rigid", firstInstanceId: "split-instance", secondInstanceId: "split-instance",
+      id: "mount-mate", kind: "rigid", firstInstanceId: "split-instance", secondInstanceId: "split-peer",
       firstSelectionId: "mount-face", secondSelectionId: "mount-edge",
     }],
   });

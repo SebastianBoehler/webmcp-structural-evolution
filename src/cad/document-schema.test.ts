@@ -10,7 +10,7 @@ import {
 } from "./document-schema";
 
 describe("DesignDocument", () => {
-  it("migrates serialized v1 content through v4 with an exact provenance chain", async () => {
+  it("migrates serialized v1 content through v5 with an exact provenance chain", async () => {
     const legacyContent = {
       id: "legacy-pump",
       label: "Legacy pump",
@@ -55,16 +55,29 @@ describe("DesignDocument", () => {
       materials: [], studies: [],
     };
     const v3Revision = await revisionId(v3Content);
+    const v4Content = {
+      ...v3Content,
+      schemaVersion: 4 as const,
+      migrationProvenance: {
+        sourceSchemaVersion: 3 as const, sourceRevision: v3Revision,
+        sourceMigrationProvenance: v3Content.migrationProvenance,
+      },
+    };
+    const v4Revision = await revisionId(v4Content);
 
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       migrationProvenance: {
-        sourceSchemaVersion: 3,
-        sourceRevision: v3Revision,
+        sourceSchemaVersion: 4,
+        sourceRevision: v4Revision,
         sourceMigrationProvenance: {
-          sourceSchemaVersion: 2,
-          sourceRevision: v2Revision,
-          sourceMigrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+          sourceSchemaVersion: 3,
+          sourceRevision: v3Revision,
+          sourceMigrationProvenance: {
+            sourceSchemaVersion: 2,
+            sourceRevision: v2Revision,
+            sourceMigrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+          },
         },
       },
       sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
@@ -100,12 +113,23 @@ describe("DesignDocument", () => {
       materials: [], studies: [],
     };
     const v3Revision = await revisionId(v3Content);
+    const v4Content = {
+      ...v3Content, schemaVersion: 4 as const,
+      migrationProvenance: {
+        sourceSchemaVersion: 3 as const, sourceRevision: v3Revision,
+        sourceMigrationProvenance: v3Content.migrationProvenance,
+      },
+    };
+    const v4Revision = await revisionId(v4Content);
 
     expect(migrated).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       migrationProvenance: {
-        sourceSchemaVersion: 3, sourceRevision: v3Revision,
-        sourceMigrationProvenance: { sourceSchemaVersion: 2, sourceRevision: v2Revision },
+        sourceSchemaVersion: 4, sourceRevision: v4Revision,
+        sourceMigrationProvenance: {
+          sourceSchemaVersion: 3, sourceRevision: v3Revision,
+          sourceMigrationProvenance: { sourceSchemaVersion: 2, sourceRevision: v2Revision },
+        },
       },
       materials: [], studies: [],
     });
@@ -169,7 +193,7 @@ describe("DesignDocument", () => {
     });
 
     expect(document).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       units: { length: "mm", angle: "deg", mass: "kg" },
       frames: [{
         id: "world",
@@ -196,7 +220,7 @@ describe("DesignDocument", () => {
     await expect(defineDesignDocument(v3)).rejects.toThrow(/source study is unresolved/i);
 
     const migrated = await defineDesignDocument({ ...v3, studies: [] });
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
   });
 
   it("normalizes frame transforms, mass, and angle parameter values", async () => {

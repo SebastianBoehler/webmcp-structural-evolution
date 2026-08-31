@@ -72,6 +72,7 @@ export {
   ComponentSchema,
   FeatureSchema,
   LengthExpressionSchema,
+  LegacyMateSchema,
   MateSchema,
   NamedSelectionSchema,
   ParameterExpressionSchema,

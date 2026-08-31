@@ -1,6 +1,19 @@
 import { z } from "zod";
 
 import { EntityIdSchema } from "../cad/model-schema";
+import {
+  HistoricalMechanismStudySchema,
+  LegacyMechanismStudySchema,
+  MechanismStudySchema,
+  type MechanismStudy,
+} from "./mechanism-study-schema";
+
+export {
+  HistoricalMechanismStudySchema,
+  LegacyMechanismStudySchema,
+  MechanismStudySchema,
+  type MechanismStudy,
+} from "./mechanism-study-schema";
 
 const finite = z.number().finite();
 const positive = finite.positive();
@@ -9,8 +22,9 @@ const ForceVectorSchema = z.tuple([finite, finite, finite]).refine(
   "Structural load force must be nonzero",
 );
 
-function uniqueIdsSchema(minimum: number, message: string) {
-  return z.array(EntityIdSchema).min(minimum).refine(
+function uniqueIdsSchema(minimum: number, message: string, maximum?: number) {
+  const ids = z.array(EntityIdSchema).min(minimum);
+  return (maximum === undefined ? ids : ids.max(maximum)).refine(
     (ids) => new Set(ids).size === ids.length,
     message,
   );
@@ -77,12 +91,6 @@ export const TopologyStudySchema = z.union([
     configurationState: z.literal("configured"),
   }).strict(),
 ]);
-export const MechanismStudySchema = z.object({
-  id: EntityIdSchema,
-  kind: z.literal("mechanism"),
-  instanceIds: uniqueIdsSchema(1, "Mechanism study instance IDs must be unique"),
-  mateIds: uniqueIdsSchema(0, "Mechanism study mate IDs must be unique"),
-}).strict();
 export const ThermalSteadyStudySchema = z.object({
   id: EntityIdSchema,
   kind: z.literal("thermal-steady"),
@@ -92,7 +100,13 @@ export const ThermalSteadyStudySchema = z.object({
 export const LegacyStudySchema = z.discriminatedUnion("kind", [
   StructuralStudySchema,
   LegacyTopologyStudySchema,
-  MechanismStudySchema,
+  HistoricalMechanismStudySchema,
+  ThermalSteadyStudySchema,
+]);
+export const VersionFourStudySchema = z.union([
+  StructuralStudySchema,
+  TopologyStudySchema,
+  HistoricalMechanismStudySchema,
   ThermalSteadyStudySchema,
 ]);
 export const StudySchema = z.union([
@@ -105,7 +119,6 @@ export const StudySchema = z.union([
 export type MaterialDefinition = z.infer<typeof MaterialDefinitionSchema>;
 export type StructuralStudy = z.infer<typeof StructuralStudySchema>;
 export type TopologyStudy = z.infer<typeof TopologyStudySchema>;
-export type MechanismStudy = z.infer<typeof MechanismStudySchema>;
 export type ThermalSteadyStudy = z.infer<typeof ThermalSteadyStudySchema>;
 export type Study = z.infer<typeof StudySchema>;
 
@@ -115,7 +128,7 @@ export type StudyIntegrityInput = Readonly<{
   namedSelections: readonly Readonly<{ id: string; reference: Readonly<{ bodyId: string }> }>[];
   studies: readonly Study[];
   instances: readonly Readonly<{ id: string }>[];
-  mates: readonly Readonly<{ id: string }>[];
+  mates: readonly Readonly<{ id: string; firstInstanceId: string; secondInstanceId: string }>[];
 }>;
 
 function addDuplicateIdIssues(
@@ -171,6 +184,7 @@ export function addStudyIntegrityIssues(value: StudyIntegrityInput, context: z.R
   const studies = new Map(value.studies.map((study) => [study.id, study]));
   const instanceIds = new Set(value.instances.map(({ id }) => id));
   const mateIds = new Set(value.mates.map(({ id }) => id));
+  const mates = new Map(value.mates.map((mate) => [mate.id, mate]));
 
   for (const study of value.studies) {
     switch (study.kind) {
@@ -197,6 +211,18 @@ export function addStudyIntegrityIssues(value: StudyIntegrityInput, context: z.R
       case "mechanism":
         addUnresolvedIssues(study.instanceIds, instanceIds, "Instance", context);
         addUnresolvedIssues(study.mateIds, mateIds, "Mate", context);
+        if (study.configurationState === "configured") {
+          for (const assignment of study.materialAssignments) if (!materialIds.has(assignment.materialId)) {
+            context.addIssue({ code: "custom", message: `Mechanism material is unresolved: ${assignment.materialId}` });
+          }
+        }
+        for (const mateId of study.mateIds) {
+          const mate = mates.get(mateId);
+          if (mate && (!study.instanceIds.includes(mate.firstInstanceId)
+            || !study.instanceIds.includes(mate.secondInstanceId))) {
+            context.addIssue({ code: "custom", message: `Mechanism mate references an instance outside the study: ${mateId}` });
+          }
+        }
         break;
       case "thermal-steady":
         addUnresolvedIssues(study.bodyIds, bodyIds, "Body", context);
