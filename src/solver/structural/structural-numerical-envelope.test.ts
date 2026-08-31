@@ -31,4 +31,14 @@ describe("structural numerical envelope", () => {
       rasterizationToleranceM: new Float64Array([toleranceM]),
     }))).rejects.toThrow(/derived structural operator.*finite f32/i);
   });
+
+  it("rejects overflow in the eight-cell f32 assembled diagonal", async () => {
+    await expect(compileStructuralStudy(await structuralRequest({
+      cellSizeM: new Float64Array([8e26, 8e26, 8e26]),
+    }))).resolves.toBeDefined();
+
+    await expect(compileStructuralStudy(await structuralRequest({
+      cellSizeM: new Float64Array([1e27, 1e27, 1e27]),
+    }))).rejects.toThrow(/derived structural operator.*finite f32/i);
+  });
 });

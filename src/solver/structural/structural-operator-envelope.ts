@@ -24,8 +24,14 @@ export function validateStructuralOperatorEnvelope(
     reject();
   }
   if (stiffness.some((value) => !Number.isFinite(value))) reject();
-  for (let diagonal = 0; diagonal < 24; diagonal += 1) {
-    const value = stiffness[diagonal * 24 + diagonal]!;
-    if (!Number.isFinite(value) || value <= 0) reject();
+  for (let axis = 0; axis < 3; axis += 1) {
+    let assembledDiagonal = Math.fround(0);
+    for (let localNode = 0; localNode < 8; localNode += 1) {
+      const localDof = localNode * 3 + axis;
+      const value = stiffness[localDof * 24 + localDof]!;
+      if (!Number.isFinite(value) || value <= 0) reject();
+      assembledDiagonal = Math.fround(assembledDiagonal + value);
+      if (!Number.isFinite(assembledDiagonal) || assembledDiagonal <= 0) reject();
+    }
   }
 }
