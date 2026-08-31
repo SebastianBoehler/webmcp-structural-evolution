@@ -13,6 +13,7 @@ export const ArtifactKindSchema = z.enum([
   "solver-mesh",
   "field",
   "manufacturing-mesh",
+  "mechanism-replay",
   "toolpath",
   "thumbnail",
   "export",
