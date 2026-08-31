@@ -17,16 +17,15 @@ import { isPositiveFiniteFloat32 } from "./structural-grid-validation";
 import { classifyExactBrepCells } from "./exact-brep-classifier";
 import { rasterizeStructuralBoundaries } from "./structural-boundary-raster";
 import {
-  ownedTriangles, pointInsideClosedBody, signedTriangleVolumeM3,
+  rebuildStructuralExactSource, type StructuralExactSource,
+} from "./structural-exact-source";
+import {
+  ownedTriangles, signedTriangleVolumeM3,
   validateClosedTriangleBodies, type OwnedTriangle, type Point3,
 } from "./triangle-voxel-geometry";
 
 export interface StructuralVoxelProducerInput {
   readonly document: DesignDocument;
-  readonly brepArtifact: ArtifactRecord;
-  readonly brepPayload: OpaqueBytesPayload;
-  readonly semanticArtifact: ArtifactRecord;
-  readonly semanticMeshPayload: SemanticMeshPayload;
   readonly bodyIds: readonly string[];
   readonly cellSizeM: number;
   readonly rasterizationToleranceM: number;
@@ -36,13 +35,15 @@ export interface StructuralVoxelProducerInput {
 export interface ProducedStructuralVoxelMesh {
   readonly record: ArtifactRecord;
   readonly payload: StructuralVoxelPayload;
+  readonly exact: StructuralExactSource;
 }
+type ExactInput = StructuralVoxelProducerInput & StructuralExactSource;
 
 type Dims = readonly [number, number, number];
 const encode = (value: unknown) => Uint8Array.from(new TextEncoder().encode(JSON.stringify(value)));
 const cellIndex = (dims: Dims, x: number, y: number, z: number) => x + dims[0] * (y + dims[1] * z);
 
-async function checkedInput(input: StructuralVoxelProducerInput): Promise<SemanticMeshPayload> {
+async function checkedInput(input: ExactInput): Promise<SemanticMeshPayload> {
   const document = await defineDesignDocument(input.document);
   if (document.revision !== input.document.revision) {
     throw new Error("Structural voxelization requires a canonical design-document revision");
@@ -121,7 +122,7 @@ function pointAt(origin: Point3, cellSizeM: number, x: number, y: number, z: num
 }
 
 async function occupancy(
-  input: StructuralVoxelProducerInput, dims: Dims, origin: Point3,
+  input: ExactInput, dims: Dims, origin: Point3,
 ): Promise<{
   readonly activeCells: Uint32Array; readonly boundsM: Float64Array; readonly volumeM3: number;
 }> {
@@ -144,8 +145,7 @@ async function occupancy(
 
 function validateExactMeshCorrespondence(
   origin: Point3, maximum: Point3, exactBoundsM: Float64Array, exactVolumeM3: number,
-  triangles: readonly OwnedTriangle[], activeCells: Uint32Array, dims: Dims,
-  cellSizeM: number, toleranceM: number,
+  triangles: readonly OwnedTriangle[], toleranceM: number,
 ): void {
   if (exactBoundsM.length !== 6 || exactBoundsM.some((value) => !Number.isFinite(value))) {
     throw new Error("Exact BREP classifier returned invalid solid bounds");
@@ -156,25 +156,11 @@ function validateExactMeshCorrespondence(
   if (semantic.some((value, index) => Math.abs(value - exactBoundsM[index]!) > correspondenceTolerance)) {
     throw new Error("Exact BREP and semantic mesh bounds do not correspond");
   }
-  const semanticVolumeM3 = Math.abs(signedTriangleVolumeM3(triangles));
+  const semanticVolumeM3 = signedTriangleVolumeM3(triangles);
   const volumeToleranceM3 = Math.max(toleranceM ** 3, exactVolumeM3 * 1e-3);
   if (!(semanticVolumeM3 > 0)
     || Math.abs(semanticVolumeM3 - exactVolumeM3) > volumeToleranceM3) {
     throw new Error("Exact BREP and semantic mesh solid volumes do not correspond");
-  }
-  const byBody = new Map<string, OwnedTriangle[]>();
-  for (const triangle of triangles) {
-    const body = byBody.get(triangle.bodyId);
-    if (body) body.push(triangle); else byBody.set(triangle.bodyId, [triangle]);
-  }
-  for (let z = 0; z < dims[2]; z += 1) for (let y = 0; y < dims[1]; y += 1) {
-    for (let x = 0; x < dims[0]; x += 1) {
-      const center = pointAt(origin, cellSizeM, x + .5, y + .5, z + .5);
-      const semanticInside = [...byBody.values()].some((body) => pointInsideClosedBody(center, body));
-      if (Number(semanticInside) !== activeCells[cellIndex(dims, x, y, z)]) {
-        throw new Error("Exact BREP and semantic mesh center occupancy do not correspond");
-      }
-    }
   }
 }
 
@@ -194,8 +180,8 @@ const offsets = (groups: readonly number[][]) => {
   return Uint32Array.from(values);
 };
 
-export async function produceStructuralVoxelMesh(
-  input: StructuralVoxelProducerInput,
+async function produceFromExact(
+  input: ExactInput,
 ): Promise<ProducedStructuralVoxelMesh> {
   const mesh = await checkedInput(input);
   const brep = OpaqueBytesPayloadSchema.parse(input.brepPayload);
@@ -212,7 +198,7 @@ export async function produceStructuralVoxelMesh(
   const classified = await occupancy(input, dims, origin);
   validateExactMeshCorrespondence(
     origin, maximum, classified.boundsM, classified.volumeM3, triangles,
-    classified.activeCells, dims, input.cellSizeM, input.rasterizationToleranceM,
+    input.rasterizationToleranceM,
   );
   const activeCells = classified.activeCells;
   const required = requiredSelectionIds(input.document, bodySet);
@@ -225,6 +211,13 @@ export async function produceStructuralVoxelMesh(
     throw new Error("A structural study selection is missing unique exact face ownership");
   }
   const topologyIds = resolveNamedSelections(selectionDocument, mesh.faces).map(({ topologyId }) => topologyId);
+  if (new Set(topologyIds).size !== topologyIds.length) {
+    throw new Error("Structural study selections resolve to duplicate exact face ownership");
+  }
+  const operationBudget = activeCells.length * triangles.length * 6;
+  if (!Number.isSafeInteger(operationBudget) || operationBudget > 10_000_000) {
+    throw new Error("Structural semantic correspondence operation budget exceeded");
+  }
   const groups = await rasterizeStructuralBoundaries({
     topologyIds, triangles, activeCells, dimensions: dims, originM: origin,
     cellSizeM: input.cellSizeM, toleranceM: input.rasterizationToleranceM,
@@ -256,5 +249,16 @@ export async function produceStructuralVoxelMesh(
       { kind: "artifact", artifactId: input.semanticArtifact.id },
     ],
   });
-  return { record, payload };
+  return { record, payload, exact: {
+    brepArtifact: input.brepArtifact, brepPayload: input.brepPayload,
+    semanticArtifact: input.semanticArtifact, semanticMeshPayload: input.semanticMeshPayload,
+  } };
+}
+
+export async function produceStructuralVoxelMesh(
+  input: StructuralVoxelProducerInput,
+): Promise<ProducedStructuralVoxelMesh> {
+  const signal = input.signal ?? new AbortController().signal;
+  const exact = await rebuildStructuralExactSource(input.document, signal);
+  return produceFromExact({ ...input, ...exact });
 }
