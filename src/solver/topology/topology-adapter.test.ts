@@ -165,6 +165,23 @@ describe("WebGPU topology adapter", () => {
     expect(solved.output.materialFraction).toBe(0.75);
   });
 
+  it("analyzes the canonical raw initial mask before filtering proposals", async () => {
+    const base = await request("raw-initial-mask");
+    const initialDensity = new Float32Array([
+      1, 1, 1, 1, 1, 0.4, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 0.4, 1,
+    ]);
+    dependencies.filter.mockImplementationOnce(async () => new Float32Array(16).fill(1));
+    const solved = await createWebGpuTopologyAdapter().run(
+      { ...base, input: { ...base.input, initialDensity } },
+      new AbortController().signal, () => undefined,
+    );
+    const history = solved.artifacts.find(({ record }) =>
+      record.mediaType === "application/vnd.structural-evolution.topology-history-v1")!;
+    const payload = history.payload as Record<string, ArrayBufferView>;
+    const masks = payload.binaryMasks as Uint8Array;
+    expect(Array.from(masks.slice(0, 16))).toEqual(Array.from(initialDensity, (value) => value >= 0.5 ? 1 : 0));
+  });
+
   it("rejects absent manufacturing constraints and non-monotonic objective history", async () => {
     expect(() => TopologyStudySchema.parse({
       id: "missing-feature", kind: "topology", sourceStudyId: "bar-static",

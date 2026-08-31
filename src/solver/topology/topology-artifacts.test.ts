@@ -210,16 +210,22 @@ describe("canonical topology artifact packaging", () => {
     const finalMask = new Uint8Array(base.binaryMasks[2]!);
     const baseline = new Uint8Array(16).fill(1); baseline[2] = 0;
     await expect(packInteractiveTopologyRunResult(await withMasks(
-      base, [baseline, new Uint8Array(finalMask), finalMask],
+      base, [new Uint8Array(16).fill(1), baseline, finalMask],
     ))).rejects.toThrow(/move budget/i);
   });
 
   it("rejects material-count increase even when the Hamming move is within budget", async () => {
     const base = await canonicalEvidence();
     const finalMask = new Uint8Array(base.binaryMasks[2]!);
-    const increased = new Uint8Array(finalMask); increased[5] = 1;
+    const initial = new Uint8Array(finalMask); initial[14] = 1;
+    const reduced = new Uint8Array(finalMask); reduced[9] = 0;
+    const initialDensity = Float32Array.from(initial);
+    const revised = {
+      ...base,
+      request: { ...base.request, input: { ...base.request.input, initialDensity } },
+    };
     await expect(packInteractiveTopologyRunResult(await withMasks(
-      base, [new Uint8Array(finalMask), increased, finalMask],
+      revised, [initial, reduced, finalMask],
     ))).rejects.toThrow(/material count/i);
   });
 
@@ -249,5 +255,32 @@ describe("canonical topology artifact packaging", () => {
     const base = await protectedEvidence();
     const density = new Float32Array(base.density); density[5] = 0.4;
     await expect(packInteractiveTopologyRunResult({ ...base, density })).rejects.toThrow(/protected/i);
+  });
+
+  it("rejects a target-only history that omits the canonical full initial mask", async () => {
+    const base = await canonicalEvidence();
+    const target = new Uint8Array(base.binaryMasks[2]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      base, [target, new Uint8Array(target), new Uint8Array(target)],
+    ))).rejects.toThrow(/initial mask/i);
+  });
+
+  it("rejects equal-count cell swaps that re-enter material after removal", async () => {
+    const base = await canonicalEvidence();
+    const full = new Uint8Array(base.binaryMasks[0]!);
+    const swapped = new Uint8Array([1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1]);
+    const target = new Uint8Array(base.binaryMasks[2]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      base, [full, swapped, target],
+    ))).rejects.toThrow(/re-enter/i);
+  });
+
+  it("accepts the canonical initial mask followed only by material removal", async () => {
+    const base = await canonicalEvidence();
+    const full = new Uint8Array(base.binaryMasks[0]!);
+    const target = new Uint8Array(base.binaryMasks[2]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      base, [full, target, new Uint8Array(target)],
+    ))).resolves.toMatchObject({ output: { materialFraction: 0.75 } });
   });
 });

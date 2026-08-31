@@ -36,7 +36,9 @@ function sameMask(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
 
 function validateProgression(input: Readonly<{
   density: Float32Array;
+  initialDensity: Float32Array;
   binaryMasks: readonly Uint8Array[];
+  isoValue: number;
   targetVolumeFraction: number;
   moveLimit: number;
   designDomain: Uint32Array;
@@ -52,6 +54,10 @@ function validateProgression(input: Readonly<{
   }
   if ([...input.protectedCells].some((cell) => input.density[cell] !== 0)) {
     throw new Error("Topology final density must keep every protected void cell at zero");
+  }
+  const initialMask = topologyMask(input.initialDensity, input.isoValue, input.designDomain);
+  if (!sameMask(initialMask, input.binaryMasks[0]!)) {
+    throw new Error("Topology initial mask must exactly match the canonical initial density");
   }
   let previous: Uint8Array | undefined;
   let previousCount = 0;
@@ -70,11 +76,14 @@ function validateProgression(input: Readonly<{
     const count = mask.reduce((sum, value) => sum + value, 0);
     if (previous) {
       let hamming = 0;
+      let reentered = false;
       for (let cell = 0; cell < mask.length; cell += 1) {
         if (mask[cell] !== previous[cell]) hamming += 1;
+        if (mask[cell] === 1 && previous[cell] === 0) reentered = true;
       }
       if (hamming > limits.moveBudget) throw new Error("Topology analyzed mask exceeds the discrete move budget");
       if (count > previousCount) throw new Error("Topology analyzed material count must not increase");
+      if (reentered) throw new Error("Topology analyzed material must not re-enter a removed cell");
     }
     previous = mask;
     previousCount = count;
@@ -107,7 +116,8 @@ export async function canonicalTopologyEvidence(input: Readonly<{
     throw new Error("Topology evidence must contain one analysis per configured iteration");
   }
   validateProgression({
-    density: input.density, binaryMasks: input.binaryMasks,
+    density: input.density, initialDensity: input.request.input.initialDensity,
+    binaryMasks: input.binaryMasks, isoValue: study.extraction.isoValue,
     targetVolumeFraction: study.targetVolumeFraction, moveLimit: study.moveLimit,
     designDomain: system.activeCells,
     required: passive.requiredCells, protectedCells: passive.protectedCells,

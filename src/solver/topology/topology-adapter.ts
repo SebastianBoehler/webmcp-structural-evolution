@@ -91,11 +91,6 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
             partial: { kind: "topology-objective-history", samples: samples.slice(-16) },
           });
         };
-        density = projectTopologyDensity(
-          await filterTopologyDensity(density, system.grid.cellDimensions, radiusCells, system.activeCells, signal),
-          density, 1, study.moveLimit, passive.requiredCells, passive.protectedCells,
-          system.activeCells,
-        );
         assertTopologyScheduleFeasible(
           topologyMask(density, study.extraction.isoValue, system.activeCells),
           study.maxIterations, study.targetVolumeFraction, study.moveLimit,
