@@ -22,18 +22,18 @@ afterEach(() => {
   gateState.value = { status: "running" };
 });
 
-test("selects the exact CAD route before loading the legacy workspace component", () => {
+test("selects the exact CAD route before loading the legacy workspace component", async () => {
   history.replaceState({}, "", "/?exact-cad-gate=1");
 
   render(<App />);
 
-  expect(screen.getByLabelText("Exact CAD browser gate")).toBeVisible();
-  expect(screen.getByText(/legacy geometry is withheld/i)).toBeVisible();
+  expect(await screen.findByLabelText("Exact CAD browser gate")).toBeVisible();
+  expect(await screen.findByText(/legacy geometry is withheld/i)).toBeVisible();
   expect(legacyRender).not.toHaveBeenCalled();
   expect(screen.queryByText("Legacy workspace")).toBeNull();
 });
 
-test("reserves a visible grid row for the verified exact mesh", () => {
+test("reserves a visible grid row for the verified exact mesh", async () => {
   history.replaceState({}, "", "/?exact-cad-gate=1");
   gateState.value = {
     status: "passed",
@@ -69,7 +69,7 @@ test("reserves a visible grid row for the verified exact mesh", () => {
 
   render(<App />);
 
-  const workspace = screen.getByRole("heading", { name: "Exact CAD browser gate passed" }).closest("section");
+  const workspace = (await screen.findByRole("heading", { name: "Exact CAD browser gate passed" })).closest("section");
   expect(workspace?.classList.contains("exact-cad-gate-workspace")).toBe(true);
   expect(screen.getByLabelText("Exact semantic mesh").getAttribute("data-triangle-count")).toBe("1");
 });

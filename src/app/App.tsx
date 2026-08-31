@@ -5,7 +5,15 @@ import {
 
 import { detectWebGpuSingleFlight, type GpuCapability } from "../gpu/capabilities";
 import type { DemoFixtureId } from "../samples/demo-fixtures";
-import { ExactCadGateRoute } from "./ExactCadGateRoute";
+
+const ExactCadGateRoute = lazy(async () => {
+  const module = await import("./ExactCadGateRoute");
+  return { default: module.ExactCadGateRoute };
+});
+const StructuralTopologyGateRoute = lazy(async () => {
+  const module = await import("./StructuralTopologyGateRoute");
+  return { default: module.StructuralTopologyGateRoute };
+});
 
 const FoundationJourney = lazy(async () => {
   const module = await import("./FoundationJourney");
@@ -50,6 +58,16 @@ const exactCadRouteRequested = () => typeof globalThis.location !== "undefined"
   && new URLSearchParams(globalThis.location.search).has("exact-cad-gate");
 
 export function App(): JSX.Element {
+  if (typeof globalThis.location !== "undefined"
+    && new URLSearchParams(globalThis.location.search).has("structural-topology-gate")) {
+    return <ErrorBoundary><Suspense fallback={<p role="status">Loading live gate…</p>}>
+      <StructuralTopologyGateRoute />
+    </Suspense></ErrorBoundary>;
+  }
+  return <WorkbenchApp />;
+}
+
+function WorkbenchApp(): JSX.Element {
   const [capability, setCapability] = useState<GpuCapability>({
     status: "unavailable",
     code: "api-unavailable",
@@ -67,7 +85,9 @@ export function App(): JSX.Element {
   return (
     <ErrorBoundary>
       {exactCadRouteRequested()
-        ? <ExactCadGateRoute capability={capability} />
+        ? <Suspense fallback={<p role="status">Loading exact CAD gate…</p>}>
+          <ExactCadGateRoute capability={capability} />
+        </Suspense>
         : <FoundationRoute capability={capability} />}
     </ErrorBoundary>
   );

@@ -1,0 +1,59 @@
+import { render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../solver/structural/browser-structural-gate", () => ({
+  runStructuralTopologyBrowserGateSession: vi.fn(),
+  serializeLiveAcceptedTopologyStl: vi.fn(),
+}));
+
+import {
+  runStructuralTopologyBrowserGateSession, serializeLiveAcceptedTopologyStl,
+} from "../solver/structural/browser-structural-gate";
+import { App } from "./App";
+
+describe("structural topology report-only route", () => {
+  beforeEach(() => {
+    history.replaceState({}, "", "/?structural-topology-gate=1");
+    vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({
+      report: {
+        status: "blocked", evidenceSource: "live-browser-webgpu",
+        blocker: { stage: "test-route", message: "isolated route proof" },
+        console: { statusLines: [], warningCount: 0, errorCount: 0 },
+      },
+    });
+  });
+
+  it("mounts the isolated runner without the legacy structural workbench", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /structural \+ topology live webgpu gate/i }))
+      .toBeVisible();
+    expect((await screen.findByRole("alert")).textContent).toContain("isolated route proof");
+    expect(screen.queryByText(/structural engineering workbench/i)).toBeNull();
+  });
+
+  it("silences the expected StrictMode cleanup cancellation", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(runStructuralTopologyBrowserGateSession).mockImplementation((signal) => new Promise((_, reject) => {
+      signal!.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")), { once: true });
+    }));
+    const mounted = render(<StrictMode><App /></StrictMode>);
+    expect(await screen.findByText("Running live gate…")).toBeVisible();
+    mounted.unmount();
+    await Promise.resolve();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("exercises both session-bound serializers after a passed run", async () => {
+    const capability = { sessionId: "a".repeat(64) };
+    vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({
+      report: { status: "passed" } as never, capability,
+    });
+    vi.mocked(serializeLiveAcceptedTopologyStl)
+      .mockReturnValueOnce(new DataView(new ArrayBuffer(134)))
+      .mockReturnValueOnce(new DataView(new ArrayBuffer(184)));
+    render(<App />);
+    expect(await screen.findByText(/134 drone bytes, 184 cobot bytes/i)).toBeVisible();
+    expect(serializeLiveAcceptedTopologyStl).toHaveBeenCalledTimes(2);
+  });
+});
