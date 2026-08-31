@@ -71,11 +71,11 @@ export interface StructuralVerification {
   readonly forceBalanceErrorN: number;
   readonly appliedLoadN: number;
   readonly wasmRelativeL2: number;
-  readonly analyticalRelativeError?: number;
-  readonly numericalGatesPassed: boolean;
-  readonly passed: boolean;
   readonly realGpu: true;
+  readonly metadata: StructuralVerificationMetadata;
 }
+
+export type StructuralVerificationMetadata = typeof STRUCTURAL_VERIFICATION_METADATA;
 
 export interface StructuralResult {
   readonly truthLevel: "interactive-estimate" | "converged-numerical-solve";
@@ -100,3 +100,23 @@ export const STRUCTURAL_RESIDUAL_TOLERANCE = 1e-5;
 export const STRUCTURAL_FORCE_BALANCE_TOLERANCE = 1e-4;
 export const STRUCTURAL_WASM_L2_TOLERANCE = 2e-3;
 export const STRUCTURAL_MAX_ITERATIONS = 512;
+export const STRUCTURAL_ENERGY_RELATIVE_TOLERANCE = 1e-5;
+
+const fixtureCellDimensions = Object.freeze({
+  axial: Object.freeze([20, 2, 2] as const),
+  cantilever: Object.freeze([24, 4, 2] as const),
+});
+const verificationThresholds = Object.freeze({
+  relativeResidual: STRUCTURAL_RESIDUAL_TOLERANCE,
+  relativeForceBalance: STRUCTURAL_FORCE_BALANCE_TOLERANCE,
+  wasmRelativeL2: STRUCTURAL_WASM_L2_TOLERANCE,
+  axialRelativeError: 0.02,
+  cantileverRelativeError: 0.05,
+  energyRelativeMismatch: STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
+});
+export const STRUCTURAL_VERIFICATION_METADATA = Object.freeze({
+  referenceSolver: "rust-wasm-hex8-f64" as const,
+  fixtureCellDimensions,
+  maxIterations: STRUCTURAL_MAX_ITERATIONS,
+  thresholds: verificationThresholds,
+});

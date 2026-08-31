@@ -1,4 +1,4 @@
-import type { EngineeringSolveRequest, SolverAdapter, SolverRunResult } from "../../engineering/solver-adapter";
+import type { EngineeringSolveRequest, SolverAdapter } from "../../engineering/solver-adapter";
 import { relativeL2, solveStructuralReference } from "../../reference";
 import { compileStructuralStudy } from "./compile-structural-study";
 import { runStructuralPcg } from "./pcg";
@@ -7,12 +7,14 @@ import {
   STRUCTURAL_FORCE_BALANCE_TOLERANCE,
   STRUCTURAL_MAX_ITERATIONS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
+  STRUCTURAL_VERIFICATION_METADATA,
   STRUCTURAL_WASM_L2_TOLERANCE,
   type CompiledStructuralSystem,
   type StructuralResult,
   type StructuralSolveInput,
 } from "./structural-contract";
-import { packStructuralRunResult } from "./structural-result-artifacts";
+import { packInteractiveStructuralRunResult } from "./structural-result-artifacts";
+import { structuralAppliedLoadMagnitude } from "./structural-result-validation";
 import {
   acquireStructuralGpu,
   safeDestroy,
@@ -74,12 +76,6 @@ function capability(
   return { supported: true };
 }
 
-function appliedLoadMagnitude(request: EngineeringSolveRequest<StructuralSolveInput>): number {
-  const study = request.document.studies.find(({ id }) => id === request.studyId);
-  if (!study || study.kind !== "structural-linear") throw new Error("Structural study is unresolved");
-  return study.loads.reduce((total, { forceN }) => total + Math.hypot(...forceN), 0);
-}
-
 function maximumDisplacement(field: Float32Array): number {
   let maximum = 0;
   for (let index = 0; index < field.length; index += 3) {
@@ -117,7 +113,7 @@ async function verifiedResult(
   const displacementDelta = await relativeL2(reference.displacementM, gpu.displacementM);
   const stressDelta = await relativeL2(reference.vonMisesStressPa, gpu.vonMisesStressPa);
   const wasmRelativeL2 = Math.max(displacementDelta, stressDelta);
-  const appliedLoadN = appliedLoadMagnitude(request);
+  const appliedLoadN = structuralAppliedLoadMagnitude(request);
   const numericalGatesPassed = gpu.relativeResidual <= STRUCTURAL_RESIDUAL_TOLERANCE
     && gpu.forceBalanceErrorN <= appliedLoadN * STRUCTURAL_FORCE_BALANCE_TOLERANCE
     && wasmRelativeL2 <= STRUCTURAL_WASM_L2_TOLERANCE;
@@ -141,22 +137,13 @@ async function verifiedResult(
       forceBalanceErrorN: gpu.forceBalanceErrorN,
       appliedLoadN,
       wasmRelativeL2,
-      numericalGatesPassed,
-      // Task 5 owns the real-GPU analytical fixtures required for full verification.
-      passed: false,
       realGpu: true,
+      metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
     rasterization: system.rasterization,
     displacementM: gpu.displacementM,
     vonMisesStressPa: gpu.vonMisesStressPa,
   };
-}
-
-export async function createStructuralRunResult(
-  request: EngineeringSolveRequest<StructuralSolveInput>,
-  result: StructuralResult,
-): Promise<SolverRunResult<StructuralResult>> {
-  return packStructuralRunResult(request, result);
 }
 
 export function createWebGpuStructuralAdapter(): SolverAdapter<StructuralSolveInput, StructuralResult> {
@@ -186,7 +173,7 @@ export function createWebGpuStructuralAdapter(): SolverAdapter<StructuralSolveIn
         emit({ progress: 0.9 });
         const result = await verifiedResult(request, system, gpu);
         emit({ progress: 0.98 });
-        return createStructuralRunResult(request, result);
+        return packInteractiveStructuralRunResult(request, system, result);
       } finally {
         safeDestroy(device);
       }

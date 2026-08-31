@@ -7,8 +7,10 @@ import {
   STRUCTURAL_FIELD_MEDIA_TYPE,
   STRUCTURAL_RESULT_MEDIA_TYPE,
   type StructuralResult,
+  type CompiledStructuralSystem,
   type StructuralSolveInput,
 } from "./structural-contract";
+import { validateInteractiveStructuralResult } from "./structural-result-validation";
 
 type Dependency = ArtifactRecord["dependencies"][number];
 
@@ -52,15 +54,12 @@ async function record(
   });
 }
 
-export async function packStructuralRunResult(
+export async function packInteractiveStructuralRunResult(
   request: EngineeringSolveRequest<StructuralSolveInput>,
+  system: CompiledStructuralSystem,
   result: StructuralResult,
 ): Promise<SolverRunResult<StructuralResult>> {
-  if (result.truthLevel === "converged-numerical-solve"
-    && (!result.verification.passed
-      || result.verification.analyticalRelativeError === undefined)) {
-    throw new Error("Converged structural truth requires completed real-GPU analytical verification");
-  }
+  validateInteractiveStructuralResult(request, system, result);
   const base = baseDependencies(request);
   const settingsDigest = await revisionId({
     solver: "webgpu-hex8-elasticity-1.0.0",
@@ -89,13 +88,7 @@ export async function packStructuralRunResult(
       ...result.grid.originM, result.grid.cellSizeM,
     ]),
     rasterizationUtf8: utf8(result.rasterization),
-    verificationUtf8: utf8({
-      truthLevel: result.truthLevel,
-      numericalGatesPassed: result.verification.numericalGatesPassed,
-      analyticalRelativeError: result.verification.analyticalRelativeError ?? null,
-      passed: result.verification.passed,
-      realGpu: result.verification.realGpu,
-    }),
+    verificationUtf8: utf8({ truthLevel: result.truthLevel, ...result.verification }),
   };
   const summary = await record(request, STRUCTURAL_RESULT_MEDIA_TYPE, resultPayload, settingsDigest, [
     ...base,

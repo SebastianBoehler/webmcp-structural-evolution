@@ -11,6 +11,7 @@ import {
 } from "./structural-grid-validation";
 import { validateStructuralPayloads } from "./structural-payload-validation";
 import { validateStructuralGeometryBinding } from "./structural-geometry-binding";
+import { validateRigidModeRestraints } from "./structural-restraint-rank";
 import { selectionGroups, type SelectionGroup } from "./structural-selection-groups";
 
 type DocumentStructuralStudy = Extract<
@@ -59,6 +60,23 @@ function ensureLoadedIslandsSupported(
     for (const cell of group.cellIndices) {
       if (!supported.has(components[cell]!)) {
         throw new Error(`Loaded island ${group.selectionId} has no connected support`);
+      }
+    }
+  }
+}
+
+function ensureBoundaryNodesDisjoint(groups: readonly SelectionGroup[], supportCount: number): void {
+  const supports = new Map<number, string>();
+  for (const group of groups.slice(0, supportCount)) {
+    for (const node of group.nodeIndices) supports.set(node, group.selectionId);
+  }
+  for (const group of groups.slice(supportCount)) {
+    for (const node of group.nodeIndices) {
+      const support = supports.get(node);
+      if (support) {
+        throw new Error(
+          `Structural support ${support} and load ${group.selectionId} raster node ${node} intersect`,
+        );
       }
     }
   }
@@ -115,8 +133,13 @@ export async function compileStructuralStudy(
   const groups = await selectionGroups(
     payload, selected, cellCount, nodeCount, active, cellDimensions,
   );
-  ensureLoadedIslandsSupported(groups, study.supports.length, activeComponents(active, cellDimensions));
+  ensureBoundaryNodesDisjoint(groups, study.supports.length);
+  const components = activeComponents(active, cellDimensions);
+  ensureLoadedIslandsSupported(groups, study.supports.length, components);
   const { fixedDofs, loadsN } = boundaryVectors(groups, study, dofCount);
+  validateRigidModeRestraints(active, components, fixedDofs, {
+    cellDimensions, nodeDimensions, originM: origin(payload), cellSizeM: uniformCellSize(payload),
+  });
   if (!loadsN.some((value, dof) => value !== 0 && fixedDofs[dof] === 0)) {
     throw new Error("Structural study applies no load to a free degree of freedom");
   }

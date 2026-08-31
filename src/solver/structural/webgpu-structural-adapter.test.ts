@@ -1,15 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { prepareSolverRunResult } from "../../engineering/job-runner-result";
 import { compileStructuralStudy } from "./compile-structural-study";
 import { runStructuralPcg } from "./pcg";
-import {
-  createStructuralRunResult,
-  createWebGpuStructuralAdapter,
-} from "./webgpu-structural-adapter";
+import { createWebGpuStructuralAdapter } from "./webgpu-structural-adapter";
 import { RECORDING_GPU_GLOBALS, recordingGpu } from "./recording-gpu-device";
 import { structuralRequest } from "./structural-test-fixtures";
-import type { StructuralResult } from "./structural-contract";
 
 describe("WebGPU structural adapter", () => {
   beforeEach(() => {
@@ -54,12 +49,23 @@ describe("WebGPU structural adapter", () => {
       await structuralRequest(), aborted.signal, () => undefined,
     )).rejects.toMatchObject({ name: "AbortError" });
 
+    const inFlightAbort = new AbortController();
+    const canceled = recordingGpu({ afterFirstSubmit: () => inFlightAbort.abort() });
+    vi.stubGlobal("navigator", { gpu: canceled.gpu });
+    await expect(createWebGpuStructuralAdapter().run(
+      await structuralRequest(), inFlightAbort.signal, () => undefined,
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(canceled.errorScopeDepth()).toBe(0);
+    expect(canceled.maximumErrorScopeDepth()).toBe(3);
+    expect(canceled.buffers.every(({ destroyed }) => destroyed)).toBe(true);
+
     const lost = recordingGpu({ loseAfterSubmit: true });
     vi.stubGlobal("navigator", { gpu: lost.gpu });
     await expect(createWebGpuStructuralAdapter().run(
       await structuralRequest(), new AbortController().signal, () => undefined,
     )).rejects.toMatchObject({ code: "device-lost" });
     expect(lost.buffers.every(({ destroyed }) => destroyed)).toBe(true);
+    expect(lost.errorScopeDepth()).toBe(0);
 
     const failed = recordingGpu({ pipelineFailure: true });
     vi.stubGlobal("navigator", { gpu: failed.gpu });
@@ -67,12 +73,14 @@ describe("WebGPU structural adapter", () => {
       await structuralRequest(), new AbortController().signal, () => undefined,
     )).rejects.toMatchObject({ code: "internal-error" });
     expect(failed.buffers.every(({ destroyed }) => destroyed)).toBe(true);
+    expect(failed.errorScopeDepth()).toBe(0);
 
     const limited = recordingGpu({ maxBufferSize: 32 });
     vi.stubGlobal("navigator", { gpu: limited.gpu });
     await expect(createWebGpuStructuralAdapter().run(
       await structuralRequest(), new AbortController().signal, () => undefined,
     )).rejects.toMatchObject({ code: "resource-limit" });
+    expect(limited.errorScopeDepth()).toBe(0);
   });
 
   it("maps compiler integrity failures to typed invalid-input before GPU acquisition", async () => {
@@ -116,65 +124,28 @@ describe("WebGPU structural adapter", () => {
     expect(direction).toBeGreaterThan(precondition);
     expect(recorded.dispatches.filter((entry) => entry === "apply_elasticity").length).toBeGreaterThan(1);
     expect(solve).not.toHaveProperty("truthLevel");
+    expect([...recorded.scopedStages].sort()).toEqual([
+      "allocation", "bind-group", "encode", "layout", "pipeline",
+      "readback-map", "shader", "submit", "write",
+    ]);
+    expect(recorded.maximumErrorScopeDepth()).toBe(3);
+    expect(recorded.errorScopeDepth()).toBe(0);
   });
 
-  it("packs result and field artifacts with complete study, geometry, and selection ownership", async () => {
-    const request = await structuralRequest();
-    const result = structuralResult();
-    const envelope = await createStructuralRunResult(request, result);
-    const prepared = await prepareSolverRunResult(request, envelope);
+  it.each([
+    ["validation", "bind-group", "internal-error"],
+    ["out-of-memory", "readback-map", "resource-limit"],
+  ] as const)("contains %s errors through the full GPU scope boundary", async (scopeError, scopeErrorStage, code) => {
+    const recorded = recordingGpu({ scopeError, scopeErrorStage });
+    vi.stubGlobal("navigator", { gpu: recorded.gpu });
 
-    expect(envelope.artifacts).toHaveLength(3);
-    const requiredEntities = [
-      "study:bar-static", "material:steel", "body:bar",
-      "named-selection:fixed-end", "named-selection:loaded-end",
-    ];
-    for (const { record } of prepared.artifacts) {
-      const entities = record.dependencies.flatMap((dependency) =>
-        dependency.kind === "entity" ? [dependency.reference] : []);
-      const artifacts = record.dependencies.flatMap((dependency) =>
-        dependency.kind === "artifact" ? [dependency.artifactId] : []);
-      expect(entities).toEqual(expect.arrayContaining(requiredEntities));
-      expect(artifacts).toEqual(expect.arrayContaining(resultArtifactInputs(request)));
-    }
-    expect(prepared.truthLevel).toBe("interactive-estimate");
-    expect(result.verification).toMatchObject({ numericalGatesPassed: true, passed: false });
+    await expect(createWebGpuStructuralAdapter().run(
+      await structuralRequest(), new AbortController().signal, () => undefined,
+    )).rejects.toMatchObject({ code, message: expect.stringContaining(scopeError) });
+    expect(recorded.uncapturedErrors).toHaveLength(0);
+    expect(recorded.errorScopeDepth()).toBe(0);
+    expect(recorded.buffers.every(({ destroyed }) => destroyed)).toBe(true);
+    expect(recorded.device.destroy).toHaveBeenCalledOnce();
   });
 
-  it("cannot promote numerical orchestration evidence without an analytical real-GPU gate", async () => {
-    const request = await structuralRequest();
-    const result = structuralResult();
-
-    await expect(createStructuralRunResult(request, {
-      ...result,
-      truthLevel: "converged-numerical-solve",
-    })).rejects.toThrow(/analytical verification/i);
-  });
 });
-
-function resultArtifactInputs(request: Awaited<ReturnType<typeof structuralRequest>>): string[] {
-  return [request.input.semanticMeshArtifactId, request.input.voxelArtifactId];
-}
-
-function structuralResult(): StructuralResult {
-  return {
-    truthLevel: "interactive-estimate",
-    grid: {
-      cellDimensions: [4, 2, 2], nodeDimensions: [5, 3, 3], originM: [0, 0, 0], cellSizeM: 0.01,
-    },
-    iterations: 12, complianceJ: 0.01, strainEnergyJ: 0.005,
-    maximumDisplacementM: 1e-6, maximumVonMisesStressPa: 2e6,
-    verification: {
-      relativeResidual: 1e-6, forceBalanceErrorN: 1e-6, appliedLoadN: 1000,
-      wasmRelativeL2: 1e-4, numericalGatesPassed: true, passed: false, realGpu: true,
-    },
-    rasterization: {
-      toleranceM: 1e-6,
-      selections: [
-        { selectionId: "fixed-end", topologyId: "face:bar:fixed", cellCount: 4, nodeCount: 9, cellHash: "a".repeat(64), nodeHash: "b".repeat(64) },
-        { selectionId: "loaded-end", topologyId: "face:bar:loaded", cellCount: 4, nodeCount: 9, cellHash: "c".repeat(64), nodeHash: "d".repeat(64) },
-      ],
-    },
-    displacementM: new Float32Array(135), vonMisesStressPa: new Float32Array(16),
-  };
-}

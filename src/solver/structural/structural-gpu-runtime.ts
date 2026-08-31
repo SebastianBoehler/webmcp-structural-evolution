@@ -84,6 +84,109 @@ export function createDeviceGuard(device: GPUDevice, signal: AbortSignal) {
 
 export type DeviceGuard = ReturnType<typeof createDeviceGuard>;
 
+const STRUCTURAL_ERROR_SCOPES = ["validation", "internal", "out-of-memory"] as const;
+
+interface ScopeDrain {
+  readonly error: GPUError | null;
+  readonly interruption?: unknown;
+  readonly failure?: unknown;
+}
+
+function isLifecycleInterruption(error: unknown): boolean {
+  return (error instanceof StructuralGpuError && error.code === "device-lost")
+    || isAbortError(error);
+}
+
+function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null
+    && "name" in error && error.name === "AbortError";
+}
+
+async function popStructuralErrorScope(
+  device: GPUDevice,
+  guard: DeviceGuard,
+): Promise<ScopeDrain> {
+  let pending: Promise<GPUError | null>;
+  try {
+    pending = device.popErrorScope();
+  } catch (failure) {
+    return { error: null, failure };
+  }
+  try {
+    return { error: await guard.race(pending) };
+  } catch (raceFailure) {
+    try {
+      const error = await pending;
+      return isLifecycleInterruption(raceFailure)
+        ? { error, interruption: raceFailure }
+        : { error, failure: raceFailure };
+    } catch (popFailure) {
+      return {
+        error: null,
+        interruption: isLifecycleInterruption(raceFailure) ? raceFailure : undefined,
+        failure: popFailure,
+      };
+    }
+  }
+}
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function withStructuralGpuErrorScopes<Value>(
+  device: GPUDevice,
+  guard: DeviceGuard,
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  for (const filter of STRUCTURAL_ERROR_SCOPES) device.pushErrorScope(filter);
+  let value: Value | undefined;
+  let operationFailed = false;
+  let operationError: unknown;
+  try {
+    value = await operation();
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+  }
+
+  const drained: ScopeDrain[] = [];
+  for (let index = STRUCTURAL_ERROR_SCOPES.length - 1; index >= 0; index -= 1) {
+    drained.push(await popStructuralErrorScope(device, guard));
+  }
+  const [outOfMemory, internal, validation] = drained;
+  if (outOfMemory?.error) {
+    throw new StructuralGpuError(
+      "resource-limit", `Structural WebGPU out-of-memory error: ${outOfMemory.error.message}`,
+    );
+  }
+  const deviceError = internal?.error ?? validation?.error;
+  if (deviceError) {
+    const kind = internal?.error ? "internal" : "validation";
+    throw new StructuralGpuError(
+      "internal-error", `Structural WebGPU ${kind} error: ${deviceError.message}`,
+    );
+  }
+  if (operationFailed) {
+    if (operationError instanceof StructuralGpuError
+      || isAbortError(operationError)) {
+      throw operationError;
+    }
+    throw new StructuralGpuError(
+      "internal-error", `Structural WebGPU execution failed: ${errorDetail(operationError)}`,
+    );
+  }
+  const interruption = drained.find(({ interruption }) => interruption)?.interruption;
+  if (interruption) throw interruption;
+  const scopeFailure = drained.find(({ failure }) => failure)?.failure;
+  if (scopeFailure) {
+    throw new StructuralGpuError(
+      "internal-error", `Structural WebGPU error-scope cleanup failed: ${errorDetail(scopeFailure)}`,
+    );
+  }
+  return value as Value;
+}
+
 export async function submitAndWait(
   device: GPUDevice,
   guard: DeviceGuard,

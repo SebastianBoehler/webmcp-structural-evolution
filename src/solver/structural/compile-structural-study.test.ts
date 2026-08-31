@@ -50,6 +50,25 @@ describe("compileStructuralStudy", () => {
     }))).rejects.toThrow(/node outside its rasterized cells/i);
   });
 
+  it("rejects distinct adjacent faces whose rasterized boundary nodes intersect", async () => {
+    await expect(compileStructuralStudy(await structuralRequest({
+      selectionCellOffsets: new Uint32Array([0, 1, 2]),
+      selectionCellIndices: new Uint32Array([0, 1]),
+      selectionNodeOffsets: new Uint32Array([0, 3, 6]),
+      selectionNodeIndices: new Uint32Array([1, 6, 16, 1, 6, 16]),
+    }))).rejects.toThrow(/support.*load.*node.*intersect/i);
+  });
+
+  it("rejects support/load overlap before opposing loads can cancel", async () => {
+    await expect(compileStructuralStudy(await structuralRequest({
+      selectionCellOffsets: new Uint32Array([0, 1, 2]),
+      selectionCellIndices: new Uint32Array([0, 1]),
+      selectionNodeOffsets: new Uint32Array([0, 3, 6]),
+      selectionNodeIndices: new Uint32Array([1, 6, 16, 1, 6, 16]),
+    }, [{ selectionId: "loaded-opposite", forceN: [-1000, 0, 0] }])))
+      .rejects.toThrow(/support.*load.*node.*intersect/i);
+  });
+
   it("rejects a loaded component with no connected support", async () => {
     const occupancy = new Uint32Array(16);
     occupancy.set([1, 1, 0, 1], 0);
@@ -59,6 +78,50 @@ describe("compileStructuralStudy", () => {
 
     await expect(compileStructuralStudy(await structuralRequest({ activeCells: occupancy })))
       .rejects.toThrow(/loaded island.*connected support/i);
+  });
+
+  it.each([
+    { label: "point", nodes: [0], rank: 3 },
+    { label: "collinear line", nodes: [0, 5, 10], rank: 5 },
+  ])("rejects a $label restraint with fewer than six constrained rigid modes", async ({ nodes, rank }) => {
+    const loadedNodes = [4, 9, 14, 19, 24, 29, 34, 39, 44];
+    await expect(compileStructuralStudy(await structuralRequest({
+      selectionNodeOffsets: new Uint32Array([0, nodes.length, nodes.length + loadedNodes.length]),
+      selectionNodeIndices: new Uint32Array([...nodes, ...loadedNodes]),
+    }))).rejects.toThrow(new RegExp(`rigid restraint rank ${rank}.*less than 6`, "i"));
+  });
+
+  it("accepts three noncollinear restrained nodes", async () => {
+    const loadedNodes = [4, 9, 14, 19, 24, 29, 34, 39, 44];
+    const compiled = await compileStructuralStudy(await structuralRequest({
+      selectionNodeOffsets: new Uint32Array([0, 3, 12]),
+      selectionNodeIndices: new Uint32Array([0, 5, 15, ...loadedNodes]),
+    }));
+
+    expect(compiled.fixedDofs.filter(Boolean)).toHaveLength(9);
+  });
+
+  it("requires six restrained rigid modes on every active component, including unloaded components", async () => {
+    const activeCells = new Uint32Array(16);
+    activeCells[0] = 1;
+    activeCells[1] = 1;
+    activeCells[15] = 1;
+    const accepted = await compileStructuralStudy(await structuralRequest({
+      activeCells,
+      selectionCellOffsets: new Uint32Array([0, 2, 3]),
+      selectionCellIndices: new Uint32Array([0, 15, 1]),
+      selectionNodeOffsets: new Uint32Array([0, 6, 10]),
+      selectionNodeIndices: new Uint32Array([0, 5, 15, 23, 28, 38, 2, 7, 17, 22]),
+    }));
+    expect(accepted.activeCellCount).toBe(3);
+
+    await expect(compileStructuralStudy(await structuralRequest({
+      activeCells,
+      selectionCellOffsets: new Uint32Array([0, 1, 2]),
+      selectionCellIndices: new Uint32Array([0, 1]),
+      selectionNodeOffsets: new Uint32Array([0, 3, 7]),
+      selectionNodeIndices: new Uint32Array([0, 5, 15, 2, 7, 17, 22]),
+    }))).rejects.toThrow(/active component 1.*rigid restraint rank 0.*less than 6/i);
   });
 
   it("rejects tampered payload bytes and bounded-grid overrun before GPU dispatch", async () => {

@@ -8,7 +8,12 @@ import type { StructuralSolveInput, StructuralVoxelPayload } from "./structural-
 
 const digest = (character: string) => character.repeat(64);
 
-export async function structuralDocument(): Promise<DesignDocument> {
+interface AdditionalLoad {
+  readonly selectionId: string;
+  readonly forceN: readonly [number, number, number];
+}
+
+export async function structuralDocument(additionalLoads: readonly AdditionalLoad[] = []): Promise<DesignDocument> {
   return defineDesignDocument({
     id: "test-bar", label: "Test bar", schemaVersion: 3,
     units: { length: "m", angle: "rad", mass: "kg" },
@@ -36,6 +41,8 @@ export async function structuralDocument(): Promise<DesignDocument> {
     namedSelections: [
       namedSelection("fixed-end", "face:bar:fixed", [0, 0.01, 0.01]),
       namedSelection("loaded-end", "face:bar:loaded", [0.04, 0.01, 0.01]),
+      ...additionalLoads.map(({ selectionId }) =>
+        namedSelection(selectionId, "face:bar:loaded", [0.04, 0.01, 0.01])),
     ],
     materials: [{
       id: "steel", kind: "isotropic", densityKgM3: 7850, youngsModulusPa: 200e9,
@@ -43,7 +50,8 @@ export async function structuralDocument(): Promise<DesignDocument> {
     }],
     studies: [{
       id: "bar-static", kind: "structural-linear", bodyIds: ["bar"], materialId: "steel",
-      supports: ["fixed-end"], loads: [{ selectionId: "loaded-end", forceN: [1000, 0, 0] }],
+      supports: ["fixed-end"],
+      loads: [{ selectionId: "loaded-end", forceN: [1000, 0, 0] }, ...additionalLoads],
     }],
   });
 }
@@ -125,8 +133,9 @@ async function inputArtifact(
 
 export async function structuralRequest(
   overrides: Partial<StructuralVoxelPayload> = {},
+  additionalLoads: readonly AdditionalLoad[] = [],
 ): Promise<EngineeringSolveRequest<StructuralSolveInput>> {
-  const document = await structuralDocument();
+  const document = await structuralDocument(additionalLoads);
   const voxels = voxelPayload(overrides);
   const meshArtifact = await inputArtifact(
     document, "render-mesh", "application/vnd.structural-evolution.semantic-mesh",
