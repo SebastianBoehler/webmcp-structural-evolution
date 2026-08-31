@@ -52,6 +52,7 @@ type JobControl<Output> = {
   readonly resolve: (completion: EngineeringJobCompletion<Output>) => void;
   progress: number;
   cancelling: boolean;
+  commitAccepted: boolean;
   terminal: boolean;
 };
 
@@ -113,8 +114,15 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
     }
     return false;
   };
+  const acceptCommit = (control: JobControl<unknown>): boolean => {
+    if (control.commitAccepted) return false;
+    if (!active(control) || invalidOrStale(control)) return false;
+    if (!active(control) || !bound(control)) return false;
+    control.commitAccepted = true;
+    return true;
+  };
   const progress = (control: JobControl<unknown>, event: SolverProgressEvent): void => {
-    if (!active(control) || !Number.isFinite(event?.progress)
+    if (!active(control) || control.commitAccepted || !Number.isFinite(event?.progress)
       || event.progress < control.progress || event.progress >= 1) return;
     control.progress = event.progress;
     publish({ jobId: control.jobId, state: "partial", progress: control.progress, artifacts: [] });
@@ -143,8 +151,13 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
     try {
       const prepared = await prepareSolverRunResult(control.request, result);
       if (!active(control) || invalidOrStale(control)) return;
-      await options.store.commit(prepared.artifacts, () => active(control) && bound(control) && current(control));
-      if (!active(control) || invalidOrStale(control)) return;
+      await options.store.commit(prepared.artifacts, () => acceptCommit(control));
+      if (!control.commitAccepted) {
+        if (active(control) && !invalidOrStale(control)) {
+          fail(control, { code: "internal-error", message: "Artifact store completed without accepting the commit fence" });
+        }
+        return;
+      }
       complete(control, {
         jobId: control.jobId,
         state: "verified",
@@ -153,13 +166,22 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
         artifacts: prepared.artifacts.map(({ record }) => record),
       }, prepared.output);
     } catch (error) {
-      if (active(control) && !invalidOrStale(control)) fail(control, toEngineeringJobError(error));
+      if (control.commitAccepted) {
+        fail(control, toEngineeringJobError(error));
+      } else if (active(control) && !invalidOrStale(control)) {
+        fail(control, toEngineeringJobError(error));
+      }
     }
   };
 
   return {
     launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output> {
-      const snapshot = captureEngineeringSolveRequest(request) as EngineeringSolveRequest<unknown>;
+      let snapshot: EngineeringSolveRequest<unknown>;
+      try {
+        snapshot = captureEngineeringSolveRequest(request) as EngineeringSolveRequest<unknown>;
+      } catch {
+        throw invalidInputError("Solve request state cannot contain shared or uncloneable memory");
+      }
       const jobId = snapshot.jobId;
       let resolve!: (completion: EngineeringJobCompletion<Output>) => void;
       const completion = new Promise<EngineeringJobCompletion<Output>>((nextResolve) => { resolve = nextResolve; });
@@ -171,6 +193,7 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
         resolve,
         progress: 0,
         cancelling: false,
+        commitAccepted: false,
         terminal: false,
       };
       controls.set(jobId, control as JobControl<unknown>);
@@ -186,7 +209,7 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
     },
     cancel(jobId): boolean {
       const control = controls.get(jobId);
-      if (!control || control.terminal) return false;
+      if (!control || control.terminal || control.commitAccepted) return false;
       control.cancelling = true;
       control.abortController.abort();
       return complete(control, {

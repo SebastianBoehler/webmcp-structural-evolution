@@ -17,6 +17,7 @@ export type ArtifactStoreBatchEntry = Readonly<{
   payload: ArtifactPayload;
 }>;
 
+/** Invoke once immediately before the store's non-awaiting atomic physical update. */
 export type ArtifactStoreCommitGuard = () => boolean;
 
 export interface ArtifactStore {

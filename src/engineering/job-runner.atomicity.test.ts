@@ -90,7 +90,7 @@ describe("engineering job runner batch commit", () => {
     expect(payloads.size).toBe(0);
   });
 
-  it("keeps a delayed batch store unchanged when cancellation arrives during commit", async () => {
+  it("keeps a delayed batch store unchanged when cancellation arrives before the commit fence", async () => {
     const document = await sourceDocument();
     const probe = delayedBatchStore();
     const registry = createSolverRegistry();
@@ -107,7 +107,7 @@ describe("engineering job runner batch commit", () => {
     expect(probe.payloads.size).toBe(0);
   });
 
-  it("keeps a delayed batch store unchanged when the revision changes during commit", async () => {
+  it("keeps a delayed batch store unchanged when the revision changes before the commit fence", async () => {
     const document = await sourceDocument();
     const revised = await sourceDocument("Revised link");
     let current = document;

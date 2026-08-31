@@ -1,7 +1,7 @@
 import { defineArtifactRecord, type ArtifactRecord } from "../cad/artifact-contract";
 import { defineDesignDocument, type DesignDocument } from "../cad/document-schema";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
-import type { ArtifactPayload, ArtifactStore } from "./artifact-store";
+import { createArtifactStore, type ArtifactPayload, type ArtifactStore } from "./artifact-store";
 import type { EngineeringSolveRequest, SolverAdapter, SolverRunResult } from "./solver-adapter";
 
 export type SolveInput = { readonly grid: readonly [number, number, number] };
@@ -175,4 +175,21 @@ export function delayedBatchStore() {
     },
   } as unknown as ArtifactStore;
   return { store, payloads, entered: () => entered, release: () => release.resolve(undefined) };
+}
+
+export function postWriteBatchStore() {
+  const backing = createArtifactStore();
+  const release = deferred<void>();
+  let written = false;
+  const store: ArtifactStore = {
+    get: backing.get,
+    delete: backing.delete,
+    put: backing.put,
+    async commit(entries, guard): Promise<void> {
+      await backing.commit(entries, guard);
+      written = true;
+      await release.promise;
+    },
+  };
+  return { store, written: () => written, release: () => release.resolve(undefined) };
 }
