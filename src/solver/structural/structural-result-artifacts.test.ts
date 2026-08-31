@@ -5,6 +5,7 @@ import { compileStructuralStudy } from "./compile-structural-study";
 import {
   STRUCTURAL_RESULT_MEDIA_TYPE,
   STRUCTURAL_VERIFICATION_METADATA,
+  type CompiledStructuralSystem,
   type StructuralResult,
 } from "./structural-contract";
 import { packInteractiveStructuralRunResult } from "./structural-result-artifacts";
@@ -13,7 +14,7 @@ import { structuralRequest } from "./structural-test-fixtures";
 describe("structural result artifacts", () => {
   it("packs interactive fields with complete ownership and locked verification metadata", async () => {
     const { request, result, system } = await validFixture();
-    const envelope = await packInteractiveStructuralRunResult(request, system, result);
+    const envelope = await packInteractiveStructuralRunResult(request, result);
     const prepared = await prepareSolverRunResult(request, envelope);
 
     expect(envelope.artifacts).toHaveLength(3);
@@ -50,7 +51,7 @@ describe("structural result artifacts", () => {
   it("rejects every caller-supplied converged truth claim before Task 5", async () => {
     const { request, result, system } = await validFixture();
 
-    await expect(packInteractiveStructuralRunResult(request, system, {
+    await expect(packInteractiveStructuralRunResult(request, {
       ...result,
       truthLevel: "converged-numerical-solve",
       verification: {
@@ -65,10 +66,44 @@ describe("structural result artifacts", () => {
   it("accepts numerical evidence exactly on the locked force-balance boundary", async () => {
     const { request, result, system } = await validFixture();
 
-    await expect(packInteractiveStructuralRunResult(request, system, {
+    await expect(packInteractiveStructuralRunResult(request, {
       ...result,
       verification: { ...result.verification, forceBalanceErrorN: 0.1 },
     })).resolves.toMatchObject({ truthLevel: "interactive-estimate" });
+  });
+
+  it.each([
+    ["grid", (system: CompiledStructuralSystem, result: StructuralResult) => {
+      const grid = { ...system.grid, cellSizeM: 0.02 };
+      return { system: { ...system, grid }, result: { ...result, grid } };
+    }],
+    ["active cells", (system: CompiledStructuralSystem, result: StructuralResult) => {
+      const activeCells = new Uint32Array(system.activeCells); activeCells[0] = 0;
+      return { system: { ...system, activeCells, activeCellCount: 15 }, result };
+    }],
+    ["boundary conditions", (system: CompiledStructuralSystem, result: StructuralResult) => {
+      const fixedDofs = new Uint32Array(system.fixedDofs); fixedDofs[0] = 0;
+      return { system: { ...system, fixedDofs }, result };
+    }],
+    ["loads", (system: CompiledStructuralSystem, result: StructuralResult) => ({
+      system: { ...system, loadsN: new Float32Array(system.loadsN.length) }, result,
+    })],
+    ["material", (system: CompiledStructuralSystem, result: StructuralResult) => ({
+      system: { ...system, material: { ...system.material, youngsModulusPa: 100e9 } }, result,
+    })],
+    ["rasterization", (system: CompiledStructuralSystem, result: StructuralResult) => {
+      const rasterization = { ...system.rasterization, toleranceM: 2e-6 };
+      return { system: { ...system, rasterization }, result: { ...result, rasterization } };
+    }],
+  ] as const)("rejects legacy caller-supplied %s system authority", async (_label, forge) => {
+    const { request, result, system } = await validFixture();
+    const forged = forge(system, result);
+    type LegacyPacker = (
+      solveRequest: typeof request, system: CompiledStructuralSystem, result: StructuralResult,
+    ) => ReturnType<typeof packInteractiveStructuralRunResult>;
+    const legacyPack = packInteractiveStructuralRunResult as unknown as LegacyPacker;
+
+    await expect(legacyPack(request, forged.system, forged.result)).rejects.toThrow();
   });
 
   it.each([
@@ -105,7 +140,7 @@ describe("structural result artifacts", () => {
     }), /Wasm.*threshold/i],
   ])("rejects incoherent %s evidence", async (_label, mutate, message) => {
     const { request, result, system } = await validFixture();
-    await expect(packInteractiveStructuralRunResult(request, system, mutate(result))).rejects.toThrow(message);
+    await expect(packInteractiveStructuralRunResult(request, mutate(result))).rejects.toThrow(message);
   });
 });
 

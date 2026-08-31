@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { defineArtifactRecord } from "../../cad/artifact-contract";
 import { compileStructuralStudy } from "./compile-structural-study";
+import { validateRigidModeRestraints } from "./structural-restraint-rank";
 import { structuralRequest } from "./structural-test-fixtures";
 
 describe("compileStructuralStudy", () => {
@@ -99,6 +100,50 @@ describe("compileStructuralStudy", () => {
     }));
 
     expect(compiled.fixedDofs.filter(Boolean)).toHaveLength(9);
+  });
+
+  it("rejects the collinear rank bypass when cell size overflows f32", async () => {
+    const loadedNodes = [4, 9, 14, 19, 24, 29, 34, 39, 44];
+    await expect(compileStructuralStudy(await structuralRequest({
+      cellSizeM: new Float64Array([1e308, 1e308, 1e308]),
+      selectionNodeOffsets: new Uint32Array([0, 3, 12]),
+      selectionNodeIndices: new Uint32Array([0, 5, 10, ...loadedNodes]),
+    }))).rejects.toThrow(/positive finite f32/i);
+  });
+
+  it("rejects a positive cell size that underflows the f32 operator", async () => {
+    await expect(compileStructuralStudy(await structuralRequest({
+      cellSizeM: new Float64Array([1e-50, 1e-50, 1e-50]),
+      rasterizationToleranceM: new Float64Array([1e-52]),
+    }))).rejects.toThrow(/positive finite f32/i);
+  });
+
+  it("rejects a positive elastic modulus that underflows the f32 operator", async () => {
+    await expect(compileStructuralStudy(await structuralRequest(
+      {}, [], { youngsModulusPa: 1e-50 },
+    ))).rejects.toThrow(/material.*positive finite f32/i);
+  });
+
+  it("rejects material inputs whose derived Lame constants underflow f32", async () => {
+    await expect(compileStructuralStudy(await structuralRequest(
+      {}, [], { youngsModulusPa: 1e-45 },
+    ))).rejects.toThrow(/derived material.*f32/i);
+  });
+
+  it("rejects a finite origin whose derived grid extent is not resolvable", async () => {
+    await expect(compileStructuralStudy(await structuralRequest({
+      originM: new Float64Array([Number.MAX_VALUE, 0, 0]),
+    }))).rejects.toThrow(/derived.*coordinate|extent.*finite/i);
+  });
+
+  it("rejects non-finite derived rank coordinates and extents", () => {
+    expect(() => validateRigidModeRestraints(
+      new Uint32Array([1]), new Int32Array([0]), new Uint32Array(24).fill(1),
+      {
+        cellDimensions: [1, 1, 1], nodeDimensions: [2, 2, 2],
+        originM: [Number.MAX_VALUE, 0, 0], cellSizeM: Number.MAX_VALUE,
+      },
+    )).toThrow(/derived.*coordinate|extent.*finite/i);
   });
 
   it("requires six restrained rigid modes on every active component, including unloaded components", async () => {

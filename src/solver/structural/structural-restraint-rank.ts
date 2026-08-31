@@ -5,22 +5,57 @@ interface GridGeometry {
   readonly cellSizeM: number;
 }
 
+const INVALID_GEOMETRY = "Structural grid derived coordinates and extents must be finite and resolvable";
+
+function requireFinite(values: readonly number[]): void {
+  if (values.some((value) => !Number.isFinite(value))) throw new Error(INVALID_GEOMETRY);
+}
+
+function coordinate(origin: number, index: number, cellSizeM: number): number {
+  const value = origin + index * cellSizeM;
+  requireFinite([value]);
+  return value;
+}
+
+function validateGeometry(geometry: GridGeometry): void {
+  requireFinite([...geometry.originM, geometry.cellSizeM]);
+  if (geometry.cellSizeM <= 0) throw new Error(INVALID_GEOMETRY);
+  for (let axis = 0; axis < 3; axis += 1) {
+    const extent = geometry.cellDimensions[axis]! * geometry.cellSizeM;
+    const end = geometry.originM[axis]! + extent;
+    requireFinite([extent, end]);
+    if (extent <= 0 || end <= geometry.originM[axis]!) throw new Error(INVALID_GEOMETRY);
+  }
+}
+
 function rank(rows: readonly number[][]): number {
+  if (rows.some((row) => row.length !== 6 || row.some((value) => !Number.isFinite(value)))) {
+    throw new Error("Structural rigid restraint matrix rows must be finite");
+  }
   const matrix = rows.map((row) => [...row]);
   let pivotRow = 0;
   for (let column = 0; column < 6 && pivotRow < matrix.length; column += 1) {
     let pivot = pivotRow;
     for (let row = pivotRow + 1; row < matrix.length; row += 1) {
-      if (Math.abs(matrix[row]![column]!) > Math.abs(matrix[pivot]![column]!)) pivot = row;
+      const candidate = Math.abs(matrix[row]![column]!);
+      const current = Math.abs(matrix[pivot]![column]!);
+      requireFinite([candidate, current]);
+      if (candidate > current) pivot = row;
     }
-    if (Math.abs(matrix[pivot]![column]!) <= 1e-10) continue;
+    const pivotMagnitude = Math.abs(matrix[pivot]![column]!);
+    requireFinite([pivotMagnitude]);
+    if (pivotMagnitude <= 1e-10) continue;
     [matrix[pivotRow], matrix[pivot]] = [matrix[pivot]!, matrix[pivotRow]!];
     const divisor = matrix[pivotRow]![column]!;
-    for (let cursor = column; cursor < 6; cursor += 1) matrix[pivotRow]![cursor]! /= divisor;
+    for (let cursor = column; cursor < 6; cursor += 1) {
+      matrix[pivotRow]![cursor]! /= divisor;
+      requireFinite([matrix[pivotRow]![cursor]!]);
+    }
     for (let row = pivotRow + 1; row < matrix.length; row += 1) {
       const factor = matrix[row]![column]!;
       for (let cursor = column; cursor < 6; cursor += 1) {
         matrix[row]![cursor]! -= factor * matrix[pivotRow]![cursor]!;
+        requireFinite([matrix[row]![cursor]!]);
       }
     }
     pivotRow += 1;
@@ -55,11 +90,14 @@ function constraintRows(
   geometry: GridGeometry,
 ): number[][] {
   const center = [
-    (bounds[0] + bounds[3]) * 0.5,
-    (bounds[1] + bounds[4]) * 0.5,
-    (bounds[2] + bounds[5]) * 0.5,
+    bounds[0] + (bounds[3] - bounds[0]) * 0.5,
+    bounds[1] + (bounds[4] - bounds[1]) * 0.5,
+    bounds[2] + (bounds[5] - bounds[2]) * 0.5,
   ];
-  const scale = Math.max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]);
+  const extents = [bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]];
+  const scale = Math.max(...extents);
+  requireFinite([...bounds, ...center, ...extents, scale]);
+  if (scale <= 0) throw new Error(INVALID_GEOMETRY);
   const [width, height] = geometry.nodeDimensions;
   const rows: number[][] = [];
   for (const node of nodes) {
@@ -67,9 +105,10 @@ function constraintRows(
     const rest = node - z * width * height;
     const y = Math.floor(rest / width);
     const x = rest - y * width;
-    const rx = (geometry.originM[0] + x * geometry.cellSizeM - center[0]!) / scale;
-    const ry = (geometry.originM[1] + y * geometry.cellSizeM - center[1]!) / scale;
-    const rz = (geometry.originM[2] + z * geometry.cellSizeM - center[2]!) / scale;
+    const rx = (coordinate(geometry.originM[0], x, geometry.cellSizeM) - center[0]!) / scale;
+    const ry = (coordinate(geometry.originM[1], y, geometry.cellSizeM) - center[1]!) / scale;
+    const rz = (coordinate(geometry.originM[2], z, geometry.cellSizeM) - center[2]!) / scale;
+    requireFinite([rx, ry, rz]);
     if (fixedDofs[node * 3]) rows.push([1, 0, 0, 0, rz, -ry]);
     if (fixedDofs[node * 3 + 1]) rows.push([0, 1, 0, -rz, 0, rx]);
     if (fixedDofs[node * 3 + 2]) rows.push([0, 0, 1, ry, -rx, 0]);
@@ -83,6 +122,7 @@ export function validateRigidModeRestraints(
   fixedDofs: Uint32Array,
   geometry: GridGeometry,
 ): void {
+  validateGeometry(geometry);
   let componentCount = 0;
   for (const component of components) componentCount = Math.max(componentCount, component + 1);
   const bounds = Array.from({ length: componentCount }, () => [
@@ -95,12 +135,12 @@ export function validateRigidModeRestraints(
     const component = components[cell]!;
     const [x, y, z] = cellCoordinates(cell, geometry.cellDimensions);
     const box = bounds[component]!;
-    box[0] = Math.min(box[0], geometry.originM[0] + x * geometry.cellSizeM);
-    box[1] = Math.min(box[1], geometry.originM[1] + y * geometry.cellSizeM);
-    box[2] = Math.min(box[2], geometry.originM[2] + z * geometry.cellSizeM);
-    box[3] = Math.max(box[3], geometry.originM[0] + (x + 1) * geometry.cellSizeM);
-    box[4] = Math.max(box[4], geometry.originM[1] + (y + 1) * geometry.cellSizeM);
-    box[5] = Math.max(box[5], geometry.originM[2] + (z + 1) * geometry.cellSizeM);
+    box[0] = Math.min(box[0], coordinate(geometry.originM[0], x, geometry.cellSizeM));
+    box[1] = Math.min(box[1], coordinate(geometry.originM[1], y, geometry.cellSizeM));
+    box[2] = Math.min(box[2], coordinate(geometry.originM[2], z, geometry.cellSizeM));
+    box[3] = Math.max(box[3], coordinate(geometry.originM[0], x + 1, geometry.cellSizeM));
+    box[4] = Math.max(box[4], coordinate(geometry.originM[1], y + 1, geometry.cellSizeM));
+    box[5] = Math.max(box[5], coordinate(geometry.originM[2], z + 1, geometry.cellSizeM));
     for (const node of cellNodes(cell, geometry)) {
       if (fixedDofs[node * 3] || fixedDofs[node * 3 + 1] || fixedDofs[node * 3 + 2]) {
         const nodes = restrainedNodes.get(component) ?? new Set<number>();
@@ -110,6 +150,7 @@ export function validateRigidModeRestraints(
     }
   }
   for (let component = 0; component < componentCount; component += 1) {
+    requireFinite(bounds[component]!);
     const restraintRank = rank(constraintRows(
       restrainedNodes.get(component) ?? new Set<number>(), bounds[component]!, fixedDofs, geometry,
     ));

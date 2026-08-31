@@ -1,5 +1,10 @@
 import type { StructuralVoxelPayload } from "./structural-contract";
 
+export function isPositiveFiniteFloat32(value: number): boolean {
+  const represented = Math.fround(value);
+  return Number.isFinite(represented) && represented > 0;
+}
+
 export function dimensions(payload: StructuralVoxelPayload): readonly [number, number, number] {
   if (payload.dimensions.length !== 3 || [...payload.dimensions].some((value) => value < 1)) {
     throw new Error("Structural voxel dimensions must contain three positive integers");
@@ -11,6 +16,9 @@ export function uniformCellSize(payload: StructuralVoxelPayload): number {
   if (payload.cellSizeM.length !== 3 || [...payload.cellSizeM].some((value) => !Number.isFinite(value) || value <= 0)
     || payload.cellSizeM.some((value) => Math.abs(value - payload.cellSizeM[0]!) > payload.cellSizeM[0]! * 1e-12)) {
     throw new Error("Structural adapter supports only finite uniform cubic cells");
+  }
+  if (!payload.cellSizeM.every(isPositiveFiniteFloat32)) {
+    throw new Error("Structural cell size must be representable as positive finite f32");
   }
   return payload.cellSizeM[0]!;
 }

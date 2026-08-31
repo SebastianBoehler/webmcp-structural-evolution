@@ -3,11 +3,11 @@ import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import { digestArtifactPayload, type ArtifactPayload } from "../../engineering/artifact-store";
 import { revisionId } from "../../domain/revisions";
 import type { SolverRunResult } from "../../engineering/solver-adapter";
+import { compileStructuralStudy } from "./compile-structural-study";
 import {
   STRUCTURAL_FIELD_MEDIA_TYPE,
   STRUCTURAL_RESULT_MEDIA_TYPE,
   type StructuralResult,
-  type CompiledStructuralSystem,
   type StructuralSolveInput,
 } from "./structural-contract";
 import { validateInteractiveStructuralResult } from "./structural-result-validation";
@@ -56,9 +56,9 @@ async function record(
 
 export async function packInteractiveStructuralRunResult(
   request: EngineeringSolveRequest<StructuralSolveInput>,
-  system: CompiledStructuralSystem,
   result: StructuralResult,
 ): Promise<SolverRunResult<StructuralResult>> {
+  const system = await compileStructuralStudy(request);
   validateInteractiveStructuralResult(request, system, result);
   const base = baseDependencies(request);
   const settingsDigest = await revisionId({

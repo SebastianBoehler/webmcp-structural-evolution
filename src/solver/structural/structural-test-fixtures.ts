@@ -13,7 +13,16 @@ interface AdditionalLoad {
   readonly forceN: readonly [number, number, number];
 }
 
-export async function structuralDocument(additionalLoads: readonly AdditionalLoad[] = []): Promise<DesignDocument> {
+interface MaterialOverrides {
+  readonly youngsModulusPa?: number;
+  readonly poissonRatio?: number;
+  readonly failureStressPa?: number;
+}
+
+export async function structuralDocument(
+  additionalLoads: readonly AdditionalLoad[] = [],
+  materialOverrides: MaterialOverrides = {},
+): Promise<DesignDocument> {
   return defineDesignDocument({
     id: "test-bar", label: "Test bar", schemaVersion: 3,
     units: { length: "m", angle: "rad", mass: "kg" },
@@ -46,7 +55,7 @@ export async function structuralDocument(additionalLoads: readonly AdditionalLoa
     ],
     materials: [{
       id: "steel", kind: "isotropic", densityKgM3: 7850, youngsModulusPa: 200e9,
-      poissonRatio: 0.3, failureStressPa: 250e6,
+      poissonRatio: 0.3, failureStressPa: 250e6, ...materialOverrides,
     }],
     studies: [{
       id: "bar-static", kind: "structural-linear", bodyIds: ["bar"], materialId: "steel",
@@ -134,8 +143,9 @@ async function inputArtifact(
 export async function structuralRequest(
   overrides: Partial<StructuralVoxelPayload> = {},
   additionalLoads: readonly AdditionalLoad[] = [],
+  materialOverrides: MaterialOverrides = {},
 ): Promise<EngineeringSolveRequest<StructuralSolveInput>> {
-  const document = await structuralDocument(additionalLoads);
+  const document = await structuralDocument(additionalLoads, materialOverrides);
   const voxels = voxelPayload(overrides);
   const meshArtifact = await inputArtifact(
     document, "render-mesh", "application/vnd.structural-evolution.semantic-mesh",

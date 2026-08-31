@@ -7,7 +7,7 @@ import {
   type StructuralSolveInput,
 } from "./structural-contract";
 import {
-  activeCells, activeComponents, dimensions, origin, uniformCellSize,
+  activeCells, activeComponents, dimensions, isPositiveFiniteFloat32, origin, uniformCellSize,
 } from "./structural-grid-validation";
 import { validateStructuralPayloads } from "./structural-payload-validation";
 import { validateStructuralGeometryBinding } from "./structural-geometry-binding";
@@ -25,6 +25,17 @@ function structuralStudy(request: EngineeringSolveRequest<StructuralSolveInput>)
     throw new Error(`Structural study is unresolved or has the wrong kind: ${request.studyId}`);
   }
   return study;
+}
+
+function validateMaterialFloat32(youngsModulusPa: number, poissonRatio: number): void {
+  const lambda = youngsModulusPa * poissonRatio
+    / ((1 + poissonRatio) * (1 - 2 * poissonRatio));
+  const mu = youngsModulusPa / (2 * (1 + poissonRatio));
+  const representedLambda = Math.fround(lambda);
+  if (!isPositiveFiniteFloat32(mu) || !isPositiveFiniteFloat32(lambda + 2 * mu)
+    || !Number.isFinite(representedLambda) || lambda !== 0 && representedLambda === 0) {
+    throw new Error("Structural derived material constants must be representable as finite f32 values");
+  }
 }
 
 function selectedTopologies(
@@ -112,6 +123,12 @@ export async function compileStructuralStudy(
     || material.poissonRatio <= -0.99 || material.poissonRatio >= 0.49) {
     throw new Error("Structural adapter supports bounded finite isotropic materials only");
   }
+  if (!isPositiveFiniteFloat32(material.youngsModulusPa)
+    || !isPositiveFiniteFloat32(material.failureStressPa)
+    || !Number.isFinite(Math.fround(material.poissonRatio))) {
+    throw new Error("Structural material parameters must be representable as positive finite f32 values");
+  }
+  validateMaterialFloat32(material.youngsModulusPa, material.poissonRatio);
   const payload = request.input.voxelPayload;
   const cellDimensions = dimensions(payload);
   const cellCount = cellDimensions[0] * cellDimensions[1] * cellDimensions[2];

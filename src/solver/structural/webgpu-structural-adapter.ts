@@ -173,7 +173,7 @@ export function createWebGpuStructuralAdapter(): SolverAdapter<StructuralSolveIn
         emit({ progress: 0.9 });
         const result = await verifiedResult(request, system, gpu);
         emit({ progress: 0.98 });
-        return packInteractiveStructuralRunResult(request, system, result);
+        return packInteractiveStructuralRunResult(request, result);
       } finally {
         safeDestroy(device);
       }
