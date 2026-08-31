@@ -1,21 +1,22 @@
 import { z } from "zod";
 
+import { defineRevisionedSnapshot, RevisionSchema, type DeepReadonly } from "../domain/snapshots";
 import {
-  AngleSchema,
-  LengthSchema,
-  LengthUnitSchema,
-  MassSchema,
-  normalizeAngle,
-  normalizeLength,
-  normalizeMass,
-  normalizeTransform,
-  TransformSchema,
-} from "../domain/engineering-units";
+  addStudyIntegrityIssues,
+  MaterialDefinitionSchema,
+  StudySchema,
+} from "../engineering/study-schema";
 import {
-  defineRevisionedSnapshot,
-  RevisionSchema,
-  type DeepReadonly,
-} from "../domain/snapshots";
+  ActorSchema,
+  addBaseIntegrityIssues,
+  DisplayUnitsSchema,
+  LegacyDocumentBaseShape,
+  FrameSchema,
+  normalizeBaseDocument,
+  normalizeParameterValue,
+  ParameterSchema,
+  ParameterValueSchema,
+} from "./document-base";
 import {
   addModelIntegrityIssues,
   AssemblyInstanceSchema,
@@ -28,60 +29,32 @@ import {
   SketchSchema,
 } from "./model-schema";
 
-const finite = z.number().finite();
+export { ActorSchema, FrameSchema, normalizeParameterValue, ParameterSchema, ParameterValueSchema } from "./document-base";
 export { EntityIdSchema } from "./model-schema";
+
 export const SemanticReferenceSchema = z.string().regex(
-  /^(document|parameter|frame|sketch|feature|body|component|instance|mate|named-selection):[a-z][a-z0-9-]{0,79}$/,
+  /^(document|parameter|frame|sketch|feature|body|component|instance|mate|named-selection|material|study):[a-z][a-z0-9-]{0,79}$/,
   "Semantic reference must identify a document entity",
 );
 
-const DisplayUnitsSchema = z.object({
-  length: LengthUnitSchema,
-  angle: z.enum(["deg", "rad"]),
-  mass: z.enum(["g", "kg"]),
-}).strict();
-export const ActorSchema = z.object({
-  kind: z.enum(["human", "agent"]),
-  id: EntityIdSchema,
-}).strict();
-export const FrameSchema = z.object({
-  id: EntityIdSchema,
-  label: z.string().min(1),
-  parentId: EntityIdSchema.optional(),
-  transform: TransformSchema,
-}).strict();
-
-export const ParameterValueSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("dimensionless"), value: finite }).strict(),
-  z.object({ kind: z.literal("length"), value: LengthSchema }).strict(),
-  z.object({ kind: z.literal("angle"), value: AngleSchema }).strict(),
-  z.object({ kind: z.literal("mass"), value: MassSchema }).strict(),
-  z.object({ kind: z.literal("boolean"), value: z.boolean() }).strict(),
-  z.object({ kind: z.literal("text"), value: z.string() }).strict(),
-]);
-export const ParameterSchema = z.object({
-  id: EntityIdSchema,
-  label: z.string().min(1),
-  value: ParameterValueSchema,
-}).strict();
-
-const legacyDocumentContentShape = {
-  id: EntityIdSchema,
-  label: z.string().min(1),
-  schemaVersion: z.literal(1),
-  units: DisplayUnitsSchema,
-  createdBy: ActorSchema,
-  frames: z.array(FrameSchema),
-  parameters: z.array(ParameterSchema),
-};
-const MigrationProvenanceSchema = z.object({
+const V1MigrationProvenanceSchema = z.object({
   sourceSchemaVersion: z.literal(1),
   sourceRevision: RevisionSchema,
 }).strict();
-const documentContentShape = {
-  ...legacyDocumentContentShape,
+const V2MigrationProvenanceSchema = z.object({
+  sourceSchemaVersion: z.literal(2),
+  sourceRevision: RevisionSchema,
+  sourceMigrationProvenance: V1MigrationProvenanceSchema.optional(),
+}).strict();
+
+const legacyDocumentContentShape = {
+  ...LegacyDocumentBaseShape,
+  schemaVersion: z.literal(1),
+};
+const versionTwoDocumentContentShape = {
+  ...LegacyDocumentBaseShape,
   schemaVersion: z.literal(2),
-  migrationProvenance: MigrationProvenanceSchema.optional(),
+  migrationProvenance: V1MigrationProvenanceSchema.optional(),
   sketches: z.array(SketchSchema),
   features: z.array(FeatureSchema),
   bodies: z.array(BodySchema),
@@ -90,67 +63,49 @@ const documentContentShape = {
   mates: z.array(MateSchema),
   namedSelections: z.array(NamedSelectionSchema),
 };
+const documentContentShape = {
+  ...LegacyDocumentBaseShape,
+  schemaVersion: z.literal(3),
+  migrationProvenance: V2MigrationProvenanceSchema.optional(),
+  sketches: z.array(SketchSchema),
+  features: z.array(FeatureSchema),
+  bodies: z.array(BodySchema),
+  components: z.array(ComponentSchema),
+  instances: z.array(AssemblyInstanceSchema),
+  mates: z.array(MateSchema),
+  namedSelections: z.array(NamedSelectionSchema),
+  materials: z.array(MaterialDefinitionSchema),
+  studies: z.array(StudySchema),
+};
 
+type VersionTwoDocumentContent = z.infer<z.ZodObject<typeof versionTwoDocumentContentShape>>;
+type VersionTwoDocument = DeepReadonly<VersionTwoDocumentContent & { revision: string }>;
 type DocumentContent = z.infer<z.ZodObject<typeof documentContentShape>>;
-type LegacyDocumentContent = z.infer<z.ZodObject<typeof legacyDocumentContentShape>>;
-type BaseDocumentContent = Pick<LegacyDocumentContent, "frames" | "parameters">;
+type ModelIntegrityDocument = Pick<VersionTwoDocumentContent,
+  "frames" | "parameters" | "sketches" | "features" | "bodies" | "components" | "instances" | "mates" | "namedSelections">;
 
-function addBaseIntegrityIssues(value: BaseDocumentContent, context: z.RefinementCtx): void {
-  const frameIds = new Set<string>();
-  for (const frame of value.frames) {
-    if (frameIds.has(frame.id)) {
-      context.addIssue({ code: "custom", message: `Duplicate frame ID: ${frame.id}` });
-    }
-    frameIds.add(frame.id);
-  }
+function addModelDocumentIntegrityIssues(value: ModelIntegrityDocument, context: z.RefinementCtx): void {
+  addBaseIntegrityIssues(value, context);
+  addModelIntegrityIssues(value, context);
+}
 
-  const parameterIds = new Set<string>();
-  for (const parameter of value.parameters) {
-    if (parameterIds.has(parameter.id)) {
-      context.addIssue({ code: "custom", message: `Duplicate parameter ID: ${parameter.id}` });
-    }
-    parameterIds.add(parameter.id);
-  }
-
-  const roots = value.frames.filter((frame) => frame.parentId === undefined);
-  if (roots.length !== 1 || roots[0]?.id !== "world") {
-    context.addIssue({ code: "custom", message: "Document must have exactly one root frame named world" });
-  }
-
-  for (const frame of value.frames) {
-    if (frame.parentId !== undefined && !frameIds.has(frame.parentId)) {
-      context.addIssue({ code: "custom", message: `Frame parent is unresolved: ${frame.parentId}` });
-    }
-  }
-
-  const parents = new Map(value.frames.map((frame) => [frame.id, frame.parentId]));
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
-  const visit = (id: string): void => {
-    if (visited.has(id)) return;
-    if (visiting.has(id)) {
-      context.addIssue({ code: "custom", message: `Frame parents are cyclic at: ${id}` });
-      return;
-    }
-    visiting.add(id);
-    const parentId = parents.get(id);
-    if (parentId !== undefined && parents.has(parentId)) visit(parentId);
-    visiting.delete(id);
-    visited.add(id);
-  };
-  for (const frame of value.frames) visit(frame.id);
+function addVersionTwoIntegrityIssues(value: VersionTwoDocumentContent, context: z.RefinementCtx): void {
+  addModelDocumentIntegrityIssues(value, context);
 }
 
 function addDocumentIntegrityIssues(value: DocumentContent, context: z.RefinementCtx): void {
-  addBaseIntegrityIssues(value, context);
-  addModelIntegrityIssues(value, context);
+  addModelDocumentIntegrityIssues(value, context);
+  addStudyIntegrityIssues(value, context);
 }
 
 const LegacyDesignDocumentContentSchema = z
   .object(legacyDocumentContentShape)
   .strict()
   .superRefine(addBaseIntegrityIssues);
-
+const VersionTwoDesignDocumentContentSchema = z
+  .object(versionTwoDocumentContentShape)
+  .strict()
+  .superRefine(addVersionTwoIntegrityIssues);
 export const DesignDocumentContentSchema = z
   .object(documentContentShape)
   .strict()
@@ -162,39 +117,39 @@ export const DesignDocumentSchema = z
 
 export type DesignDocument = DeepReadonly<z.infer<typeof DesignDocumentSchema>>;
 
-export function normalizeParameterValue(value: z.infer<typeof ParameterValueSchema>) {
-  switch (value.kind) {
-    case "length":
-      return { ...value, value: normalizeLength(value.value) };
-    case "angle":
-      return { ...value, value: normalizeAngle(value.value) };
-    case "mass":
-      return { ...value, value: normalizeMass(value.value) };
-    default:
-      return value;
-  }
-}
-
-function normalizeBaseDocument<Content extends BaseDocumentContent>(value: Content): Content {
-  return {
-    ...value,
-    frames: value.frames.map((frame) => ({
-      ...frame,
-      transform: normalizeTransform(frame.transform),
-    })),
-    parameters: value.parameters.map((parameter) => ({
-      ...parameter,
-      value: normalizeParameterValue(parameter.value),
-    })),
-  } as Content;
+async function migrateVersionTwoDocument(value: VersionTwoDocument): Promise<DesignDocument> {
+  const {
+    revision: sourceRevision,
+    migrationProvenance: sourceMigrationProvenance,
+    ...content
+  } = value;
+  return defineRevisionedSnapshot(DesignDocumentContentSchema, {
+    ...content,
+    schemaVersion: 3,
+    migrationProvenance: {
+      sourceSchemaVersion: 2,
+      sourceRevision,
+      ...(sourceMigrationProvenance === undefined ? {} : { sourceMigrationProvenance }),
+    },
+    materials: [],
+    studies: [],
+  }, normalizeBaseDocument);
 }
 
 export async function defineDesignDocument(value: unknown): Promise<DesignDocument> {
-  const version = z.object({ schemaVersion: z.union([z.literal(1), z.literal(2)]) })
+  const version = z.object({ schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]) })
     .passthrough()
     .parse(value).schemaVersion;
-  if (version === 2) {
+  if (version === 3) {
     return defineRevisionedSnapshot(DesignDocumentContentSchema, value, normalizeBaseDocument);
+  }
+  if (version === 2) {
+    const document = await defineRevisionedSnapshot(
+      VersionTwoDesignDocumentContentSchema,
+      value,
+      normalizeBaseDocument,
+    );
+    return migrateVersionTwoDocument(document);
   }
 
   const legacy = await defineRevisionedSnapshot(
@@ -203,7 +158,7 @@ export async function defineDesignDocument(value: unknown): Promise<DesignDocume
     normalizeBaseDocument,
   );
   const { revision: sourceRevision, ...content } = legacy;
-  return defineRevisionedSnapshot(DesignDocumentContentSchema, {
+  const versionTwo = await defineRevisionedSnapshot(VersionTwoDesignDocumentContentSchema, {
     ...content,
     schemaVersion: 2,
     migrationProvenance: { sourceSchemaVersion: 1, sourceRevision },
@@ -215,6 +170,7 @@ export async function defineDesignDocument(value: unknown): Promise<DesignDocume
     mates: [],
     namedSelections: [],
   }, normalizeBaseDocument);
+  return migrateVersionTwoDocument(versionTwo);
 }
 
 const CreateDesignDocumentInputSchema = z.object({
@@ -228,7 +184,7 @@ export async function createDesignDocument(input: unknown): Promise<DesignDocume
   const value = CreateDesignDocumentInputSchema.parse(input);
   return defineDesignDocument({
     ...value,
-    schemaVersion: 2,
+    schemaVersion: 3,
     frames: [{
       id: "world",
       label: "World",
@@ -253,5 +209,7 @@ export async function createDesignDocument(input: unknown): Promise<DesignDocume
     instances: [],
     mates: [],
     namedSelections: [],
+    materials: [],
+    studies: [],
   });
 }

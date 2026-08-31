@@ -10,7 +10,7 @@ import {
 } from "./document-schema";
 
 describe("DesignDocument", () => {
-  it("migrates serialized v1 content to a newly addressed v2 document with provenance", async () => {
+  it("migrates serialized v1 content through v2 to a newly addressed v3 document with provenance", async () => {
     const legacyContent = {
       id: "legacy-pump",
       label: "Legacy pump",
@@ -38,14 +38,55 @@ describe("DesignDocument", () => {
 
     const migrated = await defineDesignDocument({ ...legacyContent, revision: legacyRevision });
 
-    expect(migrated).toMatchObject({
-      schemaVersion: 2,
-      migrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+    const v2Content = {
+      ...legacyContent,
+      schemaVersion: 2 as const,
+      migrationProvenance: { sourceSchemaVersion: 1 as const, sourceRevision: legacyRevision },
       sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+    };
+    const v2Revision = await revisionId(v2Content);
+
+    expect(migrated).toMatchObject({
+      schemaVersion: 3,
+      migrationProvenance: {
+        sourceSchemaVersion: 2,
+        sourceRevision: v2Revision,
+        sourceMigrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+      },
+      sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+      materials: [], studies: [],
     });
     expect(migrated.revision).not.toBe(legacyRevision);
     const { revision: _revision, ...migratedContent } = migrated;
     expect(migrated.revision).toBe(await revisionId(migratedContent));
+  });
+
+  it("migrates serialized v2 content without reusing its content address", async () => {
+    const v2Content = {
+      id: "v2-pump",
+      label: "V2 pump",
+      schemaVersion: 2 as const,
+      units: { length: "mm" as const, angle: "deg" as const, mass: "kg" as const },
+      createdBy: { kind: "human" as const, id: "sebastian" },
+      frames: [{
+        id: "world", label: "World",
+        transform: {
+          position: { x: { value: 0, unit: "m" as const }, y: { value: 0, unit: "m" as const }, z: { value: 0, unit: "m" as const } },
+          orientation: { roll: { value: 0, unit: "rad" as const }, pitch: { value: 0, unit: "rad" as const }, yaw: { value: 0, unit: "rad" as const } },
+        },
+      }],
+      parameters: [], sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
+    };
+    const v2Revision = await revisionId(v2Content);
+
+    const migrated = await defineDesignDocument({ ...v2Content, revision: v2Revision });
+
+    expect(migrated).toMatchObject({
+      schemaVersion: 3,
+      migrationProvenance: { sourceSchemaVersion: 2, sourceRevision: v2Revision },
+      materials: [], studies: [],
+    });
+    expect(migrated.revision).not.toBe(v2Revision);
   });
 
   it("normalizes physical parameter values into an immutable revisioned snapshot", async () => {
@@ -105,7 +146,7 @@ describe("DesignDocument", () => {
     });
 
     expect(document).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       units: { length: "mm", angle: "deg", mass: "kg" },
       frames: [{
         id: "world",

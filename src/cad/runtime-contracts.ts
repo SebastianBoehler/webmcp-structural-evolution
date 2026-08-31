@@ -15,7 +15,24 @@ import {
 } from "./rebuild-payload";
 
 const JsonValueSchema = ActionReceiptSchema.shape.validatedInputs;
-const JobIdSchema = z.string().min(1);
+
+export {
+  CapabilityLimitSchema,
+  defineEngineeringSolveRequest,
+  EngineeringJobErrorSchema,
+  EngineeringJobEventSchema,
+  EngineeringJobKindSchema,
+  EngineeringJobRequestSchema,
+  EngineeringSolveRequestSchema,
+  EngineeringTruthLevelSchema,
+  type CapabilityLimit,
+  type EngineeringJobError,
+  type EngineeringJobEvent,
+  type EngineeringJobKind,
+  type EngineeringJobRequest,
+  type EngineeringSolveRequest,
+  type EngineeringTruthLevel,
+} from "./engineering-job-contract";
 
 export const CadOutputSchema = z.enum([
   "brep",
@@ -191,60 +208,11 @@ export const CadEvaluationEventSchema = z.discriminatedUnion("state", [
   }).strict(),
 ]);
 
-export const EngineeringJobKindSchema = z.enum([
-  "cad-rebuild",
-  "collision",
-  "mechanism",
-  "topology",
-  "fea",
-  "cfd",
-  "thermal",
-  "additive",
-  "slicing",
-  "export",
-]);
-export const EngineeringTruthLevelSchema = z.enum([
-  "interactive-estimate",
-  "calibrated-surrogate",
-  "converged-numerical-solve",
-  "experimentally-validated",
-]);
-
-export const EngineeringJobRequestSchema = z.object({
-  jobId: JobIdSchema,
-  kind: EngineeringJobKindSchema,
-  sourceRevision: RevisionSchema,
-  inputArtifacts: z.array(ArtifactRecordSchema),
-  settings: JsonValueSchema,
-}).strict();
-
-const EngineeringJobEventBaseSchema = z.object({
-  jobId: JobIdSchema,
-  progress: z.number().min(0).max(1),
-  artifacts: z.array(ArtifactRecordSchema),
-});
-
-export const EngineeringJobEventSchema = z.discriminatedUnion("state", [
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("queued") }).strict(),
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("running") }).strict(),
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("partial") }).strict(),
-  EngineeringJobEventBaseSchema.extend({
-    state: z.literal("verified"),
-    truthLevel: EngineeringTruthLevelSchema,
-    progress: z.literal(1),
-    artifacts: z.array(ArtifactRecordSchema).min(1),
-  }).strict(),
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("failed") }).strict(),
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("cancelled") }).strict(),
-]);
-
 export type CadEvaluationRequest = z.infer<typeof CadEvaluationRequestSchema>;
 export type CadEvaluationEvent = z.infer<typeof CadEvaluationEventSchema>;
 export type CadOutput = z.infer<typeof CadOutputSchema>;
 export type ExactStepImportRequest = z.infer<typeof ExactStepImportRequestSchema>;
 export type ExactStepImportResult = z.infer<typeof ExactStepImportResultSchema>;
-export type EngineeringJobRequest = z.infer<typeof EngineeringJobRequestSchema>;
-export type EngineeringJobEvent = z.infer<typeof EngineeringJobEventSchema>;
 
 export interface CadKernelAdapter {
   evaluate(

@@ -229,6 +229,29 @@ describe("CAD runtime contracts", () => {
     })).rejects.toThrow();
   });
 
+  it("requires a typed error on every failed engineering event", () => {
+    const failed = {
+      jobId: "job-1",
+      state: "failed",
+      progress: 0.25,
+      artifacts: [],
+      error: {
+        code: "unsupported-capability",
+        message: "WebGPU memory budget is exceeded",
+        limit: { kind: "memory", rule: "requires at most 512 MiB" },
+      },
+    } as const;
+
+    expect(EngineeringJobEventSchema.parse(failed)).toEqual(failed);
+    expect(() => EngineeringJobEventSchema.parse({
+      jobId: "job-1", state: "failed", progress: 0.25, artifacts: [],
+    })).toThrow(/error/i);
+    expect(() => EngineeringJobEventSchema.parse({
+      ...failed,
+      error: { code: "diverged", message: "Residual stalled", limit: failed.error.limit },
+    })).toThrow(/unrecognized key/i);
+  });
+
   it("keeps engineering jobs canonical-JSON serializable", () => {
     const job = {
       jobId: "job-1",

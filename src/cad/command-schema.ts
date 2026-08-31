@@ -17,6 +17,7 @@ import {
   NamedSelectionSchema,
   SketchSchema,
 } from "./model-schema";
+import { MaterialDefinitionSchema, StudySchema } from "../engineering/study-schema";
 import { RevisionSchema } from "../domain/snapshots";
 
 const CommandIdSchema = EntityIdSchema;
@@ -87,6 +88,26 @@ export const DefineNamedSelectionCommandSchema = z.object({
   type: z.literal("define-named-selection"),
   namedSelection: NamedSelectionSchema,
 }).strict();
+export const DefineMaterialCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-material"),
+  material: MaterialDefinitionSchema,
+}).strict();
+export const RemoveMaterialCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("remove-material"),
+  materialId: EntityIdSchema,
+}).strict();
+export const DefineStudyCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("define-study"),
+  study: StudySchema,
+}).strict();
+export const RemoveStudyCommandSchema = z.object({
+  id: CommandIdSchema,
+  type: z.literal("remove-study"),
+  studyId: EntityIdSchema,
+}).strict();
 
 export const DesignCommandSchema = z.discriminatedUnion("type", [
   RenameDocumentCommandSchema,
@@ -102,6 +123,10 @@ export const DesignCommandSchema = z.discriminatedUnion("type", [
   PlaceInstanceCommandSchema,
   DefineMateCommandSchema,
   DefineNamedSelectionCommandSchema,
+  DefineMaterialCommandSchema,
+  RemoveMaterialCommandSchema,
+  DefineStudyCommandSchema,
+  RemoveStudyCommandSchema,
 ]);
 
 export const ParameterEqualsPreconditionSchema = z.object({
