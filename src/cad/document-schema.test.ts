@@ -10,7 +10,7 @@ import {
 } from "./document-schema";
 
 describe("DesignDocument", () => {
-  it("migrates serialized v1 content through v2 to a newly addressed v3 document with provenance", async () => {
+  it("migrates serialized v1 content through v4 with an exact provenance chain", async () => {
     const legacyContent = {
       id: "legacy-pump",
       label: "Legacy pump",
@@ -45,13 +45,27 @@ describe("DesignDocument", () => {
       sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
     };
     const v2Revision = await revisionId(v2Content);
+    const v3Content = {
+      ...v2Content,
+      schemaVersion: 3 as const,
+      migrationProvenance: {
+        sourceSchemaVersion: 2 as const, sourceRevision: v2Revision,
+        sourceMigrationProvenance: v2Content.migrationProvenance,
+      },
+      materials: [], studies: [],
+    };
+    const v3Revision = await revisionId(v3Content);
 
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       migrationProvenance: {
-        sourceSchemaVersion: 2,
-        sourceRevision: v2Revision,
-        sourceMigrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+        sourceSchemaVersion: 3,
+        sourceRevision: v3Revision,
+        sourceMigrationProvenance: {
+          sourceSchemaVersion: 2,
+          sourceRevision: v2Revision,
+          sourceMigrationProvenance: { sourceSchemaVersion: 1, sourceRevision: legacyRevision },
+        },
       },
       sketches: [], features: [], bodies: [], components: [], instances: [], mates: [], namedSelections: [],
       materials: [], studies: [],
@@ -61,7 +75,7 @@ describe("DesignDocument", () => {
     expect(migrated.revision).toBe(await revisionId(migratedContent));
   });
 
-  it("migrates serialized v2 content without reusing its content address", async () => {
+  it("migrates serialized v2 content through v3 without reusing either content address", async () => {
     const v2Content = {
       id: "v2-pump",
       label: "V2 pump",
@@ -80,10 +94,19 @@ describe("DesignDocument", () => {
     const v2Revision = await revisionId(v2Content);
 
     const migrated = await defineDesignDocument({ ...v2Content, revision: v2Revision });
+    const v3Content = {
+      ...v2Content, schemaVersion: 3 as const,
+      migrationProvenance: { sourceSchemaVersion: 2 as const, sourceRevision: v2Revision },
+      materials: [], studies: [],
+    };
+    const v3Revision = await revisionId(v3Content);
 
     expect(migrated).toMatchObject({
-      schemaVersion: 3,
-      migrationProvenance: { sourceSchemaVersion: 2, sourceRevision: v2Revision },
+      schemaVersion: 4,
+      migrationProvenance: {
+        sourceSchemaVersion: 3, sourceRevision: v3Revision,
+        sourceMigrationProvenance: { sourceSchemaVersion: 2, sourceRevision: v2Revision },
+      },
       materials: [], studies: [],
     });
     expect(migrated.revision).not.toBe(v2Revision);
@@ -146,7 +169,7 @@ describe("DesignDocument", () => {
     });
 
     expect(document).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       units: { length: "mm", angle: "deg", mass: "kg" },
       frames: [{
         id: "world",
@@ -157,6 +180,23 @@ describe("DesignDocument", () => {
       }],
     });
     expect(Object.isFrozen(document.frames[0])).toBe(true);
+  });
+
+  it("migrates v3 topology intent without inventing optimization constraints", async () => {
+    const current = await createDesignDocument({
+      id: "migration-source", label: "Migration source",
+      units: { length: "m", angle: "rad", mass: "kg" },
+      createdBy: { kind: "human", id: "tester" },
+    });
+    const { revision: _revision, migrationProvenance: _provenance, ...base } = current;
+    const v3 = {
+      ...base, schemaVersion: 3 as const, materials: [],
+      studies: [{ id: "legacy-topology", kind: "topology" as const, sourceStudyId: "source-fea" }],
+    };
+    await expect(defineDesignDocument(v3)).rejects.toThrow(/source study is unresolved/i);
+
+    const migrated = await defineDesignDocument({ ...v3, studies: [] });
+    expect(migrated.schemaVersion).toBe(4);
   });
 
   it("normalizes frame transforms, mass, and angle parameter values", async () => {

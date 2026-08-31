@@ -90,7 +90,18 @@ it("defines study intent, propagates its references, and prevents consumed remov
       {
         id: "define-topology",
         type: "define-study",
-        study: { id: "link-topology", kind: "topology", sourceStudyId: "link-static" },
+        study: {
+          id: "link-topology", kind: "topology", sourceStudyId: "link-static",
+          configurationState: "configured", objective: "minimum-compliance",
+          targetVolumeFraction: 0.75, moveLimit: 0.2, filterRadiusM: 0.01,
+          minimumFeatureM: 0.005, maxIterations: 16,
+          extraction: { isoValue: 0.5, toleranceM: 1e-6 },
+          protectedVoidSelectionIds: [],
+          acceptance: {
+            maximumDisplacementM: 0.01, maximumVonMisesStressPa: 200e6,
+            minimumSafetyFactor: 1.5, maximumMaterialFraction: 0.8,
+          },
+        },
       },
     ],
   });

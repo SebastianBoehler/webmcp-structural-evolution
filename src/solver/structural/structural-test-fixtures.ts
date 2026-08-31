@@ -24,7 +24,7 @@ export async function structuralDocument(
   materialOverrides: MaterialOverrides = {},
 ): Promise<DesignDocument> {
   return defineDesignDocument({
-    id: "test-bar", label: "Test bar", schemaVersion: 3,
+    id: "test-bar", label: "Test bar", schemaVersion: 4,
     units: { length: "m", angle: "rad", mass: "kg" },
     createdBy: { kind: "human", id: "tester" },
     frames: [{
@@ -61,6 +61,17 @@ export async function structuralDocument(
       id: "bar-static", kind: "structural-linear", bodyIds: ["bar"], materialId: "steel",
       supports: ["fixed-end"],
       loads: [{ selectionId: "loaded-end", forceN: [1000, 0, 0] }, ...additionalLoads],
+    }, {
+      id: "bar-topology", kind: "topology", sourceStudyId: "bar-static",
+      configurationState: "configured", objective: "minimum-compliance",
+      targetVolumeFraction: 0.75, moveLimit: 0.3, filterRadiusM: 0.01,
+      minimumFeatureM: 0.01, maxIterations: 2,
+      extraction: { isoValue: 0.5, toleranceM: 1e-6 },
+      protectedVoidSelectionIds: [],
+      acceptance: {
+        maximumDisplacementM: 0.1, maximumVonMisesStressPa: 100,
+        minimumSafetyFactor: 2, maximumMaterialFraction: 0.8,
+      },
     }],
   });
 }

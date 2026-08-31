@@ -57,6 +57,26 @@ const exactDocument = {
 };
 
 describe("engineering study schemas", () => {
+  it("migrates v3 topology studies to explicit requires-configuration intent", async () => {
+    const migrated = await defineDesignDocument({
+      ...exactDocument,
+      materials: [{
+        id: "al-6061", kind: "isotropic", densityKgM3: 2700,
+        youngsModulusPa: 68.9e9, poissonRatio: 0.33, failureStressPa: 276e6,
+      }],
+      studies: [{
+        id: "link-static", kind: "structural-linear", bodyIds: ["link-body"],
+        materialId: "al-6061", supports: ["fixed-end"],
+        loads: [{ selectionId: "fixed-end", forceN: [0, -500, 0] }],
+      }, { id: "link-topology", kind: "topology", sourceStudyId: "link-static" }],
+    });
+
+    expect(migrated.studies[1]).toEqual({
+      id: "link-topology", kind: "topology", sourceStudyId: "link-static",
+      configurationState: "requires-configuration",
+    });
+  });
+
   it("rejects invalid isotropic properties and unresolved structural load selections", async () => {
     expect(() => MaterialDefinitionSchema.parse({
       id: "invalid-metal",

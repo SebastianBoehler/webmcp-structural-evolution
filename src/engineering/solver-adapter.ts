@@ -1,6 +1,7 @@
 import type {
   EngineeringJobError,
   EngineeringJobKind,
+  EngineeringPartialResult,
   EngineeringSolveRequest as BaseEngineeringSolveRequest,
   EngineeringTruthLevel,
 } from "../cad/engineering-job-contract";
@@ -21,6 +22,7 @@ export type CapabilityDecision = Readonly<{ supported: true }> | UnsupportedCapa
 
 export type SolverProgressEvent = Readonly<{
   progress: number;
+  partial?: EngineeringPartialResult;
 }>;
 
 export type SolverGeneratedArtifact = Readonly<{

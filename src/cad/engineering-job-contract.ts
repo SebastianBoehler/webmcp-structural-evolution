@@ -9,6 +9,16 @@ import { EntityIdSchema } from "./model-schema";
 const JsonValueSchema = ActionReceiptSchema.shape.validatedInputs;
 const JobIdSchema = z.string().min(1);
 
+export const EngineeringPartialResultSchema = z.object({
+  kind: z.literal("topology-objective-history"),
+  samples: z.array(z.object({
+    iteration: z.number().int().min(0),
+    objectiveJ: z.number().finite().nonnegative(),
+    maskDigest: RevisionSchema,
+    structuralResultDigest: RevisionSchema,
+  }).strict()).min(1).max(16),
+}).strict();
+
 export const EngineeringJobKindSchema = z.enum([
   "cad-rebuild",
   "collision",
@@ -69,7 +79,10 @@ const EngineeringJobEventBaseSchema = z.object({
 export const EngineeringJobEventSchema = z.discriminatedUnion("state", [
   EngineeringJobEventBaseSchema.extend({ state: z.literal("queued") }).strict(),
   EngineeringJobEventBaseSchema.extend({ state: z.literal("running") }).strict(),
-  EngineeringJobEventBaseSchema.extend({ state: z.literal("partial") }).strict(),
+  EngineeringJobEventBaseSchema.extend({
+    state: z.literal("partial"),
+    partial: EngineeringPartialResultSchema.optional(),
+  }).strict(),
   EngineeringJobEventBaseSchema.extend({
     state: z.literal("verified"),
     truthLevel: EngineeringTruthLevelSchema,
@@ -89,6 +102,7 @@ export type EngineeringJobKind = z.infer<typeof EngineeringJobKindSchema>;
 export type EngineeringTruthLevel = z.infer<typeof EngineeringTruthLevelSchema>;
 export type CapabilityLimit = z.infer<typeof CapabilityLimitSchema>;
 export type EngineeringJobError = z.infer<typeof EngineeringJobErrorSchema>;
+export type EngineeringPartialResult = z.infer<typeof EngineeringPartialResultSchema>;
 export type EngineeringJobRequest = z.infer<typeof EngineeringJobRequestSchema>;
 export type EngineeringJobEvent = z.infer<typeof EngineeringJobEventSchema>;
 export type EngineeringSolveRequest<Input> = Readonly<

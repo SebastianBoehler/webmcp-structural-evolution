@@ -17,6 +17,37 @@ import {
 import { createSolverRegistry } from "./solver-registry";
 
 describe("engineering job runner result and subscriber contracts", () => {
+  it("delivers a typed topology partial with its structural result digest intact", async () => {
+    const document = await sourceDocument();
+    const registry = createSolverRegistry();
+    registry.register(adapter(async (solveRequest, _signal, emit) => {
+      emit({
+        progress: 0.5,
+        partial: {
+          kind: "topology-objective-history",
+          samples: [{
+            iteration: 0, objectiveJ: 12,
+            maskDigest: "a".repeat(64), structuralResultDigest: "b".repeat(64),
+          }],
+        },
+      });
+      return resultFor(solveRequest);
+    }));
+    const runner = createEngineeringJobRunner({ registry, store: createArtifactStore(), currentDocument: () => document });
+    const delivered: unknown[] = [];
+    runner.subscribe(({ event }) => { if (event.state === "partial") delivered.push(event.partial); });
+
+    await runner.launch(await request(document, "typed-topology-partial")).completion;
+
+    expect(delivered).toEqual([{
+      kind: "topology-objective-history",
+      samples: [{
+        iteration: 0, objectiveJ: 12,
+        maskDigest: "a".repeat(64), structuralResultDigest: "b".repeat(64),
+      }],
+    }]);
+  });
+
   it("accepts generated artifacts with closed study and artifact dependencies", async () => {
     const document = await sourceDocument();
     const seedRequest = await request(document, "closed-generated-dependencies");

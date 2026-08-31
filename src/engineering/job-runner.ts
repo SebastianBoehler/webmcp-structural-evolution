@@ -2,6 +2,7 @@ import type { DesignDocument } from "../cad/document-schema";
 import {
   type EngineeringJobError,
   type EngineeringJobEvent,
+  EngineeringPartialResultSchema,
   type EngineeringSolveRequest,
 } from "../cad/engineering-job-contract";
 import type { ArtifactStore } from "./artifact-store";
@@ -124,8 +125,15 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
   const progress = (control: JobControl<unknown>, event: SolverProgressEvent): void => {
     if (!active(control) || control.commitAccepted || !Number.isFinite(event?.progress)
       || event.progress < control.progress || event.progress >= 1) return;
+    const parsedPartial = event.partial === undefined
+      ? undefined
+      : EngineeringPartialResultSchema.safeParse(event.partial);
+    if (parsedPartial && !parsedPartial.success) return;
     control.progress = event.progress;
-    publish({ jobId: control.jobId, state: "partial", progress: control.progress, artifacts: [] });
+    publish({
+      jobId: control.jobId, state: "partial", progress: control.progress, artifacts: [],
+      ...(parsedPartial?.success ? { partial: parsedPartial.data } : {}),
+    });
   };
 
   const dispatch = async (control: JobControl<unknown>): Promise<void> => {

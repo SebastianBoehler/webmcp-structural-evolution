@@ -357,7 +357,7 @@ describe("OCCT worker client", () => {
     const client = createOcctWorkerClient(() => worker);
     const evaluationRequest = await request("evaluate-first");
     const importRequest = await stepRequest("import-second");
-    const delay = delayNextDigest((text) => text.includes('"schemaVersion":3'));
+    const delay = delayNextDigest((text) => text.includes('"schemaVersion":4'));
     try {
       const evaluation = client.evaluate(evaluationRequest, new AbortController().signal, () => undefined);
       const imported = client.importStep(importRequest, new AbortController().signal);

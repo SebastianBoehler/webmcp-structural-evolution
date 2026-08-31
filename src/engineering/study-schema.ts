@@ -45,11 +45,38 @@ export const StructuralStudySchema = z.object({
     }
   }),
 }).strict();
-export const TopologyStudySchema = z.object({
+export const LegacyTopologyStudySchema = z.object({
   id: EntityIdSchema,
   kind: z.literal("topology"),
   sourceStudyId: EntityIdSchema,
 }).strict();
+const TopologyStudyBaseSchema = LegacyTopologyStudySchema.extend({
+  objective: z.literal("minimum-compliance"),
+  targetVolumeFraction: finite.gt(0).lte(1),
+  moveLimit: finite.gt(0).lte(1),
+  filterRadiusM: positive,
+  minimumFeatureM: positive,
+  maxIterations: z.number().int().min(1).max(64),
+  extraction: z.object({
+    isoValue: finite.gt(0).lt(1),
+    toleranceM: positive,
+  }).strict(),
+  protectedVoidSelectionIds: uniqueIdsSchema(0, "Topology protected-void selections must be unique"),
+  acceptance: z.object({
+    maximumDisplacementM: positive,
+    maximumVonMisesStressPa: positive,
+    minimumSafetyFactor: positive,
+    maximumMaterialFraction: finite.gt(0).lte(1),
+  }).strict(),
+});
+export const TopologyStudySchema = z.union([
+  LegacyTopologyStudySchema.extend({
+    configurationState: z.literal("requires-configuration"),
+  }).strict(),
+  TopologyStudyBaseSchema.extend({
+    configurationState: z.literal("configured"),
+  }).strict(),
+]);
 export const MechanismStudySchema = z.object({
   id: EntityIdSchema,
   kind: z.literal("mechanism"),
@@ -62,7 +89,13 @@ export const ThermalSteadyStudySchema = z.object({
   bodyIds: uniqueIdsSchema(1, "Thermal study body IDs must be unique"),
   materialId: EntityIdSchema,
 }).strict();
-export const StudySchema = z.discriminatedUnion("kind", [
+export const LegacyStudySchema = z.discriminatedUnion("kind", [
+  StructuralStudySchema,
+  LegacyTopologyStudySchema,
+  MechanismStudySchema,
+  ThermalSteadyStudySchema,
+]);
+export const StudySchema = z.union([
   StructuralStudySchema,
   TopologyStudySchema,
   MechanismStudySchema,
@@ -149,6 +182,15 @@ export function addStudyIntegrityIssues(value: StudyIntegrityInput, context: z.R
         if (!source) context.addIssue({ code: "custom", message: `Source study is unresolved: ${study.sourceStudyId}` });
         else if (source.kind !== "structural-linear") {
           context.addIssue({ code: "custom", message: `Topology source study must be structural-linear: ${study.sourceStudyId}` });
+        } else if (study.configurationState === "configured") {
+          const sourceBodies = new Set(source.bodyIds);
+          for (const selectionId of study.protectedVoidSelectionIds) {
+            const selection = selections.get(selectionId);
+            if (!selection) context.addIssue({ code: "custom", message: `Named selection is unresolved: ${selectionId}` });
+            else if (!sourceBodies.has(selection.bodyId)) {
+              context.addIssue({ code: "custom", message: `Topology protected-void selection is incompatible with source bodies: ${selectionId}` });
+            }
+          }
         }
         break;
       }
