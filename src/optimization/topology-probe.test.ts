@@ -34,14 +34,14 @@ describe("runTopologyProbe", () => {
     });
   });
 
-  it("returns genuine structural metrics with the verified density field", async () => {
+  it("keeps Wasm-only topology output explicitly below verified truth", async () => {
     const { runTopologyProbe } = await import("./topology-probe");
 
     const result = await runTopologyProbe(input("balanced"));
 
     expect(reference.optimize).toHaveBeenCalledWith("balanced", undefined);
     expect(result).toMatchObject({
-      status: "verified",
+      status: "estimate",
       topology: {
         solver: "sparse-simp-lattice-wasm",
         initialCompliance: 100,

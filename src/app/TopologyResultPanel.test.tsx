@@ -30,6 +30,7 @@ test("labels arbitrary topology evidence from the active study instead of the dr
   expect(screen.getByText(/balanced · PA12/i)).toBeVisible();
   expect(screen.getByText("payload-down · emergency-side")).toBeVisible();
   expect(screen.getByText(/2 cases · 8 iter · 409 ms/i)).toBeVisible();
-  expect(screen.getByRole("button", { name: /export link STL/i })).toBeVisible();
+  expect(screen.getByText(/manufacturing export requires promoted post-extraction evidence/i)).toBeVisible();
+  expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
   expect(screen.queryByText(/hover · roll · pitch · yaw/i)).toBeNull();
 });

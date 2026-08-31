@@ -1,9 +1,5 @@
-import { useState } from "react";
-
 import type { ViewerBranch } from "../viewer/alternative-instances";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
-import { downloadEngineeringAssemblyGlb } from "../manufacturing/engineering-assembly-glb";
-import { downloadTopologyStl } from "../manufacturing/topology-stl";
 import "./topology-result-panel.css";
 
 export interface TopologyResultPanelProps {
@@ -25,12 +21,9 @@ const millimetres = (value: number) => {
 const megapascals = (value: number) => compact(value / 1_000_000);
 
 export function TopologyResultPanel({
-  branch, variant = "balanced", assemblyParts = [], assemblyId, topologySubject, materialLabel, loadCaseIds,
+  branch, variant = "balanced", topologySubject, materialLabel, loadCaseIds,
 }: TopologyResultPanelProps) {
-  const [exported, setExported] = useState(false);
-  const [glbStatus, setGlbStatus] = useState<"idle" | "exporting" | "exported" | "error">("idle");
   if (branch.result.status !== "verified" || !branch.result.topology) return null;
-  const output = branch.result.output;
   const metrics = branch.result.topology;
   const removed = 1 - metrics.materialFraction;
   const improvement = 1 - metrics.finalCompliance / metrics.initialCompliance;
@@ -54,30 +47,7 @@ export function TopologyResultPanel({
         <div><dt>Structural cases</dt><dd>{loadCaseIds.join(" · ")}</dd></div>
         <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
       </dl>
-      <button
-        type="button"
-        className="topology-result__export"
-        disabled={!safe}
-        onClick={() => {
-          downloadTopologyStl(branch.grid, output);
-          setExported(true);
-        }}
-      >{!safe ? "STL blocked: unsafe candidate" : exported ? "STL exported" : `Export ${topologySubject} STL`}</button>
-      <button
-        type="button"
-        className="topology-result__export"
-        disabled={!safe || glbStatus === "exporting"}
-        onClick={() => {
-          setGlbStatus("exporting");
-          void downloadEngineeringAssemblyGlb(branch.grid, output, assemblyParts, {
-            assemblyName: `verified_${assemblyId}_engineering_assembly`,
-            topologyName: `verified_topology_${topologySubject}_${materialLabel}`,
-            filename: `verified-${assemblyId}-engineering-assembly.glb`,
-          })
-            .then(() => setGlbStatus("exported"))
-            .catch(() => setGlbStatus("error"));
-        }}
-      >{!safe ? "GLB blocked: unsafe candidate" : glbStatus === "exporting" ? "Building PBR GLB…" : glbStatus === "exported" ? "Assembly GLB exported" : glbStatus === "error" ? "GLB export failed · retry" : "Export PBR assembly GLB"}</button>
+      <p className="topology-result__export">Manufacturing export requires promoted post-extraction evidence.</p>
     </section>
   );
 }

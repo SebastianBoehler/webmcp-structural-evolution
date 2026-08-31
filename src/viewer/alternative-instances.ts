@@ -157,7 +157,8 @@ export function extractAlternativeLayers(
     }
     if (branch.result.status !== "verified") {
       comparisons.push(
-        comparison(branch, sourceIndex, "unverified", `${branch.result.status}: ${branch.result.message}; not rendered`),
+        comparison(branch, sourceIndex, "unverified", `${branch.result.status}: ${branch.result.status === "estimate"
+          ? "interactive estimate only" : branch.result.message}; not rendered`),
       );
       continue;
     }

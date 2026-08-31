@@ -58,6 +58,14 @@ export interface StructuralAnalysisCaseFields {
 export type ProbeResult =
   | ({ readonly status: "verified"; readonly output: Float32Array; readonly topology?: TopologyMetrics; readonly analysis?: StructuralAnalysisFields; readonly grid?: VoxelGrid } & ProbeMetrics)
   | ({
+      readonly status: "estimate";
+      readonly truthLevel: "interactive-estimate";
+      readonly output: Float32Array;
+      readonly topology?: TopologyMetrics;
+      readonly analysis?: StructuralAnalysisFields;
+      readonly grid?: VoxelGrid;
+    } & ProbeMetrics)
+  | ({
       readonly status: "mismatch";
       readonly code: "verification-mismatch";
       readonly message: string;

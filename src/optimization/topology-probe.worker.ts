@@ -9,7 +9,7 @@ interface WorkerRequest {
 }
 
 function transferables(result: ProbeResult): Transferable[] {
-  if (result.status !== "verified") return [];
+  if (result.status !== "verified" && result.status !== "estimate") return [];
   const caseBuffers = result.analysis?.cases
     ? Object.values(result.analysis.cases).flatMap((fields) => fields
       ? [fields.displacement.buffer, fields.stress.buffer]

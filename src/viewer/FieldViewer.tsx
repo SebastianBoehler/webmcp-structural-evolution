@@ -86,7 +86,8 @@ function prepareViewer(
       model: base,
       comparisons: [],
       omittedCount: 0,
-      error: `${current.result.status}: ${current.result.message}; the unverified field is hidden.`,
+      error: `${current.result.status}: ${current.result.status === "estimate"
+        ? "interactive estimate only" : current.result.message}; the unverified field is hidden.`,
     };
   }
   try {

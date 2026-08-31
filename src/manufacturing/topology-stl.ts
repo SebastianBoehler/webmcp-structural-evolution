@@ -1,31 +1,15 @@
-import * as THREE from "three";
-import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import type { TopologyResult } from "../solver/topology/topology-contract";
 
-import type { VoxelGrid } from "../viewer/field-instances";
-import { createTopologySurface } from "../viewer/topology-surface";
-
-export function serializeTopologyStl(grid: VoxelGrid, density: Float32Array): DataView {
-  const material = new THREE.MeshBasicMaterial();
-  const surface = createTopologySurface(grid, density, material);
-  const compact = surface.geometry.clone();
-  try {
-    compact.applyMatrix4(surface.matrixWorld);
-    const output = new STLExporter().parse(new THREE.Mesh(compact, material), { binary: true });
-    if (!(output instanceof DataView)) throw new Error("Binary STL export did not produce a DataView.");
-    return output;
-  } finally {
-    surface.geometry.dispose();
-    compact.dispose();
-    material.dispose();
-  }
+export function serializeAcceptedTopologyStl(candidate: TopologyResult): DataView {
+  void candidate;
+  throw new Error("Topology manufacturing export requires Task 5 promotion and a promoted accepted candidate");
 }
 
 export function downloadTopologyStl(
-  grid: VoxelGrid,
-  density: Float32Array,
+  candidate: TopologyResult,
   filename = "topology-optimized-drone-frame.stl",
 ): void {
-  const output = serializeTopologyStl(grid, density);
+  const output = serializeAcceptedTopologyStl(candidate);
   const bytes = new Uint8Array(output.byteLength);
   bytes.set(new Uint8Array(output.buffer, output.byteOffset, output.byteLength));
   const url = URL.createObjectURL(new Blob([bytes], { type: "model/stl" }));

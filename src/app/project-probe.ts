@@ -17,9 +17,8 @@ export function buildProbeInput(variant: RunFoundationProbeInput["variant"], liv
 }
 
 export function storeProbeResult(result: ProbeResult): ProbeResult {
-  if (result.status === "verified") {
-    return {
-      status: "verified",
+  if (result.status === "verified" || result.status === "estimate") {
+    const stored = {
       output: new Float32Array(result.output),
       elapsedMs: result.elapsedMs,
       relativeL2: result.relativeL2,
@@ -37,6 +36,9 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
       } } : {}),
       ...(result.grid ? { grid: result.grid } : {}),
     };
+    return result.status === "estimate"
+      ? { ...stored, status: "estimate", truthLevel: "interactive-estimate" }
+      : { ...stored, status: "verified" };
   }
   if (result.status === "mismatch") {
     return {
@@ -59,7 +61,7 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
 
 export async function measuredProbe(result: ProbeResult): Promise<ProbeMeasurement> {
   let resultDigest: string;
-  if (result.status === "verified") {
+  if (result.status === "verified" || result.status === "estimate") {
     const bytes = new Uint8Array(result.output.byteLength);
     bytes.set(new Uint8Array(result.output.buffer, result.output.byteOffset, result.output.byteLength));
     const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -78,11 +80,14 @@ export async function measuredProbe(result: ProbeResult): Promise<ProbeMeasureme
   return {
     status: result.status,
     elapsedMs: result.elapsedMs,
-    ...(result.status === "verified" || result.status === "mismatch"
+    ...(result.status === "verified" || result.status === "estimate" || result.status === "mismatch"
       ? { relativeL2: result.relativeL2 }
       : {}),
-    ...(result.status === "verified" && result.topology ? { topology: { ...result.topology } } : {}),
+    ...((result.status === "verified" || result.status === "estimate") && result.topology
+      ? { topology: { ...result.topology } } : {}),
     resultDigest,
-    ...(result.status !== "verified" ? { code: result.code, message: result.message } : {}),
+    ...(result.status === "estimate"
+      ? { code: "interactive-estimate", message: "Legacy Wasm topology is an interactive estimate only" }
+      : result.status !== "verified" ? { code: result.code, message: result.message } : {}),
   };
 }

@@ -43,7 +43,8 @@ export async function runTopologyProbe(
       } : {}),
     };
     return {
-      status: "verified",
+      status: "estimate",
+      truthLevel: "interactive-estimate",
       output: result.density,
       elapsedMs: elapsed(startedAt),
       relativeL2: 0,
