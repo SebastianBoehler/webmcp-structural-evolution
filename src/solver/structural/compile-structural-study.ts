@@ -11,6 +11,7 @@ import {
 } from "./structural-grid-validation";
 import { validateStructuralPayloads } from "./structural-payload-validation";
 import { validateStructuralGeometryBinding } from "./structural-geometry-binding";
+import { validateStructuralOperatorEnvelope } from "./structural-operator-envelope";
 import { validateRigidModeRestraints } from "./structural-restraint-rank";
 import { selectionGroups, type SelectionGroup } from "./structural-selection-groups";
 
@@ -131,6 +132,10 @@ export async function compileStructuralStudy(
   validateMaterialFloat32(material.youngsModulusPa, material.poissonRatio);
   const payload = request.input.voxelPayload;
   const cellDimensions = dimensions(payload);
+  const cellSizeM = uniformCellSize(payload);
+  validateStructuralOperatorEnvelope(
+    material.youngsModulusPa, material.poissonRatio, cellSizeM,
+  );
   const cellCount = cellDimensions[0] * cellDimensions[1] * cellDimensions[2];
   if (!Number.isSafeInteger(cellCount) || cellCount > limits.maxCells) {
     throw new Error(`Structural grid cell limit exceeded: ${cellCount} > ${limits.maxCells}`);
@@ -155,7 +160,7 @@ export async function compileStructuralStudy(
   ensureLoadedIslandsSupported(groups, study.supports.length, components);
   const { fixedDofs, loadsN } = boundaryVectors(groups, study, dofCount);
   validateRigidModeRestraints(active, components, fixedDofs, {
-    cellDimensions, nodeDimensions, originM: origin(payload), cellSizeM: uniformCellSize(payload),
+    cellDimensions, nodeDimensions, originM: origin(payload), cellSizeM,
   });
   if (!loadsN.some((value, dof) => value !== 0 && fixedDofs[dof] === 0)) {
     throw new Error("Structural study applies no load to a free degree of freedom");
@@ -169,7 +174,7 @@ export async function compileStructuralStudy(
     sourceRevision: request.sourceRevision, studyId: study.id, bodyIds: [...study.bodyIds],
     consumedArtifactIds: [request.input.semanticMeshArtifactId, request.input.voxelArtifactId],
     grid: {
-      cellDimensions, nodeDimensions, originM: origin(payload), cellSizeM: uniformCellSize(payload),
+      cellDimensions, nodeDimensions, originM: origin(payload), cellSizeM,
     },
     activeCells: active, activeCellCount: active.filter(Boolean).length,
     fixedDofs, loadsN,
