@@ -15,8 +15,9 @@ import {
 } from "./structural-contract";
 import { isPositiveFiniteFloat32 } from "./structural-grid-validation";
 import { classifyExactBrepCells } from "./exact-brep-classifier";
+import { rasterizeStructuralBoundaries } from "./structural-boundary-raster";
 import {
-  ownedTriangles, pointInsideClosedBody, pointTriangleDistanceSquared, signedTriangleVolumeM3,
+  ownedTriangles, pointInsideClosedBody, signedTriangleVolumeM3,
   validateClosedTriangleBodies, type OwnedTriangle, type Point3,
 } from "./triangle-voxel-geometry";
 
@@ -40,8 +41,6 @@ export interface ProducedStructuralVoxelMesh {
 type Dims = readonly [number, number, number];
 const encode = (value: unknown) => Uint8Array.from(new TextEncoder().encode(JSON.stringify(value)));
 const cellIndex = (dims: Dims, x: number, y: number, z: number) => x + dims[0] * (y + dims[1] * z);
-const nodeIndex = (dims: Dims, x: number, y: number, z: number) =>
-  x + (dims[0] + 1) * (y + (dims[1] + 1) * z);
 
 async function checkedInput(input: StructuralVoxelProducerInput): Promise<SemanticMeshPayload> {
   const document = await defineDesignDocument(input.document);
@@ -164,9 +163,10 @@ function validateExactMeshCorrespondence(
     throw new Error("Exact BREP and semantic mesh solid volumes do not correspond");
   }
   const byBody = new Map<string, OwnedTriangle[]>();
-  for (const triangle of triangles) byBody.set(
-    triangle.bodyId, [...(byBody.get(triangle.bodyId) ?? []), triangle],
-  );
+  for (const triangle of triangles) {
+    const body = byBody.get(triangle.bodyId);
+    if (body) body.push(triangle); else byBody.set(triangle.bodyId, [triangle]);
+  }
   for (let z = 0; z < dims[2]; z += 1) for (let y = 0; y < dims[1]; y += 1) {
     for (let x = 0; x < dims[0]; x += 1) {
       const center = pointAt(origin, cellSizeM, x + .5, y + .5, z + .5);
@@ -186,44 +186,6 @@ function requiredSelectionIds(document: DesignDocument, bodyIds: ReadonlySet<str
     for (const load of study.loads) required.add(load.selectionId);
   }
   return required;
-}
-
-function selectedGroups(
-  topologyIds: readonly string[], triangles: readonly OwnedTriangle[], active: Uint32Array,
-  dims: Dims, origin: Point3, cellSizeM: number, toleranceM: number,
-) {
-  const cells: number[][] = [], nodes: number[][] = [];
-  const cellDistance = cellSizeM * Math.sqrt(3) * .5 + toleranceM;
-  for (const topologyId of topologyIds) {
-    const face = triangles.filter((triangle) => triangle.topologyId === topologyId);
-    const selectedCells: number[] = [];
-    for (let z = 0; z < dims[2]; z += 1) for (let y = 0; y < dims[1]; y += 1) {
-      for (let x = 0; x < dims[0]; x += 1) {
-        const index = cellIndex(dims, x, y, z);
-        if (active[index] !== 1) continue;
-        const center = pointAt(origin, cellSizeM, x + .5, y + .5, z + .5);
-        if (face.some((triangle) => pointTriangleDistanceSquared(center, triangle) <= cellDistance ** 2)) {
-          selectedCells.push(index);
-        }
-      }
-    }
-    const ownedNodes = new Set<number>();
-    for (const cell of selectedCells) {
-      const z = Math.floor(cell / (dims[0] * dims[1]));
-      const rest = cell - z * dims[0] * dims[1], y = Math.floor(rest / dims[0]), x = rest - y * dims[0];
-      for (const dz of [0, 1]) for (const dy of [0, 1]) for (const dx of [0, 1]) {
-        const point = pointAt(origin, cellSizeM, x + dx, y + dy, z + dz);
-        if (face.some((triangle) => pointTriangleDistanceSquared(point, triangle) <= toleranceM ** 2)) {
-          ownedNodes.add(nodeIndex(dims, x + dx, y + dy, z + dz));
-        }
-      }
-    }
-    if (selectedCells.length === 0 || ownedNodes.size === 0) {
-      throw new Error(`Exact face rasterized to an empty structural boundary: ${topologyId}`);
-    }
-    cells.push(selectedCells); nodes.push([...ownedNodes].sort((a, b) => a - b));
-  }
-  return { cells, nodes };
 }
 
 const offsets = (groups: readonly number[][]) => {
@@ -263,10 +225,10 @@ export async function produceStructuralVoxelMesh(
     throw new Error("A structural study selection is missing unique exact face ownership");
   }
   const topologyIds = resolveNamedSelections(selectionDocument, mesh.faces).map(({ topologyId }) => topologyId);
-  const groups = selectedGroups(
-    topologyIds, triangles, activeCells, dims, origin,
-    input.cellSizeM, input.rasterizationToleranceM,
-  );
+  const groups = await rasterizeStructuralBoundaries({
+    topologyIds, triangles, activeCells, dimensions: dims, originM: origin,
+    cellSizeM: input.cellSizeM, toleranceM: input.rasterizationToleranceM,
+  }, input.signal);
   const payload: StructuralVoxelPayload = {
     dimensions: Uint32Array.from(dims), originM: Float64Array.from(origin),
     cellSizeM: new Float64Array(3).fill(input.cellSizeM), activeCells,
