@@ -1,9 +1,11 @@
 import type {
   EngineeringJobError,
-  EngineeringJobEvent,
   EngineeringJobKind,
   EngineeringSolveRequest as BaseEngineeringSolveRequest,
+  EngineeringTruthLevel,
 } from "../cad/engineering-job-contract";
+import type { ArtifactRecord } from "../cad/artifact-contract";
+import type { ArtifactPayload } from "./artifact-store";
 
 export type EngineeringSolveRequest<Input> = BaseEngineeringSolveRequest<Input>;
 
@@ -17,12 +19,27 @@ export type UnsupportedCapabilityDecision = Readonly<{
 }>;
 export type CapabilityDecision = Readonly<{ supported: true }> | UnsupportedCapabilityDecision;
 
+export type SolverProgressEvent = Readonly<{
+  progress: number;
+}>;
+
+export type SolverGeneratedArtifact = Readonly<{
+  record: ArtifactRecord;
+  payload: ArtifactPayload;
+}>;
+
+export type SolverRunResult<Output> = Readonly<{
+  output: Output;
+  truthLevel: EngineeringTruthLevel;
+  artifacts: readonly [SolverGeneratedArtifact, ...SolverGeneratedArtifact[]];
+}>;
+
 export interface SolverAdapter<Input, Output> {
   readonly capability: SolverCapability;
   supports(request: EngineeringSolveRequest<Input>): CapabilityDecision;
   run(
     request: EngineeringSolveRequest<Input>,
     signal: AbortSignal,
-    emit: (event: EngineeringJobEvent) => void,
-  ): Promise<Output>;
+    emit: (event: SolverProgressEvent) => void,
+  ): Promise<SolverRunResult<Output>>;
 }

@@ -159,8 +159,29 @@ export type {
   CapabilityDecision,
   SolverAdapter,
   SolverCapability,
+  SolverGeneratedArtifact,
+  SolverProgressEvent,
+  SolverRunResult,
   UnsupportedCapabilityDecision,
 } from "../engineering/solver-adapter";
+export {
+  ArtifactStoreError,
+  createArtifactStore,
+  digestArtifactPayload,
+  synchronizeArtifactStoreInvalidation,
+  type ArtifactPayload,
+  type ArtifactStore,
+  type ArtifactStoreErrorCode,
+} from "../engineering/artifact-store";
+export {
+  createEngineeringJobRunner,
+  type EngineeringJobCompletion,
+  type EngineeringJobHandle,
+  type EngineeringJobRunner,
+  type EngineeringJobRunnerOptions,
+  type EngineeringJobSubscriber,
+} from "../engineering/job-runner";
+export type { JobLedgerEntry } from "../engineering/job-ledger";
 export {
   applyDesignSessionTransaction,
   attachDesignSessionArtifacts,

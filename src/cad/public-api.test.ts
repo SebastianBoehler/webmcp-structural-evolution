@@ -10,6 +10,7 @@ describe("CAD public API", () => {
       "AngleExpressionSchema",
       "ArtifactKindSchema",
       "ArtifactRecordSchema",
+      "ArtifactStoreError",
       "AssemblyInstanceSchema",
       "BodySchema",
       "CAD_RESOURCE_LIMITS",
@@ -90,9 +91,11 @@ describe("CAD public API", () => {
       "childRevisions",
       "commitDesignRevision",
       "createArtifactIndex",
+      "createArtifactStore",
       "createDesignDocument",
       "createDesignHistory",
       "createDesignSession",
+      "createEngineeringJobRunner",
       "createOcctCadAdapter",
       "createSolverRegistry",
       "defineActionReceipt",
@@ -100,10 +103,12 @@ describe("CAD public API", () => {
       "defineCadEvaluationRequest",
       "defineDesignDocument",
       "defineEngineeringSolveRequest",
+      "digestArtifactPayload",
       "digestCadOutputPayload",
       "inspectDesignSession",
       "invalidateArtifacts",
       "parentRevision",
+      "synchronizeArtifactStoreInvalidation",
     ]);
   });
 });

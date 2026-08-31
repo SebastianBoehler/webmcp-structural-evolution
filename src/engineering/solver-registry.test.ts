@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 
+import { defineArtifactRecord } from "../cad/artifact-contract";
 import { createDesignDocument } from "../cad/document-schema";
+import { digestArtifactPayload } from "./artifact-store";
 import type { EngineeringSolveRequest, SolverAdapter } from "./solver-adapter";
 import { createSolverRegistry, SolverRegistryError } from "./solver-registry";
 
@@ -19,7 +21,26 @@ function adapter(
     supports: () => supported
       ? { supported: true }
       : { supported: false, error: capabilityError },
-    run: async () => ({ ok: true }),
+    run: async (request) => {
+      const payload = new Uint8Array([1]).buffer as ArrayBuffer;
+      return {
+        output: { ok: true },
+        truthLevel: "converged-numerical-solve",
+        artifacts: [{
+          record: await defineArtifactRecord({
+            kind: "field",
+            sourceRevision: request.sourceRevision,
+            producer: { name: "registry-test", version: "1.0.0" },
+            settingsDigest: "b".repeat(64),
+            contentDigest: await digestArtifactPayload(payload),
+            units: "m",
+            mediaType: "application/vnd.engineering.field",
+            dependencies: [],
+          }),
+          payload,
+        }],
+      };
+    },
   };
 }
 
