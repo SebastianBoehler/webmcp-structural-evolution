@@ -86,6 +86,34 @@ function delayNextDigest(matching: (text: string) => boolean) {
   return { release, spy, started: startedPromise };
 }
 
+function overBudgetSemanticMeshPayload() {
+  const record = {
+    id: "face-1", bodyId: "body-1",
+    signature: {
+      ownerFeatureId: "base", kind: "face", geometry: "plane",
+      centroidM: [0, 0, 0], measureSI: 1, adjacentKinds: [],
+    },
+  };
+  let recordReads = 0;
+  const faces = new Proxy(
+    Array.from({ length: CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords + 1 }, () => record),
+    {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) recordReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  return {
+    payload: {
+      positionsM: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(),
+      faces, triangleFaceIndices: new Uint32Array(), edgePointsM: new Float32Array(),
+      edgePointRanges: new Uint32Array(), edges: [], polylineEdgeIndices: new Uint32Array(),
+    },
+    recordReads: () => recordReads,
+  };
+}
+
 class ControlledWorker implements OcctWorkerLike {
   readonly posted: OcctWorkerRequest[] = [];
   terminateCount = 0;
@@ -417,7 +445,36 @@ describe("OCCT worker client", () => {
     }
   });
 
-  it("maps an over-budget worker semantic payload to resource-limit before record traversal", async () => {
+  it.each([
+    ["missing", undefined],
+    ["non-string", 42],
+  ] as const)("quarantines a %s success envelope before its oversized payload is attributed", async (_kind, requestId) => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const evaluation = client.evaluate(
+      await request("unowned-success"), new AbortController().signal, (event) => events.push(event),
+    );
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    const oversized = overBudgetSemanticMeshPayload();
+    const message: Record<string, unknown> = {
+      type: "succeeded", sourceRevision: revisionFor("unowned-success"),
+      requestedOutputs: ["semantic-mesh"],
+      results: [{ output: "semantic-mesh", payload: oversized.payload }],
+    };
+    if (requestId !== undefined) message.requestId = requestId;
+    worker.emit(message);
+    await evaluation;
+
+    expect(events).toMatchObject([{
+      requestId: "unowned-success", state: "failed", error: { code: "internal-error" },
+    }]);
+    expect(oversized.recordReads()).toBe(0);
+    expect(worker.terminateCount).toBe(1);
+    expect(worker.listenerCount).toBe(0);
+  });
+
+  it("maps a correctly owner-bound over-budget semantic payload to resource-limit before record traversal", async () => {
     const worker = new ControlledWorker();
     const client = createOcctWorkerClient(() => worker);
     const events: CadEvaluationEvent[] = [];
@@ -425,33 +482,13 @@ describe("OCCT worker client", () => {
       await request("resource-limit"), new AbortController().signal, (event) => events.push(event),
     );
     await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
-    const record = {
-      id: "face-1", bodyId: "body-1",
-      signature: {
-        ownerFeatureId: "base", kind: "face", geometry: "plane",
-        centroidM: [0, 0, 0], measureSI: 1, adjacentKinds: [],
-      },
-    };
-    let recordReads = 0;
-    const faces = new Proxy(
-      Array.from({ length: CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords + 1 }, () => record),
-      {
-        get(target, property, receiver) {
-          if (typeof property === "string" && /^\d+$/.test(property)) recordReads += 1;
-          return Reflect.get(target, property, receiver);
-        },
-      },
-    );
+    const oversized = overBudgetSemanticMeshPayload();
     worker.emit({
       type: "succeeded", requestId: "resource-limit", sourceRevision: revisionFor("resource-limit"),
       requestedOutputs: ["semantic-mesh"],
       results: [{
         output: "semantic-mesh",
-        payload: {
-          positionsM: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(),
-          faces, triangleFaceIndices: new Uint32Array(), edgePointsM: new Float32Array(),
-          edgePointRanges: new Uint32Array(), edges: [], polylineEdgeIndices: new Uint32Array(),
-        },
+        payload: oversized.payload,
       }],
     });
     await evaluation;
@@ -459,7 +496,7 @@ describe("OCCT worker client", () => {
     expect(events).toMatchObject([{
       requestId: "resource-limit", state: "failed", error: { code: "resource-limit" },
     }]);
-    expect(recordReads).toBe(0);
+    expect(oversized.recordReads()).toBe(0);
   });
 
   it("rejects malformed worker messages as protocol failures", async () => {
@@ -587,6 +624,49 @@ describe("OCCT worker client", () => {
     expect(events.filter((event) => event.requestId === "second").map((event) => event.state))
       .toEqual(["succeeded"]);
     expect(worker.terminateCount).toBe(0);
+  });
+
+  it("does not let a later oversized same-ID success steal a settling valid terminal", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const originalParse = OcctWorkerEventSchema.safeParseAsync.bind(OcctWorkerEventSchema);
+    let releaseValidation: () => void = () => undefined;
+    let markValidationStarted: () => void = () => undefined;
+    const validationGate = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const validationStarted = new Promise<void>((resolve) => { markValidationStarted = resolve; });
+    const parse = vi.spyOn(OcctWorkerEventSchema, "safeParseAsync").mockImplementationOnce(async (value) => {
+      markValidationStarted();
+      await validationGate;
+      return originalParse(value);
+    });
+    try {
+      const evaluation = client.evaluate(
+        await request("first-success-wins"), new AbortController().signal, (event) => events.push(event),
+      );
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+      worker.emit({
+        type: "succeeded", requestId: "first-success-wins", sourceRevision: revisionFor("first-success-wins"),
+        requestedOutputs: ["mass-properties"],
+        results: [{ output: "mass-properties", payload: massProperties }],
+      });
+      await validationStarted;
+      const oversized = overBudgetSemanticMeshPayload();
+      worker.emit({
+        type: "succeeded", requestId: "first-success-wins", sourceRevision: revisionFor("first-success-wins"),
+        requestedOutputs: ["semantic-mesh"],
+        results: [{ output: "semantic-mesh", payload: oversized.payload }],
+      });
+      releaseValidation();
+      await evaluation;
+
+      expect(events.map(({ state }) => state)).toEqual(["succeeded"]);
+      expect(oversized.recordReads()).toBe(0);
+      expect(worker.terminateCount).toBe(0);
+    } finally {
+      releaseValidation();
+      parse.mockRestore();
+    }
   });
 
   it("validates content-addressed B-rep success events asynchronously", async () => {

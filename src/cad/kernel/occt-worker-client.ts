@@ -177,10 +177,16 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       return;
     }
     const requestId = "requestId" in data ? data.requestId : undefined;
-    if (typeof requestId === "string" && requestId !== owner.requestId) {
+    const ownsActiveRequest = typeof requestId === "string" && requestId === owner.requestId;
+    if (settling === owner) {
+      if (!ownsActiveRequest) replaceWorker();
+      return;
+    }
+    if (!ownsActiveRequest) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
+    settling = owner;
     try {
       assertOcctWorkerEventPayloadLimits(data);
     } catch (error) {
@@ -191,11 +197,6 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       protocolFailure("OCCT worker returned an invalid resource payload");
       return;
     }
-    if (settling === owner) {
-      void OcctWorkerEventSchema.safeParseAsync(data).catch(() => undefined);
-      return;
-    }
-    settling = owner;
     void OcctWorkerEventSchema.safeParseAsync(data).then((parsed) => {
       if (active !== owner || settling !== owner) return;
       if (!parsed.success || (parsed.data.type !== "succeeded"
