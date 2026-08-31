@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { defineArtifactRecord } from "../artifact-contract";
+import { CAD_RESOURCE_LIMITS } from "../cad-resource-limits";
 import { createDesignDocument } from "../document-schema";
 import { digestCadOutputPayload } from "../rebuild-payload";
 import {
@@ -62,6 +63,27 @@ async function stepRequest(requestId: string): Promise<ExactStepImportRequest> {
   return ExactStepImportRequestSchema.parseAsync({
     requestId, sourceRevision, step: { artifact, payload }, settings: {},
   });
+}
+
+function delayNextDigest(matching: (text: string) => boolean) {
+  const originalDigest = globalThis.crypto.subtle.digest.bind(globalThis.crypto.subtle);
+  let release: () => void = () => undefined;
+  let started = false;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let signalStarted: () => void = () => undefined;
+  const startedPromise = new Promise<void>((resolve) => { signalStarted = resolve; });
+  const spy = vi.spyOn(globalThis.crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+    const bytes = ArrayBuffer.isView(data)
+      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      : new Uint8Array(data);
+    if (!started && matching(new TextDecoder().decode(bytes))) {
+      started = true;
+      signalStarted();
+      await gate;
+    }
+    return originalDigest(algorithm, data);
+  });
+  return { release, spy, started: startedPromise };
 }
 
 class ControlledWorker implements OcctWorkerLike {
@@ -300,6 +322,144 @@ describe("OCCT worker client", () => {
     await Promise.all([first, second]);
 
     expect(postedIds()).toEqual(["first-ingress", "second-ingress"]);
+  });
+
+  it("does not let a later STEP import overtake a delayed evaluation ingress", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const evaluationRequest = await request("evaluate-first");
+    const importRequest = await stepRequest("import-second");
+    const delay = delayNextDigest((text) => text.includes('"schemaVersion":2'));
+    try {
+      const evaluation = client.evaluate(evaluationRequest, new AbortController().signal, () => undefined);
+      const imported = client.importStep(importRequest, new AbortController().signal);
+
+      await delay.started;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(worker.posted).toEqual([]);
+      delay.release();
+
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+      expect(worker.posted[0]).toMatchObject({ type: "evaluate", request: { requestId: "evaluate-first" } });
+      worker.emit({ type: "failed", requestId: "evaluate-first", error: { code: "feature-failed", message: "stop" } });
+      await evaluation;
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(2));
+      expect(worker.posted[1]).toMatchObject({ type: "import-step", request: { requestId: "import-second" } });
+      worker.emit({ type: "failed", requestId: "import-second", error: { code: "feature-failed", message: "stop" } });
+      await expect(imported).rejects.toThrow(/feature-failed/i);
+    } finally {
+      delay.spy.mockRestore();
+    }
+  });
+
+  it("does not let a later evaluation overtake a delayed STEP-import ingress", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const importRequest = await stepRequest("import-first");
+    const evaluationRequest = await request("evaluate-second");
+    const delay = delayNextDigest((text) => text.includes('"contentDigest"'));
+    try {
+      const imported = client.importStep(importRequest, new AbortController().signal);
+      const evaluation = client.evaluate(evaluationRequest, new AbortController().signal, () => undefined);
+
+      await delay.started;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(worker.posted).toEqual([]);
+      delay.release();
+
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+      expect(worker.posted[0]).toMatchObject({ type: "import-step", request: { requestId: "import-first" } });
+      worker.emit({ type: "failed", requestId: "import-first", error: { code: "feature-failed", message: "stop" } });
+      await expect(imported).rejects.toThrow(/feature-failed/i);
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(2));
+      expect(worker.posted[1]).toMatchObject({ type: "evaluate", request: { requestId: "evaluate-second" } });
+      worker.emit({ type: "failed", requestId: "evaluate-second", error: { code: "feature-failed", message: "stop" } });
+      await evaluation;
+    } finally {
+      delay.spy.mockRestore();
+    }
+  });
+
+  it("makes a delayed invalid STEP import consume its ingress turn before a later evaluation", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const importRequest = await stepRequest("invalid-import-first");
+    const invalid = {
+      ...importRequest,
+      step: {
+        ...importRequest.step,
+        payload: { bytes: new TextEncoder().encode("tampered STEP bytes") },
+      },
+    } as ExactStepImportRequest;
+    const evaluationRequest = await request("evaluate-after-invalid");
+    const events: CadEvaluationEvent[] = [];
+    const delay = delayNextDigest((text) => text.includes('"contentDigest"'));
+    try {
+      const imported = client.importStep(invalid, new AbortController().signal);
+      const evaluation = client.evaluate(
+        evaluationRequest, new AbortController().signal, (event) => events.push(event),
+      );
+
+      await delay.started;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(worker.posted).toEqual([]);
+      delay.release();
+      await expect(imported).rejects.toThrow(/content digest/i);
+      await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+      expect(worker.posted[0]).toMatchObject({ type: "evaluate", request: { requestId: "evaluate-after-invalid" } });
+      worker.emit({ type: "failed", requestId: "evaluate-after-invalid", error: { code: "feature-failed", message: "stop" } });
+      await evaluation;
+      expect(events).toMatchObject([{
+        requestId: "evaluate-after-invalid", state: "failed", error: { code: "feature-failed" },
+      }]);
+    } finally {
+      delay.spy.mockRestore();
+    }
+  });
+
+  it("maps an over-budget worker semantic payload to resource-limit before record traversal", async () => {
+    const worker = new ControlledWorker();
+    const client = createOcctWorkerClient(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const evaluation = client.evaluate(
+      await request("resource-limit"), new AbortController().signal, (event) => events.push(event),
+    );
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    const record = {
+      id: "face-1", bodyId: "body-1",
+      signature: {
+        ownerFeatureId: "base", kind: "face", geometry: "plane",
+        centroidM: [0, 0, 0], measureSI: 1, adjacentKinds: [],
+      },
+    };
+    let recordReads = 0;
+    const faces = new Proxy(
+      Array.from({ length: CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords + 1 }, () => record),
+      {
+        get(target, property, receiver) {
+          if (typeof property === "string" && /^\d+$/.test(property)) recordReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    worker.emit({
+      type: "succeeded", requestId: "resource-limit", sourceRevision: revisionFor("resource-limit"),
+      requestedOutputs: ["semantic-mesh"],
+      results: [{
+        output: "semantic-mesh",
+        payload: {
+          positionsM: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(),
+          faces, triangleFaceIndices: new Uint32Array(), edgePointsM: new Float32Array(),
+          edgePointRanges: new Uint32Array(), edges: [], polylineEdgeIndices: new Uint32Array(),
+        },
+      }],
+    });
+    await evaluation;
+
+    expect(events).toMatchObject([{
+      requestId: "resource-limit", state: "failed", error: { code: "resource-limit" },
+    }]);
+    expect(recordReads).toBe(0);
   });
 
   it("rejects malformed worker messages as protocol failures", async () => {

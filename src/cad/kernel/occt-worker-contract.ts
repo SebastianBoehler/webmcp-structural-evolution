@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { RevisionSchema } from "../../domain/snapshots";
 import { SemanticReferenceSchema } from "../document-schema";
+import { assertSemanticMeshPayloadLimits } from "../rebuild-payload";
 import {
   CadEvaluationEventSchema,
   CadEvaluationRequestSchema,
@@ -106,6 +107,17 @@ export const OcctWorkerEventSchema = z.discriminatedUnion("type", [
   FailedSchema,
   CancelledSchema,
 ]);
+
+export function assertOcctWorkerEventPayloadLimits(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  const event = value as { type?: unknown; results?: unknown };
+  if (event.type !== "succeeded" || !Array.isArray(event.results)) return;
+  for (const result of event.results) {
+    if (!result || typeof result !== "object") continue;
+    const output = result as { output?: unknown; payload?: unknown };
+    if (output.output === "semantic-mesh") assertSemanticMeshPayloadLimits(output.payload);
+  }
+}
 
 type CadSuccess = Extract<CadEvaluationEvent, { state: "succeeded" }>;
 

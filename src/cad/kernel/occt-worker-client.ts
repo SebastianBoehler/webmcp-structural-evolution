@@ -1,14 +1,12 @@
 import {
   CadEvaluationEventSchema,
-  ExactStepImportRequestSchema,
   ExactStepImportResultSchema,
   type CadEvaluationEvent,
   type CadEvaluationRequest,
-  type ExactStepImportRequest,
-  type ExactStepImportResult,
 } from "../runtime-contracts";
-import { verifiedCadEvaluationRequest } from "./cad-request-ingress";
+import { CadResourceLimitError } from "../cad-resource-limits";
 import {
+  assertOcctWorkerEventPayloadLimits,
   OcctWorkerEventSchema,
   OcctWorkerRequestSchema,
   type OcctWorkerEvent,
@@ -17,12 +15,12 @@ import type {
   OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent, PendingOcctOperation,
 } from "./occt-worker-client-types";
 import { cadFailureCode, isFatalOcctFailure } from "./occt-worker-failure";
+import { createOcctWorkerIngress } from "./occt-worker-ingress";
 export type { OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent } from "./occt-worker-client-types";
 export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
   let active: PendingOcctOperation | undefined;
   let settling: PendingOcctOperation | undefined;
-  let evaluationIngress = Promise.resolve();
   const queue: PendingOcctOperation[] = [];
   const emit = (event: CadEvaluationEvent) => {
     if (active?.kind === "evaluation") active.emit(CadEvaluationEventSchema.parse(event));
@@ -58,6 +56,15 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     });
     else active?.reject(new Error(`Exact STEP import protocol failure: ${message}`));
     replaceWorker();
+    finish();
+  };
+  const resourceLimitFailure = (error: CadResourceLimitError) => {
+    if (!active) return;
+    if (active.kind === "evaluation") emit({
+      requestId: active.requestId, state: "failed",
+      error: { code: "resource-limit", message: error.message },
+    });
+    else active.reject(error);
     finish();
   };
   const acceptEvent = (event: OcctWorkerEvent) => {
@@ -174,6 +181,16 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
       protocolFailure("OCCT worker response did not match the active request");
       return;
     }
+    try {
+      assertOcctWorkerEventPayloadLimits(data);
+    } catch (error) {
+      if (error instanceof CadResourceLimitError) {
+        resourceLimitFailure(error);
+        return;
+      }
+      protocolFailure("OCCT worker returned an invalid resource payload");
+      return;
+    }
     if (settling === owner) {
       void OcctWorkerEventSchema.safeParseAsync(data).catch(() => undefined);
       return;
@@ -263,37 +280,8 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
   }
 
-  return {
-    async evaluate(
-      request: CadEvaluationRequest,
-      signal: AbortSignal,
-      eventEmitter: (event: CadEvaluationEvent) => void,
-    ): Promise<void> {
-      const ingress = evaluationIngress.then(() =>
-        verifiedCadEvaluationRequest(request, eventEmitter));
-      evaluationIngress = ingress.then(() => undefined, () => undefined);
-      const validated = await ingress;
-      if (!validated) return;
-      await new Promise<void>((resolve) => {
-        queue.push({
-          kind: "evaluation", requestId: validated.requestId,
-          request: validated, signal, emit: eventEmitter, resolve,
-        });
-        void startNext();
-      });
-    },
-    async importStep(
-      request: ExactStepImportRequest,
-      signal: AbortSignal,
-    ): Promise<ExactStepImportResult> {
-      const validated = await ExactStepImportRequestSchema.parseAsync(request);
-      return new Promise((resolveResult, reject) => {
-        queue.push({
-          kind: "step-import", requestId: validated.requestId,
-          request: validated, signal, resolve: () => undefined, resolveResult, reject,
-        });
-        void startNext();
-      });
-    },
-  };
+  return createOcctWorkerIngress((operation) => {
+    queue.push(operation);
+    void startNext();
+  });
 }
