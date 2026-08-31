@@ -14,6 +14,7 @@ describe("STEP exchange", () => {
     const imported = importStepBytes(kernel, bytes);
     try {
       expect(kernel.isValid(imported)).toBe(true);
+      expect(kernel.isSolid(imported)).toBe(true);
       expect(kernel.subShapeCount(imported, "solid")).toBe(1);
       expect(kernel.getVolume(imported)).toBeCloseTo(0.027, 10);
       expect(kernel.getBoundingBox(imported)).toMatchObject({
@@ -38,6 +39,7 @@ describe("STEP exchange", () => {
         expect(text).toContain("ISO-10303-21");
         expect(text).toContain("SI_UNIT(.MILLI.,.METRE.)");
         expect(kernel.isValid(imported)).toBe(true);
+        expect(kernel.isSolid(imported)).toBe(true);
         expect(kernel.getVolume(imported)).toBeCloseTo(0.000032, 12);
         expect(kernel.getBoundingBox(imported)).toMatchObject({
           xmin: expect.closeTo(0, 9), ymin: expect.closeTo(0, 9), zmin: expect.closeTo(0, 9),
@@ -102,6 +104,34 @@ describe("STEP exchange", () => {
       kernel.release(second);
       kernel.release(secondAtOrigin);
       kernel.release(first);
+    }
+    expect(kernel.shapeCount).toBe(0);
+  });
+
+  it("rejects a STEP compound with one solid plus a free face without leaking handles", async () => {
+    using kernel = await OcctKernel.init();
+    const solid = kernel.makeBox(0.01, 0.01, 0.01);
+    const freeFace = kernel.buildTriFace(
+      { x: 0.02, y: 0, z: 0 },
+      { x: 0.03, y: 0, z: 0 },
+      { x: 0.02, y: 0.01, z: 0 },
+    );
+    const compound = kernel.makeCompound([solid, freeFace]);
+    try {
+      expect(kernel.isValid(compound)).toBe(true);
+      expect(kernel.isSolid(compound)).toBe(false);
+      expect(kernel.subShapeCount(compound, "solid")).toBe(1);
+      const step = exportStepBytes(kernel, compound);
+      const beforeImport = kernel.shapeCount;
+
+      expect(() => importStepBytes(kernel, step)).toThrowError(expect.objectContaining({
+        name: "CadRebuildError", code: "invalid-solid",
+      }));
+      expect(kernel.shapeCount).toBe(beforeImport);
+    } finally {
+      kernel.release(compound);
+      kernel.release(freeFace);
+      kernel.release(solid);
     }
     expect(kernel.shapeCount).toBe(0);
   });

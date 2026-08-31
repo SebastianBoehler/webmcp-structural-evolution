@@ -22,6 +22,64 @@ const someValue = (values: ArrayLike<number>, predicate: (value: number) => bool
   return false;
 };
 
+type RawRecord = Record<string, unknown>;
+
+function rawRecord(value: unknown): RawRecord | undefined {
+  return value && typeof value === "object" ? value as RawRecord : undefined;
+}
+
+function addUtf8StringBytes(total: number, value: unknown): number {
+  if (typeof value !== "string") return total;
+  let next = total;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x80) next += 1;
+    else if (code < 0x800) next += 2;
+    else if (code >= 0xd800 && code <= 0xdbff
+      && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      next += 4;
+      index += 1;
+    } else next += 3;
+    assertCadResourceLimit(
+      "semantic topology string bytes", next, CAD_RESOURCE_LIMITS.semanticMeshTopologyStringBytes,
+    );
+  }
+  return next;
+}
+
+export function assertSemanticMeshPayloadLimits(value: unknown): void {
+  const mesh = rawRecord(value);
+  if (!mesh || !Array.isArray(mesh.faces) || !Array.isArray(mesh.edges)) return;
+  assertCadResourceLimit(
+    "semantic topology records", mesh.faces.length + mesh.edges.length,
+    CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords,
+  );
+  let adjacencyEntries = 0;
+  let stringBytes = 0;
+  const inspectTopology = (topology: unknown) => {
+    const record = rawRecord(topology);
+    if (!record) return;
+    stringBytes = addUtf8StringBytes(stringBytes, record.id);
+    stringBytes = addUtf8StringBytes(stringBytes, record.bodyId);
+    const signature = rawRecord(record.signature);
+    if (!signature) return;
+    stringBytes = addUtf8StringBytes(stringBytes, signature.ownerFeatureId);
+    stringBytes = addUtf8StringBytes(stringBytes, signature.kind);
+    stringBytes = addUtf8StringBytes(stringBytes, signature.geometry);
+    if (!Array.isArray(signature.adjacentKinds)) return;
+    adjacencyEntries += signature.adjacentKinds.length;
+    assertCadResourceLimit(
+      "semantic topology adjacency entries", adjacencyEntries,
+      CAD_RESOURCE_LIMITS.semanticMeshTopologyAdjacencyEntries,
+    );
+    for (const kind of signature.adjacentKinds) {
+      stringBytes = addUtf8StringBytes(stringBytes, kind);
+    }
+  };
+  for (const topology of mesh.faces) inspectTopology(topology);
+  for (const topology of mesh.edges) inspectTopology(topology);
+}
+
 export const OpaqueBytesPayloadSchema = z.object({
   bytes: typedArray<Uint8Array>("Uint8Array"),
 }).strict();
@@ -41,7 +99,7 @@ const SemanticTopologySchema = z.object({
   signature: TopologySignaturePayloadSchema,
 }).strict();
 
-export const SemanticMeshPayloadSchema = z.object({
+const SemanticMeshPayloadObjectSchema = z.object({
   positionsM: typedArray<Float32Array>("Float32Array"),
   normals: typedArray<Float32Array>("Float32Array"),
   indices: typedArray<Uint32Array>("Uint32Array"),
@@ -95,6 +153,19 @@ export const SemanticMeshPayloadSchema = z.object({
     context.addIssue({ code: "custom", message: "Semantic edge ownership is unavailable" });
   }
 });
+
+export const SemanticMeshPayloadSchema = z.unknown().transform((value, context) => {
+  try {
+    assertSemanticMeshPayloadLimits(value);
+    return value;
+  } catch (error) {
+    if (error instanceof CadResourceLimitError) {
+      context.addIssue({ code: "custom", message: error.message });
+      return z.NEVER;
+    }
+    throw error;
+  }
+}).pipe(SemanticMeshPayloadObjectSchema);
 
 export const MassPropertiesPayloadSchema = z.object({
   densityKgM3: finite.positive(),

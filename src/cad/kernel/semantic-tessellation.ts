@@ -6,13 +6,19 @@ import {
   CAD_RESOURCE_LIMITS,
   type SemanticMeshUsage,
 } from "../cad-resource-limits";
-import type { SemanticMeshPayload, SemanticTopology } from "../rebuild-payload";
+import type { DesignDocument } from "../document-schema";
+import {
+  assertSemanticMeshPayloadLimits,
+  type SemanticMeshPayload,
+  type SemanticTopology,
+} from "../rebuild-payload";
 import {
   matchTopologyReference,
   topologyGeometryKey,
   type TopologySignature,
 } from "./persistent-references";
 import { CadRebuildError } from "./rebuild-errors";
+import { repairConsumersForTopology, type SelectionDocument } from "./named-selection-resolution";
 import {
   collectTopology,
   type CollectedTopology,
@@ -43,10 +49,11 @@ export interface RebuiltBodyShape {
 
 function assignOwner(
   signature: TopologySignature,
-  lineageFeatureIds: readonly string[],
+  body: RebuiltBodyShape,
   featureTopology: ReadonlyMap<string, CollectedTopology>,
+  document: SelectionDocument,
 ): string {
-  for (const featureId of lineageFeatureIds) {
+  for (const featureId of body.lineageFeatureIds) {
     const candidates = signature.kind === "face"
       ? featureTopology.get(featureId)?.faces
       : featureTopology.get(featureId)?.edges;
@@ -60,12 +67,17 @@ function assignOwner(
     );
     if (match.ok) return featureId;
     if (match.error.candidateIds.length > 0) {
-      throw new CadRebuildError("reference-requires-repair", match.error.message);
+      throw new CadRebuildError(
+        "reference-requires-repair",
+        match.error.message,
+        repairConsumersForTopology(document, body.id, signature.kind, [featureId]),
+      );
     }
   }
   throw new CadRebuildError(
     "reference-requires-repair",
     `Topology owner matched no feature lineage candidate: ${topologyGeometryKey(signature)}`,
+    repairConsumersForTopology(document, body.id, signature.kind, body.lineageFeatureIds),
   );
 }
 
@@ -73,12 +85,13 @@ function semanticRecords(
   topology: readonly HashedSignature[],
   body: RebuiltBodyShape,
   featureTopology: ReadonlyMap<string, CollectedTopology>,
+  document: SelectionDocument,
 ): { readonly records: SemanticTopology[]; readonly indexByHash: ReadonlyMap<number, number> } {
   const owned = topology.map(({ hash, signature }) => ({
     hash,
     signature: {
       ...signature,
-      ownerFeatureId: assignOwner(signature, body.lineageFeatureIds, featureTopology),
+      ownerFeatureId: assignOwner(signature, body, featureTopology, document),
       centroidM: [...signature.centroidM] as [number, number, number],
       adjacentKinds: [...signature.adjacentKinds],
     },
@@ -87,7 +100,11 @@ function semanticRecords(
   const records = owned.map(({ signature }) => {
     const id = `${signature.kind}:${body.id}:${signature.ownerFeatureId}:${topologyGeometryKey(signature)}`;
     if (semanticIds.has(id)) {
-      throw new CadRebuildError("reference-requires-repair", `Semantic topology ID is ambiguous: ${id}`);
+      throw new CadRebuildError(
+        "reference-requires-repair",
+        `Semantic topology ID is ambiguous: ${id}`,
+        repairConsumersForTopology(document, body.id, signature.kind, [signature.ownerFeatureId]),
+      );
     }
     semanticIds.add(id);
     return { id, bodyId: body.id, signature };
@@ -112,6 +129,7 @@ export function tessellateSemanticBodies(
   kernel: OcctKernel,
   features: readonly RebuiltFeatureShape[],
   bodies: readonly RebuiltBodyShape[],
+  document: Pick<DesignDocument, "namedSelections" | "mates">,
 ): SemanticMeshPayload {
   const featureTopology = new Map<string, CollectedTopology>();
   let featureTopologyRecords = 0;
@@ -148,8 +166,8 @@ export function tessellateSemanticBodies(
 
   for (const body of bodies) {
     const topology = collectTopology(kernel, body.shape, body.terminalFeatureId);
-    const faces = semanticRecords(topology.faces, body, featureTopology);
-    const edges = semanticRecords(topology.edges, body, featureTopology);
+    const faces = semanticRecords(topology.faces, body, featureTopology, document);
+    const edges = semanticRecords(topology.edges, body, featureTopology, document);
     const mesh = kernel.meshShape(body.shape, {
       linearDeflection: SEMANTIC_LINEAR_DEFLECTION_M,
       angularDeflection: SEMANTIC_ANGULAR_DEFLECTION_RAD,
@@ -237,7 +255,7 @@ export function tessellateSemanticBodies(
     edgePointOffset += wireframe.points.length / 3;
   }
 
-  return {
+  const payload = {
     positionsM: concatFloat32(positionParts, positionLength),
     normals: concatFloat32(normalParts, normalLength),
     indices: concatOffsetUint32(indexParts, indexLength),
@@ -248,4 +266,6 @@ export function tessellateSemanticBodies(
     edges: allEdges,
     polylineEdgeIndices: concatUint32(polylineEdgeParts, polylineEdgeLength),
   };
+  assertSemanticMeshPayloadLimits(payload);
+  return payload;
 }

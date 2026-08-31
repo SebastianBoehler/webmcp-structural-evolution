@@ -3,6 +3,8 @@ export const CAD_RESOURCE_LIMITS = Object.freeze({
   semanticMeshTriangles: 4_000_000,
   semanticMeshEdgePoints: 2_000_000,
   semanticMeshTopologyRecords: 500_000,
+  semanticMeshTopologyAdjacencyEntries: 4_000_000,
+  semanticMeshTopologyStringBytes: 16 * 1024 * 1024,
   semanticMeshBytes: 128 * 1024 * 1024,
   canonicalDigestBytes: 128 * 1024 * 1024,
   canonicalDigestNodes: 1_000_000,

@@ -5,6 +5,7 @@ import { CAD_RESOURCE_LIMITS } from "../cad-resource-limits";
 import { tessellateSemanticBodies } from "./semantic-tessellation";
 
 const handle = (id: string) => ({ id }) as unknown as ShapeHandle;
+const noSelections = { namedSelections: [], mates: [] } as const;
 
 function semanticKernel(baseFaceCount: number, meshIndexCount = 3, vertexCount = 1) {
   const baseShape = handle("base-shape");
@@ -53,6 +54,7 @@ describe("semantic tessellation", () => {
           id: "body", terminalFeatureId: "cut",
           lineageFeatureIds: ["base", "cut"], shape: bodyShape,
         }],
+        noSelections,
       );
     } catch (error) {
       failure = error;
@@ -74,6 +76,7 @@ describe("semantic tessellation", () => {
         id: "body", terminalFeatureId: "base",
         lineageFeatureIds: ["base"], shape: bodyShape,
       }],
+      noSelections,
     );
 
     expect(mesh.indices).toHaveLength(200_001);
@@ -93,6 +96,7 @@ describe("semantic tessellation", () => {
         id: "body", terminalFeatureId: "base",
         lineageFeatureIds: ["base"], shape: bodyShape,
       }],
+      noSelections,
     )).toThrow(expect.objectContaining({ code: "resource-limit" }));
   });
 });

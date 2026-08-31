@@ -1,5 +1,5 @@
 import { OcctKernel } from "occt-wasm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { defineDesignDocument } from "../document-schema";
 import { createOcctBridge } from "./occt-bridge";
@@ -106,6 +106,85 @@ async function mechanicalPartDocument(widthM = 0.08) {
   });
 }
 
+async function symmetricSplitDocument() {
+  const source = await plateDocument();
+  const content = structuredClone(source) as Record<string, unknown>;
+  delete content.revision;
+  const baseRadiusM = 0.04;
+  const centerRadiusM = 0.005;
+  const innerRingRadiusM = 0.012;
+  const outerRingRadiusM = Math.sqrt(
+    baseRadiusM ** 2 - (innerRingRadiusM ** 2 - centerRadiusM ** 2),
+  );
+  const circleSketch = (id: string, radiusM: number, plane = "frame:world") => ({
+    id, plane,
+    entities: [{ id: `${id}-circle`, kind: "circle" as const, centerM: [0, 0], radiusM }],
+    constraints: [{ id: `${id}-radius`, kind: "radius" as const, entityId: `${id}-circle`, valueM: radiusM }],
+  });
+  const splitFaceSignature = {
+    geometry: "plane" as const,
+    centroidM: [0, 0, 0.01] as [number, number, number],
+    measureSI: Math.PI * (innerRingRadiusM ** 2 - centerRadiusM ** 2),
+    adjacentKinds: ["cylinder", "cylinder"],
+  };
+  return defineDesignDocument({
+    ...content,
+    id: "symmetric-split",
+    label: "Symmetric split topology",
+    frames: [
+      source.frames[0],
+      {
+        id: "ring-frame", label: "Top ring cut plane", parentId: "world",
+        transform: {
+          position: { x: { value: 0, unit: "m" }, y: { value: 0, unit: "m" }, z: { value: 0.005, unit: "m" } },
+          orientation: { roll: { value: 0, unit: "rad" }, pitch: { value: 0, unit: "rad" }, yaw: { value: 0, unit: "rad" } },
+        },
+      },
+    ],
+    sketches: [
+      circleSketch("base", baseRadiusM),
+      circleSketch("center-tool", centerRadiusM),
+      circleSketch("ring-outer", outerRingRadiusM, "frame:ring-frame"),
+      circleSketch("ring-inner", innerRingRadiusM, "frame:ring-frame"),
+    ],
+    features: [
+      { id: "base", kind: "extrude", sketchId: "base", distanceM: 0.01 },
+      { id: "center-tool", kind: "extrude", sketchId: "center-tool", distanceM: 0.02 },
+      { id: "center-cut", kind: "cut", leftFeatureId: "base", rightFeatureId: "center-tool" },
+      { id: "ring-outer", kind: "extrude", sketchId: "ring-outer", distanceM: 0.02 },
+      { id: "ring-inner", kind: "extrude", sketchId: "ring-inner", distanceM: 0.02 },
+      { id: "ring-tool", kind: "cut", leftFeatureId: "ring-outer", rightFeatureId: "ring-inner" },
+      { id: "split", kind: "cut", leftFeatureId: "center-cut", rightFeatureId: "ring-tool" },
+    ],
+    bodies: [{ id: "split-body", featureId: "split" }],
+    components: [{ id: "split-component", bodyIds: ["split-body"] }],
+    instances: [{ id: "split-instance", componentId: "split-component", frameId: "world" }],
+    namedSelections: [
+      {
+        id: "mount-face",
+        reference: {
+          bodyId: "split-body", ownerFeatureId: "split", expectedKind: "face",
+          signature: splitFaceSignature,
+        },
+      },
+      {
+        id: "mount-edge",
+        reference: {
+          bodyId: "split-body", ownerFeatureId: "split", expectedKind: "edge",
+          signature: {
+            geometry: "curve", centroidM: [0, 0, 0.01], measureSI: 1,
+            adjacentKinds: ["plane", "cylinder"],
+          },
+        },
+      },
+    ],
+    mates: [{
+      id: "mount-mate", kind: "rigid", firstInstanceId: "split-instance", secondInstanceId: "split-instance",
+      firstSelectionId: "mount-face", secondSelectionId: "mount-edge",
+    }],
+  });
+}
+
 describe("exact OCCT feature rebuild", () => {
   it("rebuilds an 80 x 40 x 10 mm plate with real BREP and unit-density mass", async () => {
     const kernel = await OcctKernel.init();
@@ -129,6 +208,30 @@ describe("exact OCCT feature rebuild", () => {
       expect(payload.bodyIds).toEqual(["plate-body"]);
       expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
     } finally {
+      bridge.dispose();
+    }
+  });
+
+  it("rejects a real one-solid compound with a free face before publishing a feature result", async () => {
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    const extrude = kernel.extrude.bind(kernel);
+    const spy = vi.spyOn(kernel, "extrude").mockImplementation((face, dx, dy, dz) => {
+      const solid = extrude(face, dx, dy, dz);
+      const freeFace = kernel.buildTriFace(
+        { x: 0.2, y: 0, z: 0 },
+        { x: 0.21, y: 0, z: 0 },
+        { x: 0.2, y: 0.01, z: 0 },
+      );
+      return kernel.makeCompound([solid, freeFace]);
+    });
+    try {
+      await expect(rebuildDocument(
+        bridge, await plateDocument(), ["brep"], new AbortController().signal,
+      )).rejects.toMatchObject({ code: "invalid-solid" });
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      spy.mockRestore();
       bridge.dispose();
     }
   });
@@ -288,6 +391,28 @@ describe("exact OCCT feature rebuild", () => {
       )).rejects.toMatchObject({
         code: "reference-requires-repair",
         affectedConsumers: ["named-selection:mount-face"],
+      });
+      expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
+  it("reports every consumer for a real symmetric topology split before selection resolution", async () => {
+    const kernel = await OcctKernel.init();
+    const bridge = createOcctBridge(kernel);
+    try {
+      let failure: unknown;
+      try {
+        await rebuildDocument(
+          bridge, await symmetricSplitDocument(), ["brep"], new AbortController().signal,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: "reference-requires-repair",
+        affectedConsumers: ["mate:mount-mate", "named-selection:mount-face"],
       });
       expect(bridge.withKernel((owned) => owned.shapeCount)).toBe(0);
     } finally {

@@ -1,6 +1,10 @@
 import type { DesignDocument } from "../document-schema";
 import type { SemanticTopology } from "../rebuild-payload";
-import { matchTopologyReference, type TopologyCandidate } from "./persistent-references";
+import {
+  matchTopologyReference,
+  type TopologyCandidate,
+  type TopologySignature,
+} from "./persistent-references";
 import { CadRebuildError } from "./rebuild-errors";
 
 export interface ResolvedNamedSelection {
@@ -8,16 +12,31 @@ export interface ResolvedNamedSelection {
   readonly topologyId: string;
 }
 
-type SelectionDocument = Pick<DesignDocument, "namedSelections" | "mates">;
+export type SelectionDocument = Pick<DesignDocument, "namedSelections" | "mates">;
 
-function affectedConsumers(document: SelectionDocument, selectionId: string): string[] {
-  const consumers = [`named-selection:${selectionId}`];
+function affectedConsumers(document: SelectionDocument, selectionIds: readonly string[]): string[] {
+  const selections = new Set(selectionIds);
+  const consumers = new Set(selectionIds.map((selectionId) => `named-selection:${selectionId}`));
   for (const mate of document.mates) {
-    if (mate.firstSelectionId === selectionId || mate.secondSelectionId === selectionId) {
-      consumers.push(`mate:${mate.id}`);
+    if (selections.has(mate.firstSelectionId) || selections.has(mate.secondSelectionId)) {
+      consumers.add(`mate:${mate.id}`);
     }
   }
-  return consumers.sort();
+  return [...consumers].sort();
+}
+
+export function repairConsumersForTopology(
+  document: SelectionDocument,
+  bodyId: string,
+  kind: TopologySignature["kind"],
+  ownerFeatureIds: readonly string[],
+): string[] {
+  const owners = new Set(ownerFeatureIds);
+  const selectionIds = document.namedSelections
+    .filter(({ reference }) => reference.bodyId === bodyId
+      && reference.expectedKind === kind && owners.has(reference.ownerFeatureId))
+    .map(({ id }) => id);
+  return affectedConsumers(document, selectionIds);
 }
 
 export function resolveNamedSelections(
@@ -41,7 +60,9 @@ export function resolveNamedSelections(
       ...reference.signature,
     }, candidates);
     if (match.ok) return { selectionId: selection.id, topologyId: match.candidate.id };
-    const affected = affectedConsumers(document, selection.id);
+    const affected = repairConsumersForTopology(
+      document, reference.bodyId, reference.expectedKind, [reference.ownerFeatureId],
+    );
     throw new CadRebuildError(
       "reference-requires-repair",
       `${match.error.message}; affected consumers: ${affected.join(", ")}`,

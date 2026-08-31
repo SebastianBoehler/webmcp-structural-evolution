@@ -34,4 +34,32 @@ describe("CAD output resource limits", () => {
 
     expect(() => SemanticMeshPayloadSchema.parse(mesh)).toThrow(/unavailable vertex/i);
   });
+
+  it("rejects raw over-budget topology before traversing a record", () => {
+    const record = {
+      id: "face-1", bodyId: "body-1",
+      signature: {
+        ownerFeatureId: "base", kind: "face", geometry: "plane",
+        centroidM: [0, 0, 0], measureSI: 1, adjacentKinds: [],
+      },
+    };
+    let recordReads = 0;
+    const faces = new Proxy(
+      Array.from({ length: CAD_RESOURCE_LIMITS.semanticMeshTopologyRecords + 1 }, () => record),
+      {
+        get(target, property, receiver) {
+          if (typeof property === "string" && /^\d+$/.test(property)) recordReads += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const mesh = {
+      positionsM: new Float32Array(), normals: new Float32Array(), indices: new Uint32Array(),
+      faces, triangleFaceIndices: new Uint32Array(), edgePointsM: new Float32Array(),
+      edgePointRanges: new Uint32Array(), edges: [], polylineEdgeIndices: new Uint32Array(),
+    };
+
+    expect(() => SemanticMeshPayloadSchema.parse(mesh)).toThrow(/semantic topology records/i);
+    expect(recordReads).toBe(0);
+  });
 });

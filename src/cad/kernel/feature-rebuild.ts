@@ -10,7 +10,7 @@ import type {
   SemanticMeshPayload,
 } from "../rebuild-payload";
 import type { OcctBridge } from "./occt-bridge";
-import { assertExactSolid } from "./exact-solid";
+import { normalizeExactSolid } from "./exact-solid";
 import { CadRebuildError } from "./rebuild-errors";
 import { resolveNamedSelections } from "./named-selection-resolution";
 import { validateResolvedSketchConstraints } from "./sketch-constraint-validation";
@@ -60,15 +60,14 @@ function resolveScalar(
   return parameter.value.value.value;
 }
 
-function ensureValidSolid(kernel: OcctKernel, shape: ShapeHandle, feature: DocumentFeature): void {
-  assertExactSolid(kernel, shape, `Feature produced an invalid solid: ${feature.id}`);
+function ensureValidSolid(kernel: OcctKernel, shape: ShapeHandle, feature: DocumentFeature): ShapeHandle {
+  return normalizeExactSolid(kernel, shape, `Feature produced an invalid solid: ${feature.id}`);
 }
 
 function combineSolids(kernel: OcctKernel, shapes: readonly ShapeHandle[], feature: DocumentFeature): ShapeHandle {
   if (shapes.length === 0) throw new CadRebuildError("invalid-solid", `Feature produced no solids: ${feature.id}`);
   const result = shapes.length === 1 ? shapes[0]! : kernel.fuseAll([...shapes]);
-  ensureValidSolid(kernel, result, feature);
-  return result;
+  return ensureValidSolid(kernel, result, feature);
 }
 
 function booleanShape(
@@ -82,8 +81,7 @@ function booleanShape(
     : feature.kind === "cut"
       ? kernel.cut(left, right)
       : kernel.common(left, right);
-  ensureValidSolid(kernel, result, feature);
-  return result;
+  return ensureValidSolid(kernel, result, feature);
 }
 
 function featureLineage(document: DesignDocument, terminalFeatureId: string): string[] {
@@ -179,8 +177,7 @@ export async function rebuildDocument(
             const vector = directionOnSketch(built.frame, 0, 0, distance);
             const solids = built.faces.map((face) => {
               const solid = kernel.extrude(face, vector.x, vector.y, vector.z);
-              ensureValidSolid(kernel, solid, feature);
-              return solid;
+              return ensureValidSolid(kernel, solid, feature);
             });
             shape = combineSolids(kernel, solids, feature);
           } else {
@@ -199,8 +196,7 @@ export async function rebuildDocument(
             );
             const solids = built.faces.map((face) => {
               const solid = kernel.revolve(face, { point: axisPoint, direction }, angle);
-              ensureValidSolid(kernel, solid, feature);
-              return solid;
+              return ensureValidSolid(kernel, solid, feature);
             });
             shape = combineSolids(kernel, solids, feature);
           }
@@ -228,7 +224,7 @@ export async function rebuildDocument(
         ? rebuiltBodies[0]!.shape
         : kernel.makeCompound(rebuiltBodies.map(({ shape }) => shape));
       const semanticMesh = outputs.includes("semantic-mesh") || document.namedSelections.length > 0
-        ? tessellateSemanticBodies(kernel, rebuiltFeatures, rebuiltBodies)
+        ? tessellateSemanticBodies(kernel, rebuiltFeatures, rebuiltBodies, document)
         : undefined;
       if (semanticMesh) {
         resolveNamedSelections(document, [...semanticMesh.faces, ...semanticMesh.edges]);
