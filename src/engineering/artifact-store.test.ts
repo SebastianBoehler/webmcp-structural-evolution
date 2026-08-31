@@ -97,6 +97,32 @@ describe("artifact payload store", () => {
     await expect(digestArtifactPayload(resizable)).rejects.toThrow(/resizable/i);
   });
 
+  it("rejects a structured duplicate that collides with a raw-byte digest", async () => {
+    const store = createArtifactStore();
+    const raw = bytes(...new TextEncoder().encode("artifact-view-map:1:0"));
+    const structured = {} as Readonly<Record<string, ArrayBufferView>>;
+    const record = await artifactFor(raw);
+
+    expect(await digestArtifactPayload(structured)).toBe(await digestArtifactPayload(raw));
+    await store.put(record, raw);
+    await expect(store.put(record, structured)).rejects.toMatchObject({ code: "duplicate-artifact-id" });
+    await expect(store.get(record.id)).resolves.toBeInstanceOf(ArrayBuffer);
+  });
+
+  it("does not expose any validated batch payload when its commit guard rejects", async () => {
+    const store = createArtifactStore();
+    const firstPayload = bytes(4);
+    const secondPayload = bytes(5);
+    const first = await artifactFor(firstPayload);
+    const second = await artifactFor(secondPayload);
+
+    await expect(store.commit([
+      { record: first, payload: firstPayload }, { record: second, payload: secondPayload },
+    ], () => false)).rejects.toMatchObject({ code: "commit-guard-rejected" });
+    await expect(store.get(first.id)).resolves.toBeUndefined();
+    await expect(store.get(second.id)).resolves.toBeUndefined();
+  });
+
   it("deletes payloads selected by authoritative metadata invalidation only", async () => {
     const store = createArtifactStore();
     const invalidatedPayload = bytes(1);

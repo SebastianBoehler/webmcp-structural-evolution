@@ -6,7 +6,10 @@ import {
 } from "../cad/engineering-job-contract";
 import type { ArtifactStore } from "./artifact-store";
 import { createJobLedger, type JobLedger, type JobLedgerEntry } from "./job-ledger";
+import { createJobNotifier, type EngineeringJobSubscriber } from "./job-notifier";
+import { hasBoundDocumentRevision, captureEngineeringSolveRequest } from "./job-request-snapshot";
 import {
+  invalidInputError,
   prepareSolverRunResult,
   staleRevisionError,
   toEngineeringJobError,
@@ -27,7 +30,7 @@ export type EngineeringJobHandle<Output> = Readonly<{
   completion: Promise<EngineeringJobCompletion<Output>>;
 }>;
 
-export type EngineeringJobSubscriber = (entry: JobLedgerEntry) => void;
+export type { EngineeringJobSubscriber } from "./job-notifier";
 
 export interface EngineeringJobRunner {
   launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output>;
@@ -43,6 +46,7 @@ export interface EngineeringJobRunnerOptions {
 }
 
 type JobControl<Output> = {
+  readonly jobId: string;
   readonly request: EngineeringSolveRequest<unknown>;
   readonly abortController: AbortController;
   readonly resolve: (completion: EngineeringJobCompletion<Output>) => void;
@@ -53,26 +57,16 @@ type JobControl<Output> = {
 
 export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions): EngineeringJobRunner {
   const ledger: JobLedger = createJobLedger();
+  const notifier = createJobNotifier();
   const controls = new Map<string, JobControl<unknown>>();
-  const subscribers = new Map<number, EngineeringJobSubscriber>();
-  let nextSubscriber = 0;
-
-  const notify = (entry: JobLedgerEntry): void => {
-    for (const subscriber of [...subscribers.values()]) {
-      try {
-        subscriber(entry);
-      } catch {
-        // Subscriber isolation keeps one UI consumer from interrupting the job ledger.
-      }
-    }
-  };
   const active = (control: JobControl<unknown>): boolean =>
-    !control.cancelling && !control.terminal && !ledger.isTerminal(control.request.jobId);
+    !control.cancelling && !control.terminal && !ledger.isTerminal(control.jobId);
   const current = (control: JobControl<unknown>): boolean =>
     options.currentDocument().revision === control.request.sourceRevision;
+  const bound = (control: JobControl<unknown>): boolean => hasBoundDocumentRevision(control.request);
   const publish = (event: Exclude<EngineeringJobEvent, Extract<EngineeringJobEvent, { state: "queued" }>>): JobLedgerEntry | undefined => {
     const entry = ledger.append(event);
-    if (entry) notify(entry);
+    if (entry) notifier.publish(entry);
     return entry;
   };
   const complete = <Output>(
@@ -91,119 +85,104 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
       ? { event: entry.event as VerifiedEvent, output: output as Output }
       : { event: entry.event as Exclude<TerminalEvent, VerifiedEvent> };
     control.resolve(completion);
-    notify(entry);
+    notifier.publish(entry);
     return true;
   };
   const fail = (control: JobControl<unknown>, error: EngineeringJobError): void => {
     complete(control, {
-      jobId: control.request.jobId,
+      jobId: control.jobId,
       state: "failed",
       progress: control.progress,
       artifacts: [],
       error,
     });
   };
+  const invalidOrStale = (control: JobControl<unknown>): boolean => {
+    if (!bound(control)) {
+      fail(control, invalidInputError("Solve request document revision is not bound to its source revision"));
+      return true;
+    }
+    try {
+      if (!current(control)) {
+        fail(control, staleRevisionError());
+        return true;
+      }
+    } catch (error) {
+      fail(control, toEngineeringJobError(error));
+      return true;
+    }
+    return false;
+  };
   const progress = (control: JobControl<unknown>, event: SolverProgressEvent): void => {
     if (!active(control) || !Number.isFinite(event?.progress)
       || event.progress < control.progress || event.progress >= 1) return;
     control.progress = event.progress;
-    publish({
-      jobId: control.request.jobId,
-      state: "partial",
-      progress: control.progress,
-      artifacts: [],
-    });
+    publish({ jobId: control.jobId, state: "partial", progress: control.progress, artifacts: [] });
   };
 
   const dispatch = async (control: JobControl<unknown>): Promise<void> => {
-    if (!active(control)) return;
-    if (!current(control)) {
-      fail(control, staleRevisionError());
-      return;
-    }
+    if (!active(control) || invalidOrStale(control)) return;
     let adapter;
     try {
       adapter = options.registry.resolve(control.request.kind, control.request);
     } catch (error) {
-      if (active(control)) fail(control, toEngineeringJobError(error));
+      if (active(control) && !invalidOrStale(control)) fail(control, toEngineeringJobError(error));
       return;
     }
-    if (!active(control)) return;
-    if (!current(control)) {
-      fail(control, staleRevisionError());
-      return;
-    }
-    publish({ jobId: control.request.jobId, state: "running", progress: control.progress, artifacts: [] });
-    if (!active(control)) return;
-    if (!current(control)) {
-      fail(control, staleRevisionError());
-      return;
-    }
+    if (!active(control) || invalidOrStale(control)) return;
+    publish({ jobId: control.jobId, state: "running", progress: control.progress, artifacts: [] });
+    if (!active(control) || invalidOrStale(control)) return;
     let result: SolverRunResult<unknown>;
     try {
       result = await adapter.run(control.request, control.abortController.signal, (event) => progress(control, event));
     } catch (error) {
-      if (active(control)) fail(control, toEngineeringJobError(error));
+      if (active(control) && !invalidOrStale(control)) fail(control, toEngineeringJobError(error));
       return;
     }
-    if (!active(control)) return;
-    if (!current(control)) {
-      fail(control, staleRevisionError());
-      return;
-    }
+    if (!active(control) || invalidOrStale(control)) return;
     try {
       const prepared = await prepareSolverRunResult(control.request, result);
-      if (!active(control)) return;
-      if (!current(control)) {
-        fail(control, staleRevisionError());
-        return;
-      }
-      for (const artifact of prepared.artifacts) {
-        if (!active(control)) return;
-        if (!current(control)) {
-          fail(control, staleRevisionError());
-          return;
-        }
-        await options.store.put(artifact.record, artifact.payload);
-      }
-      if (!active(control)) return;
-      if (!current(control)) {
-        fail(control, staleRevisionError());
-        return;
-      }
+      if (!active(control) || invalidOrStale(control)) return;
+      await options.store.commit(prepared.artifacts, () => active(control) && bound(control) && current(control));
+      if (!active(control) || invalidOrStale(control)) return;
       complete(control, {
-        jobId: control.request.jobId,
+        jobId: control.jobId,
         state: "verified",
         truthLevel: prepared.truthLevel,
         progress: 1,
         artifacts: prepared.artifacts.map(({ record }) => record),
       }, prepared.output);
     } catch (error) {
-      if (active(control)) fail(control, toEngineeringJobError(error));
+      if (active(control) && !invalidOrStale(control)) fail(control, toEngineeringJobError(error));
     }
   };
 
   return {
     launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output> {
+      const snapshot = captureEngineeringSolveRequest(request) as EngineeringSolveRequest<unknown>;
+      const jobId = snapshot.jobId;
       let resolve!: (completion: EngineeringJobCompletion<Output>) => void;
       const completion = new Promise<EngineeringJobCompletion<Output>>((nextResolve) => { resolve = nextResolve; });
+      const queued = ledger.reserve({ jobId, state: "queued", progress: 0, artifacts: [] });
       const control: JobControl<Output> = {
-        request: request as EngineeringSolveRequest<unknown>,
+        jobId,
+        request: snapshot,
         abortController: new AbortController(),
         resolve,
         progress: 0,
         cancelling: false,
         terminal: false,
       };
-      const queued = ledger.reserve({ jobId: request.jobId, state: "queued", progress: 0, artifacts: [] });
-      controls.set(request.jobId, control as JobControl<unknown>);
-      notify(queued);
+      controls.set(jobId, control as JobControl<unknown>);
+      notifier.publish(queued);
       queueMicrotask(() => {
         void dispatch(control as JobControl<unknown>).catch((error: unknown) => {
-          if (active(control as JobControl<unknown>)) fail(control as JobControl<unknown>, toEngineeringJobError(error));
+          if (active(control as JobControl<unknown>) && !invalidOrStale(control as JobControl<unknown>)) {
+            fail(control as JobControl<unknown>, toEngineeringJobError(error));
+          }
         });
       });
-      return { jobId: request.jobId, completion };
+      return { jobId, completion };
     },
     cancel(jobId): boolean {
       const control = controls.get(jobId);
@@ -218,10 +197,7 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
       });
     },
     subscribe(subscriber): () => void {
-      const id = nextSubscriber;
-      nextSubscriber += 1;
-      subscribers.set(id, subscriber);
-      return () => subscribers.delete(id);
+      return notifier.subscribe(subscriber);
     },
     entries(): readonly JobLedgerEntry[] {
       return ledger.entries();

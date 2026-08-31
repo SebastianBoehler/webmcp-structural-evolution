@@ -171,6 +171,8 @@ export {
   synchronizeArtifactStoreInvalidation,
   type ArtifactPayload,
   type ArtifactStore,
+  type ArtifactStoreBatchEntry,
+  type ArtifactStoreCommitGuard,
   type ArtifactStoreErrorCode,
 } from "../engineering/artifact-store";
 export {
