@@ -15,6 +15,7 @@ export interface StructuralPipelines {
   readonly computeStress: GPUComputePipeline;
   readonly initializePcg: GPUComputePipeline;
   readonly updateSolutionResidual: GPUComputePipeline;
+  readonly recomputeResidual: GPUComputePipeline;
   readonly applyPreconditioner: GPUComputePipeline;
   readonly updateDirection: GPUComputePipeline;
   readonly maskReactions: GPUComputePipeline;
@@ -100,6 +101,7 @@ export async function createStructuralPipelines(
     pipeline(device, guard, elasticityLayout, elasticity, "compute_stress"),
     pipeline(device, guard, vectorLayout, vector, "initialize_pcg"),
     pipeline(device, guard, vectorLayout, vector, "update_solution_residual"),
+    pipeline(device, guard, vectorLayout, vector, "recompute_residual"),
     pipeline(device, guard, vectorLayout, vector, "apply_preconditioner"),
     pipeline(device, guard, vectorLayout, vector, "update_direction"),
     pipeline(device, guard, vectorLayout, vector, "mask_reactions"),
@@ -110,8 +112,8 @@ export async function createStructuralPipelines(
   return {
     elasticityLayout, vectorLayout, reductionLayout,
     applyElasticity: entries[0], buildDiagonal: entries[1], computeStress: entries[2],
-    initializePcg: entries[3], updateSolutionResidual: entries[4],
-    applyPreconditioner: entries[5], updateDirection: entries[6], maskReactions: entries[7],
-    dotProduct: entries[8], reduceSum: entries[9], sumStrided: entries[10],
+    initializePcg: entries[3], updateSolutionResidual: entries[4], recomputeResidual: entries[5],
+    applyPreconditioner: entries[6], updateDirection: entries[7], maskReactions: entries[8],
+    dotProduct: entries[9], reduceSum: entries[10], sumStrided: entries[11],
   };
 }

@@ -142,8 +142,16 @@ describe("topology extraction and acceptance", () => {
         originM: [0, 0, 0], cellSizeM: 1,
       },
       verification: {
-        realGpu: true, relativeResidual: 1e-6, forceBalanceErrorN: 0,
-        appliedLoadN: 1, wasmRelativeL2: 1e-4, metadata: STRUCTURAL_VERIFICATION_METADATA,
+        realGpu: true, relativeResidual: 1e-6, recomputedF32RelativeResidual: 1e-4,
+        gpuReactionBalanceErrorN: .1, wasmForceBalanceErrorN: 0,
+        wasmReactionN: [-1, 0, 0], appliedLoadN: 1,
+        wasmRelativeL2: 1e-4, wasmFieldStressRelativeL2: 1e-4,
+        energyRelativeMismatch: 0, directRelativeResidual: 1e-4,
+        refinementCount: 0, refinementPasses: [{
+          kind: "initial", iterations: 4, recursiveResidual: 1e-6,
+          recomputedF32Residual: 1e-4, residualScaleN: 1,
+          postDirectResidual: 1e-4, postBalance: 0, postEnergy: 0,
+        }], metadata: STRUCTURAL_VERIFICATION_METADATA,
       },
       rasterization: { toleranceM: 1e-6, selections: [] },
       displacementM: new Float32Array(24), vonMisesStressPa: new Float32Array([10]),

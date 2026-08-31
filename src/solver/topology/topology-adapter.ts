@@ -1,6 +1,8 @@
 import type { EngineeringSolveRequest, SolverAdapter } from "../../engineering/solver-adapter";
 import { compileStructuralStudy } from "../structural/compile-structural-study";
-import { StructuralGpuError } from "../structural/structural-gpu-runtime";
+import {
+  StructuralGpuError, type StructuralGpuAcquisitionObserver,
+} from "../structural/structural-gpu-runtime";
 import { createWebGpuStructuralAdapter } from "../structural/webgpu-structural-adapter";
 import {
   assertTopologyInterfacesConnected, assertTopologyScheduleFeasible,
@@ -41,7 +43,13 @@ function capability(request: Request) {
   return { supported: true as const };
 }
 
-export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput, TopologyResult> {
+export interface WebGpuTopologyAdapterOptions {
+  readonly onAcquisition?: StructuralGpuAcquisitionObserver;
+}
+
+export function createWebGpuTopologyAdapter(
+  options: WebGpuTopologyAdapterOptions = {},
+): SolverAdapter<TopologySolveInput, TopologyResult> {
   return {
     capability: { kind: "topology" },
     supports: capability,
@@ -62,7 +70,7 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
         if (study.filterRadiusM < study.minimumFeatureM * 0.5 || radiusCells < 1 || radiusCells > 8) {
           throw new Error("Topology filter radius cannot enforce the configured minimum feature");
         }
-        const structural = createWebGpuStructuralAdapter();
+        const structural = createWebGpuStructuralAdapter(options);
         const samples: TopologyObjectiveSample[] = [];
         const binaryMasks: Uint8Array[] = [];
         const analyses: TopologyResult["postExtractionAnalysis"][] = [];
@@ -105,10 +113,12 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
           checkAbort(signal);
           const updated = await updateTopologyDensity(
             density, latestAnalysis!.displacementM, system, study.moveLimit, signal,
+            options.onAcquisition,
           );
           checkAbort(signal);
           const filtered = await filterTopologyDensity(
             updated, system.grid.cellDimensions, radiusCells, system.activeCells, signal,
+            options.onAcquisition,
           );
           const continuous = projectTopologyDensity(
             filtered, density, study.targetVolumeFraction, study.moveLimit,
@@ -133,11 +143,14 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
         }
         const meshArtifact = await createTopologyMeshArtifact(request, mesh);
         const rerasterized = rasterizeExtractedTopology(mesh, system.grid);
-        if (rerasterized.some((value, cell) => value !== 0 && system.activeCells[cell] === 0)) {
-          throw new Error("Topology rerasterization escaped the canonical design domain");
+        const escapedCell = rerasterized.findIndex(
+          (value, cell) => value !== 0 && system.activeCells[cell] === 0,
+        );
+        if (escapedCell >= 0) {
+          throw new Error(`Topology rerasterization escaped the canonical design domain at cell ${escapedCell}`);
         }
         const post = await structuralRequestForTopologyMask(
-          source, rerasterized, "post-extraction", meshArtifact.record,
+          source, rerasterized, "post-extraction", meshArtifact.record, request.studyId,
         );
         checkAbort(signal);
         const postRun = await structural.run(post.request, signal, () => undefined);

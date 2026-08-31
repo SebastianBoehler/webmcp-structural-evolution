@@ -5,6 +5,8 @@ const wasm = vi.hoisted(() => ({
   relativeL2: vi.fn<(expected: Float32Array, actual: Float32Array) => number>(),
   optimize: vi.fn(),
   structural: vi.fn(),
+  fieldEvaluation: vi.fn(),
+  iterateEvaluation: vi.fn(),
 }));
 
 vi.mock("./pkg/webmcp_reference.js", () => ({
@@ -13,6 +15,8 @@ vi.mock("./pkg/webmcp_reference.js", () => ({
   optimize_demo_frame: wasm.optimize,
   optimize_assembly_frame: wasm.optimize,
   solve_structural_reference: wasm.structural,
+  evaluate_structural_field: wasm.fieldEvaluation,
+  evaluate_structural_iterate_f64: wasm.iterateEvaluation,
 }));
 
 describe("relativeL2", () => {
@@ -45,6 +49,16 @@ describe("relativeL2", () => {
       relative_residual: 2e-7,
       force_balance_error_n: 1e-5,
       compliance_j: 0.001,
+    });
+    wasm.fieldEvaluation.mockReset().mockReturnValue({
+      reaction_n: new Float64Array([-1, 0, 0]),
+      von_mises_stress_pa: new Float32Array([1e6]),
+      direct_relative_residual: 3e-4,
+      force_balance_error_n: 1e-6, compliance_j: .001,
+      strain_energy_j: .0005, energy_relative_mismatch: 1e-8,
+    });
+    wasm.iterateEvaluation.mockReset().mockReturnValue({
+      free_residual_n: new Float64Array(24),
     });
   });
 
@@ -180,6 +194,68 @@ describe("relativeL2", () => {
       displacementM: new Float32Array(24).map((_value, index) => index === 3 ? 1e-6 : 0),
     });
     expect(wasm.structural).toHaveBeenCalledWith(input);
+  });
+
+  it("evaluates GPU displacement reaction and energy in f64 without resolving it", async () => {
+    const { evaluateStructuralField } = await import("./index");
+    const input = {
+      cellDimensions: [1, 1, 1] as [number, number, number], cellSizeM: .01,
+      activeCells: new Uint32Array([1]), fixedDofs: new Uint32Array(24),
+      loadsN: new Float64Array(24), youngsModulusPa: 200e9, poissonRatio: .3,
+      maxIterations: 512, tolerance: 1e-6,
+    };
+    const displacement = new Float32Array(24);
+    await expect(evaluateStructuralField(input, displacement)).resolves.toEqual({
+      reactionN: [-1, 0, 0], vonMisesStressPa: new Float32Array([1e6]),
+      directRelativeResidual: 3e-4,
+      forceBalanceErrorN: 1e-6, complianceJ: .001,
+      strainEnergyJ: .0005, energyRelativeMismatch: 1e-8,
+    });
+    expect(wasm.fieldEvaluation).toHaveBeenCalledWith(input, displacement);
+  });
+
+  it("evaluates the Float64 master iterate and returns its canonical free residual", async () => {
+    const { evaluateStructuralIterateF64 } = await import("./index");
+    const input = {
+      cellDimensions: [1, 1, 1] as [number, number, number], cellSizeM: .01,
+      activeCells: new Uint32Array([1]), fixedDofs: new Uint32Array(24),
+      loadsN: new Float64Array(24), youngsModulusPa: 200e9, poissonRatio: .3,
+      maxIterations: 512, tolerance: 1e-6,
+    };
+    const master = new Float64Array(24);
+
+    await expect(evaluateStructuralIterateF64(input, master)).resolves.toEqual({
+      freeResidualN: new Float64Array(24),
+    });
+    expect(wasm.iterateEvaluation).toHaveBeenCalledWith(input, master);
+  });
+
+  it("rejects malformed structural field evaluator arrays", async () => {
+    wasm.fieldEvaluation.mockReturnValueOnce({
+      reaction_n: new Float64Array([0, 0]), von_mises_stress_pa: new Float32Array(),
+      force_balance_error_n: 0, compliance_j: 0,
+      strain_energy_j: 0, energy_relative_mismatch: 0,
+    });
+    const { evaluateStructuralField } = await import("./index");
+    await expect(evaluateStructuralField({
+      cellDimensions: [1, 1, 1], cellSizeM: 1, activeCells: new Uint32Array([1]),
+      fixedDofs: new Uint32Array(24), loadsN: new Float64Array(24),
+      youngsModulusPa: 1, poissonRatio: .3, maxIterations: 1, tolerance: 1e-5,
+    }, new Float32Array(24))).rejects.toThrow(/field evaluation/i);
+  });
+
+  it("rejects a negative direct residual from the Float32 field evaluator", async () => {
+    wasm.fieldEvaluation.mockReturnValueOnce({
+      reaction_n: new Float64Array([0, 0, 0]), von_mises_stress_pa: new Float32Array([0]),
+      direct_relative_residual: -1, force_balance_error_n: 0, compliance_j: 0,
+      strain_energy_j: 0, energy_relative_mismatch: 0,
+    });
+    const { evaluateStructuralField } = await import("./index");
+    await expect(evaluateStructuralField({
+      cellDimensions: [1, 1, 1], cellSizeM: 1, activeCells: new Uint32Array([1]),
+      fixedDofs: new Uint32Array(24), loadsN: new Float64Array(24),
+      youngsModulusPa: 1, poissonRatio: .3, maxIterations: 1, tolerance: 1e-5,
+    }, new Float32Array(24))).rejects.toThrow(/field evaluation/i);
   });
 
   it("rejects malformed structural reference output instead of substituting fields", async () => {

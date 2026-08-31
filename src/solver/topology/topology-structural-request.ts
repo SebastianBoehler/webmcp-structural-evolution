@@ -23,6 +23,7 @@ export async function structuralRequestForTopologyMask(
   activeCells: Uint32Array,
   stage: string,
   extractedMesh?: ArtifactRecord,
+  outerOwnerStudyId?: string,
 ): Promise<Readonly<{
   request: EngineeringSolveRequest<StructuralSolveInput>;
   voxelArtifact: ArtifactRecord;
@@ -33,8 +34,12 @@ export async function structuralRequestForTopologyMask(
   const original = source.inputArtifacts.find(({ id }) => id === source.input.voxelArtifactId);
   if (!original) throw new Error("Topology source voxel artifact is unresolved");
   const semanticId = source.input.semanticMeshArtifactId;
+  const entityDependencies = original.dependencies.filter((dependency) => dependency.kind === "entity");
+  const outerOwner = outerOwnerStudyId && !entityDependencies.some(
+    (dependency) => dependency.reference === `study:${outerOwnerStudyId}`,
+  ) ? [{ kind: "entity" as const, reference: `study:${outerOwnerStudyId}` }] : [];
   const dependencies = [
-    ...original.dependencies.filter((dependency) => dependency.kind === "entity"),
+    ...entityDependencies, ...outerOwner,
     { kind: "artifact" as const, artifactId: semanticId },
     ...(extractedMesh ? [{ kind: "artifact" as const, artifactId: extractedMesh.id }] : []),
   ];

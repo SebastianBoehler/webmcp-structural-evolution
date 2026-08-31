@@ -57,9 +57,17 @@ async function resultFor(
     complianceJ, strainEnergyJ: complianceJ / 2,
     maximumDisplacementM: displacementM[0]!, maximumVonMisesStressPa: 10,
     verification: {
-      relativeResidual: 1e-6, forceBalanceErrorN: 0.01,
+      relativeResidual: 1e-6, recomputedF32RelativeResidual: 1e-4,
+      gpuReactionBalanceErrorN: .1, wasmForceBalanceErrorN: 0.01,
+      wasmReactionN: [-1, 0, 0],
       appliedLoadN: structuralAppliedLoadMagnitude(source),
-      wasmRelativeL2: 1e-4, realGpu: true, metadata: STRUCTURAL_VERIFICATION_METADATA,
+      wasmRelativeL2: 1e-4, wasmFieldStressRelativeL2: 1e-4,
+      energyRelativeMismatch: 0, directRelativeResidual: 1e-4,
+      refinementCount: 0, refinementPasses: [{
+        kind: "initial", iterations: 4, recursiveResidual: 1e-6,
+        recomputedF32Residual: 1e-4, residualScaleN: structuralAppliedLoadMagnitude(source),
+        postDirectResidual: 1e-4, postBalance: 0.01, postEnergy: 0,
+      }], realGpu: true, metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
     rasterization: system.rasterization, displacementM, vonMisesStressPa,
   };

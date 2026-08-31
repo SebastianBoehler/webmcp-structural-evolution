@@ -2,6 +2,7 @@ import type { CompiledStructuralSystem } from "../structural/structural-contract
 import { buildHex8Stiffness } from "../structural/element-stiffness";
 import {
   acquireStructuralGpu, createDeviceGuard, safeDestroy, StructuralGpuError, withStructuralGpuErrorScopes,
+  type StructuralGpuAcquisitionObserver,
 } from "../structural/structural-gpu-runtime";
 import shader from "./sensitivity.wgsl?raw";
 
@@ -44,6 +45,7 @@ export async function updateTopologyFromCompliance(
   system: CompiledStructuralSystem,
   moveLimit: number,
   signal: AbortSignal,
+  observer?: StructuralGpuAcquisitionObserver,
 ): Promise<Float32Array> {
   const count = system.activeCells.length;
   if (density.length !== count || displacementM.length !== system.fixedDofs.length
@@ -51,7 +53,7 @@ export async function updateTopologyFromCompliance(
     || displacementM.some((value) => !Number.isFinite(value))) {
     throw new StructuralGpuError("invalid-input", "Topology compliance update fields do not match the compiled system");
   }
-  const device = await acquireStructuralGpu(signal);
+  const device = await acquireStructuralGpu(signal, observer);
   const guard = createDeviceGuard(device, signal);
   const buffers: GPUBuffer[] = [];
   try {

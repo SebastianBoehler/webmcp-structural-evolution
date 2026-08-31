@@ -37,6 +37,7 @@ describe("structural result artifacts", () => {
       truthLevel: "interactive-estimate",
       metadata: {
         referenceSolver: "rust-wasm-hex8-f64",
+        residualMethod: "webgpu-f32-pcg-recurrence",
         fixtureCellDimensions: { axial: [20, 2, 2], cantilever: [24, 4, 2] },
         maxIterations: 512,
         thresholds: {
@@ -68,7 +69,12 @@ describe("structural result artifacts", () => {
 
     await expect(packInteractiveStructuralRunResult(request, {
       ...result,
-      verification: { ...result.verification, forceBalanceErrorN: 0.1 },
+      verification: {
+        ...result.verification, gpuReactionBalanceErrorN: 100,
+        wasmForceBalanceErrorN: 0.1,
+        refinementPasses: result.verification.refinementPasses.map((pass, index, passes) =>
+          index === passes.length - 1 ? { ...pass, postBalance: 0.1 } : pass),
+      },
     })).resolves.toMatchObject({ truthLevel: "interactive-estimate" });
   });
 
@@ -119,7 +125,7 @@ describe("structural result artifacts", () => {
     ["grid consistency", (value: StructuralResult) => ({
       ...value, grid: { ...value.grid, nodeDimensions: [6, 3, 3] as const },
     }), /grid.*compiled system/i],
-    ["iteration ceiling", (value: StructuralResult) => ({ ...value, iterations: 513 }), /iterations/i],
+    ["iteration ceiling", (value: StructuralResult) => ({ ...value, iterations: 2049 }), /iterations/i],
     ["finite metrics", (value: StructuralResult) => ({ ...value, complianceJ: Number.NaN }), /metrics.*finite/i],
     ["energy relation", (value: StructuralResult) => ({ ...value, strainEnergyJ: 0.006 }), /energy.*compliance/i],
     ["field maximum", (value: StructuralResult) => ({ ...value, maximumDisplacementM: 2e-6 }), /maximum displacement/i],
@@ -130,7 +136,7 @@ describe("structural result artifacts", () => {
       ...value, verification: { ...value.verification, relativeResidual: Number.NaN },
     }), /numerical evidence.*finite/i],
     ["force balance threshold", (value: StructuralResult) => ({
-      ...value, verification: { ...value.verification, forceBalanceErrorN: 1 },
+      ...value, verification: { ...value.verification, wasmForceBalanceErrorN: 1 },
     }), /force balance.*threshold/i],
     ["applied load consistency", (value: StructuralResult) => ({
       ...value, verification: { ...value.verification, appliedLoadN: 900 },
@@ -138,6 +144,23 @@ describe("structural result artifacts", () => {
     ["Wasm agreement threshold", (value: StructuralResult) => ({
       ...value, verification: { ...value.verification, wasmRelativeL2: 1e-2 },
     }), /Wasm.*threshold/i],
+    ["Wasm field stress threshold", (value: StructuralResult) => ({
+      ...value, verification: { ...value.verification, wasmFieldStressRelativeL2: 1e-2 },
+    }), /field-stress.*threshold/i],
+    ["field energy threshold", (value: StructuralResult) => ({
+      ...value, verification: { ...value.verification, energyRelativeMismatch: 1e-2 },
+    }), /field energy.*threshold/i],
+    ["refinement pass residual", (value: StructuralResult) => ({
+      ...value, verification: {
+        ...value.verification,
+        refinementPasses: value.verification.refinementPasses.map((pass) => ({
+          ...pass, recursiveResidual: 1e-2,
+        })),
+      },
+    }), /refinement pass.*threshold/i],
+    ["refinement pass count", (value: StructuralResult) => ({
+      ...value, verification: { ...value.verification, refinementCount: 1 },
+    }), /refinement pass count/i],
   ])("rejects incoherent %s evidence", async (_label, mutate, message) => {
     const { request, result, system } = await validFixture();
     await expect(packInteractiveStructuralRunResult(request, mutate(result))).rejects.toThrow(message);
@@ -156,8 +179,16 @@ async function validFixture() {
     iterations: 12, complianceJ: 0.01, strainEnergyJ: 0.005,
     maximumDisplacementM: Math.hypot(displacementM[3]!), maximumVonMisesStressPa: 2e6,
     verification: {
-      relativeResidual: 1e-6, forceBalanceErrorN: 1e-6, appliedLoadN: 1000,
-      wasmRelativeL2: 1e-4, realGpu: true,
+      relativeResidual: 1e-6, recomputedF32RelativeResidual: 1e-4,
+      gpuReactionBalanceErrorN: .1, wasmForceBalanceErrorN: 1e-6,
+      wasmReactionN: [-1000, 0, 0], appliedLoadN: 1000,
+      wasmRelativeL2: 1e-4, wasmFieldStressRelativeL2: 1e-4,
+      energyRelativeMismatch: 0, directRelativeResidual: 1e-4,
+      refinementCount: 0, refinementPasses: [{
+        kind: "initial", iterations: 12, recursiveResidual: 1e-6,
+        recomputedF32Residual: 1e-4, residualScaleN: 1000,
+        postDirectResidual: 1e-4, postBalance: 1e-6, postEnergy: 0,
+      }], realGpu: true,
       metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
     rasterization: system.rasterization, displacementM, vonMisesStressPa,

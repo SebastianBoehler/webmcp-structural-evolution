@@ -25,8 +25,11 @@ export async function topologyStructuralDigest(result: StructuralResult): Promis
     metrics: new Float64Array([
       result.iterations, result.complianceJ, result.strainEnergyJ,
       result.maximumDisplacementM, result.maximumVonMisesStressPa,
-      result.verification.relativeResidual, result.verification.forceBalanceErrorN,
-      result.verification.appliedLoadN, result.verification.wasmRelativeL2,
+      result.verification.relativeResidual, result.verification.recomputedF32RelativeResidual,
+      result.verification.gpuReactionBalanceErrorN, result.verification.wasmForceBalanceErrorN,
+      ...result.verification.wasmReactionN, result.verification.appliedLoadN,
+      result.verification.wasmRelativeL2, result.verification.wasmFieldStressRelativeL2,
+      result.verification.energyRelativeMismatch,
     ]),
   });
 }
@@ -168,7 +171,9 @@ export async function validateTopologyPostAnalysis(
   result: StructuralResult,
 ) {
   const source = request.input.sourceStructuralRequest;
-  const post = await structuralRequestForTopologyMask(source, rerasterized, "post-extraction", meshArtifact);
+  const post = await structuralRequestForTopologyMask(
+    source, rerasterized, "post-extraction", meshArtifact, request.studyId,
+  );
   const system = await compileStructuralStudy(post.request);
   validateInteractiveStructuralResult(post.request, system, result);
   return post;

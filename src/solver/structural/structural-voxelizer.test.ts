@@ -11,10 +11,10 @@ import { produceStructuralVoxelMesh as produceWithInternalRebuild } from "./stru
 import * as producerSurface from "./structural-voxelizer";
 vi.mock("./structural-exact-source", () => ({ rebuildStructuralExactSource: vi.fn() }));
 const FACE_IDS = ["bottom", "top", "front", "back", "fixed", "loaded"] as const;
-function boxMesh(open = false): SemanticMeshPayload {
+function boxMesh(open = false, lengthM = .04): SemanticMeshPayload {
   const positionsM = new Float32Array([
-    0, 0, 0, .04, 0, 0, .04, .02, 0, 0, .02, 0,
-    0, 0, .02, .04, 0, .02, .04, .02, .02, 0, .02, .02,
+    0, 0, 0, lengthM, 0, 0, lengthM, .02, 0, 0, .02, 0,
+    0, 0, .02, lengthM, 0, .02, lengthM, .02, .02, 0, .02, .02,
   ]);
   const indices = new Uint32Array([
     0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7,
@@ -25,8 +25,9 @@ function boxMesh(open = false): SemanticMeshPayload {
     0, indices.length / 3,
   );
   const centroids = [
-    [.02, .01, 0], [.02, .01, .02], [.02, 0, .01], [.02, .02, .01],
-    [0, .01, .01], [.04, .01, .01],
+    [lengthM / 2, .01, 0], [lengthM / 2, .01, .02],
+    [lengthM / 2, 0, .01], [lengthM / 2, .02, .01],
+    [0, .01, .01], [lengthM, .01, .01],
   ] as const;
   return {
     positionsM, normals: new Float32Array(positionsM.length), indices,
@@ -35,7 +36,7 @@ function boxMesh(open = false): SemanticMeshPayload {
       signature: {
         ownerFeatureId: "extrude", kind: "face", geometry: "plane",
         centroidM: [...centroids[index]!] as [number, number, number],
-        measureSI: index < 2 ? .0008 : index < 4 ? .0008 : .0004,
+        measureSI: index < 4 ? lengthM * .02 : .0004,
         adjacentKinds: [],
       },
     })),
@@ -43,11 +44,11 @@ function boxMesh(open = false): SemanticMeshPayload {
     edgePointRanges: new Uint32Array(), edges: [], polylineEdgeIndices: new Uint32Array(),
   };
 }
-async function inputs(open = false, duplicateSelection = false) {
+async function inputs(open = false, duplicateSelection = false, lengthM = .04) {
   const source = await structuralDocument(duplicateSelection
     ? [{ selectionId: "loaded-copy", forceN: [1, 0, 0] }] : []);
   const { revision: _revision, ...content } = source;
-  const mesh = boxMesh(open);
+  const mesh = boxMesh(open, lengthM);
   const document = await defineDesignDocument({
     ...content,
     namedSelections: [
@@ -60,7 +61,7 @@ async function inputs(open = false, duplicateSelection = false) {
       { id: "loaded-end", reference: {
         bodyId: "bar", ownerFeatureId: "extrude", expectedKind: "face",
         stableId: "face:bar:loaded", signature: {
-          geometry: "plane", centroidM: [.04, .01, .01], measureSI: .0004, adjacentKinds: [],
+          geometry: "plane", centroidM: [lengthM, .01, .01], measureSI: .0004, adjacentKinds: [],
         },
       } },
       ...(duplicateSelection ? [{ id: "loaded-copy", reference: {
@@ -85,7 +86,7 @@ async function inputs(open = false, duplicateSelection = false) {
   const kernel = await OcctKernel.init();
   let brepPayload;
   try {
-    const shape = kernel.makeBox(.04, .02, .02);
+    const shape = kernel.makeBox(lengthM, .02, .02);
     try { brepPayload = { bytes: kernel.toBREPBinary(shape) }; }
     finally { kernel.release(shape); }
   } finally { kernel[Symbol.dispose](); }
@@ -165,6 +166,11 @@ describe("exact semantic mesh voxel producer", () => {
     });
     await expect(compileStructuralStudy(request)).resolves.toMatchObject({ activeCellCount: 16 });
   });
+  it("snaps a Float32 0.10 metre semantic bound to exactly ten 0.01 metre cells", async () => {
+    const input = await inputs(false, false, .1);
+    const produced = await produceStructuralVoxelMesh(producerInput(input));
+    expect([...produced.payload.dimensions]).toEqual([10, 2, 2]);
+  });
   it("rejects an open surface instead of manufacturing solver occupancy", async () => {
     const input = await inputs(true);
     await expect(produceStructuralVoxelMesh(producerInput(input))).rejects.toThrow("closed");
@@ -180,7 +186,6 @@ describe("exact semantic mesh voxel producer", () => {
       cellSizeM: 1e-5, rasterizationToleranceM: 1e-7,
     })).rejects.toThrow("cell limit");
   });
-
   it("rejects the exposed-facet correspondence product budget before rasterization", async () => {
     class ClassifierWorker {
       private listener?: (event: MessageEvent) => void;
@@ -202,7 +207,6 @@ describe("exact semantic mesh voxel producer", () => {
       ...producerInput(source), cellSizeM: .0004, rasterizationToleranceM: 1e-7,
     })).rejects.toThrow(/operation budget/i);
   });
-
   it("rejects missing, stale, wrong-type, wrong-digest, and mismatched exact BREP authority", async () => {
     const input = await inputs();
     const stale = await defineArtifactRecord({
@@ -243,7 +247,6 @@ describe("exact semantic mesh voxel producer", () => {
       ...producerInput(input), bodyIds: ["foreign-body"],
     })).rejects.toThrow(/ownership/i);
   });
-
   it("rejects same-bounds exact solids with different volume and incomplete provenance", async () => {
     const input = await inputs();
     const incomplete = await defineArtifactRecord({
@@ -276,7 +279,6 @@ describe("exact semantic mesh voxel producer", () => {
       ...producerInput(input), brepArtifact: sparseArtifact, brepPayload: sparsePayload,
     })).rejects.toThrow(/solid|volume|occupancy/i);
   });
-
   it("rejects a forged canonical artifact identity", async () => {
     const input = await inputs();
     await expect(produceStructuralVoxelMesh({
@@ -284,7 +286,6 @@ describe("exact semantic mesh voxel producer", () => {
       brepArtifact: { ...input.brepArtifact, id: "f".repeat(64) } as never,
     })).rejects.toThrow();
   });
-
   it("cancels exact classification and a fresh producer run recovers", async () => {
     const input = await inputs();
     const controller = new AbortController();

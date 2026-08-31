@@ -33,6 +33,12 @@ fn update_solution_residual(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 @compute @workgroup_size(64)
+fn recompute_residual(@builtin(global_invocation_id) id: vec3<u32>) {
+  if (id.x >= params.count) { return; }
+  residual[id.x] = select(rhs[id.x] - product[id.x], 0.0, fixed_dofs[id.x] != 0u);
+}
+
+@compute @workgroup_size(64)
 fn apply_preconditioner(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.x >= params.count) { return; }
   if (fixed_dofs[id.x] != 0u) {

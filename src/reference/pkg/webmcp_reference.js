@@ -1,5 +1,107 @@
 /* @ts-self-types="./webmcp_reference.d.ts" */
 
+export class WasmStructuralFieldEvaluation {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmStructuralFieldEvaluation.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmStructuralFieldEvaluationFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmStructuralFieldEvaluationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmstructuralfieldevaluation_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get compliance_j() {
+        const ret = wasm.wasmstructuralfieldevaluation_compliance_j(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get direct_relative_residual() {
+        const ret = wasm.wasmstructuralfieldevaluation_direct_relative_residual(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get energy_relative_mismatch() {
+        const ret = wasm.wasmstructuralfieldevaluation_energy_relative_mismatch(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get force_balance_error_n() {
+        const ret = wasm.wasmstructuralfieldevaluation_force_balance_error_n(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get reaction_n() {
+        const ret = wasm.wasmstructuralfieldevaluation_reaction_n(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get strain_energy_j() {
+        const ret = wasm.wasmstructuralfieldevaluation_strain_energy_j(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float32Array}
+     */
+    get von_mises_stress_pa() {
+        const ret = wasm.wasmstructuralfieldevaluation_von_mises_stress_pa(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+}
+if (Symbol.dispose) WasmStructuralFieldEvaluation.prototype[Symbol.dispose] = WasmStructuralFieldEvaluation.prototype.free;
+
+export class WasmStructuralIterateEvaluation {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmStructuralIterateEvaluation.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmStructuralIterateEvaluationFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmStructuralIterateEvaluationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmstructuraliterateevaluation_free(ptr, 0);
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get free_residual_n() {
+        const ret = wasm.wasmstructuraliterateevaluation_free_residual_n(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+}
+if (Symbol.dispose) WasmStructuralIterateEvaluation.prototype[Symbol.dispose] = WasmStructuralIterateEvaluation.prototype.free;
+
 export class WasmStructuralReferenceResult {
     static __wrap(ptr) {
         const obj = Object.create(WasmStructuralReferenceResult.prototype);
@@ -209,6 +311,36 @@ export class WasmTopologyResult {
     }
 }
 if (Symbol.dispose) WasmTopologyResult.prototype[Symbol.dispose] = WasmTopologyResult.prototype.free;
+
+/**
+ * @param {any} input
+ * @param {Float32Array} displacement_m
+ * @returns {WasmStructuralFieldEvaluation}
+ */
+export function evaluate_structural_field(input, displacement_m) {
+    const ptr0 = passArrayF32ToWasm0(displacement_m, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.evaluate_structural_field(input, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmStructuralFieldEvaluation.__wrap(ret[0]);
+}
+
+/**
+ * @param {any} input
+ * @param {Float64Array} displacement_m
+ * @returns {WasmStructuralIterateEvaluation}
+ */
+export function evaluate_structural_iterate_f64(input, displacement_m) {
+    const ptr0 = passArrayF64ToWasm0(displacement_m, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.evaluate_structural_iterate_f64(input, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmStructuralIterateEvaluation.__wrap(ret[0]);
+}
 
 /**
  * @param {string} preset
@@ -488,6 +620,12 @@ function __wbg_get_imports() {
     };
 }
 
+const WasmStructuralFieldEvaluationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmstructuralfieldevaluation_free(ptr, 1));
+const WasmStructuralIterateEvaluationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmstructuraliterateevaluation_free(ptr, 1));
 const WasmStructuralReferenceResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmstructuralreferenceresult_free(ptr, 1));
@@ -571,6 +709,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+
 function getArrayJsValueFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     const mem = getDataViewMemory0();
@@ -603,6 +746,14 @@ function getFloat32ArrayMemory0() {
     return cachedFloat32ArrayMemory0;
 }
 
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
 }
@@ -631,6 +782,13 @@ function isLikeNone(x) {
 function passArrayF32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF64ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 8, 8) >>> 0;
+    getFloat64ArrayMemory0().set(arg, ptr / 8);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -714,6 +872,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

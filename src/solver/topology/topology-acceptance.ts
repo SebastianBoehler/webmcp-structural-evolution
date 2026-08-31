@@ -30,12 +30,17 @@ function coherentStructuralEvidence(result: StructuralResult): boolean {
   const metrics = [
     result.iterations, result.complianceJ, result.strainEnergyJ,
     result.maximumDisplacementM, result.maximumVonMisesStressPa,
-    result.verification.relativeResidual, result.verification.forceBalanceErrorN,
-    result.verification.appliedLoadN, result.verification.wasmRelativeL2,
+    result.verification.relativeResidual, result.verification.recomputedF32RelativeResidual,
+    result.verification.gpuReactionBalanceErrorN, result.verification.wasmForceBalanceErrorN,
+    result.verification.appliedLoadN,
+    result.verification.wasmRelativeL2, result.verification.wasmFieldStressRelativeL2,
+    result.verification.energyRelativeMismatch,
   ];
   return result.truthLevel === "interactive-estimate"
     && Number.isInteger(result.iterations) && result.iterations > 0
     && metrics.every((value) => Number.isFinite(value) && value >= 0)
+    && result.verification.wasmReactionN.length === 3
+    && result.verification.wasmReactionN.every(Number.isFinite)
     && result.displacementM instanceof Float32Array
     && result.vonMisesStressPa instanceof Float32Array
     && result.displacementM.length > 0 && result.vonMisesStressPa.length > 0

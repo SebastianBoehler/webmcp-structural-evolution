@@ -3,6 +3,8 @@ import {
   STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
   STRUCTURAL_FORCE_BALANCE_TOLERANCE,
   STRUCTURAL_MAX_ITERATIONS,
+  STRUCTURAL_MAX_REFINEMENTS,
+  STRUCTURAL_MAX_TOTAL_ITERATIONS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
   STRUCTURAL_VERIFICATION_METADATA,
   STRUCTURAL_WASM_L2_TOLERANCE,
@@ -56,6 +58,40 @@ function finiteNonnegative(values: readonly number[]): boolean {
   return values.every((value) => Number.isFinite(value) && value >= 0);
 }
 
+function validateRefinementEvidence(result: StructuralResult): void {
+  const evidence = result.verification;
+  const passes = evidence.refinementPasses;
+  if (!Number.isInteger(evidence.refinementCount) || evidence.refinementCount < 0
+    || evidence.refinementCount > STRUCTURAL_MAX_REFINEMENTS
+    || passes.length !== evidence.refinementCount + 1) {
+    throw new Error("Structural refinement pass count is inconsistent");
+  }
+  for (let index = 0; index < passes.length; index += 1) {
+    const pass = passes[index]!;
+    if (pass.kind !== (index === 0 ? "initial" : "correction")
+      || !Number.isInteger(pass.iterations) || pass.iterations < 1
+      || pass.iterations > STRUCTURAL_MAX_ITERATIONS
+      || !finiteNonnegative([
+        pass.recursiveResidual, pass.recomputedF32Residual, pass.residualScaleN,
+        pass.postDirectResidual, pass.postBalance, pass.postEnergy,
+      ]) || pass.residualScaleN <= 0) {
+      throw new Error("Structural refinement pass evidence is invalid");
+    }
+    if (pass.recursiveResidual > STRUCTURAL_RESIDUAL_TOLERANCE) {
+      throw new Error("Structural refinement pass residual exceeds the locked threshold");
+    }
+  }
+  const iterationTotal = passes.reduce((sum, pass) => sum + pass.iterations, 0);
+  const recursiveMaximum = Math.max(...passes.map((pass) => pass.recursiveResidual));
+  const final = passes[passes.length - 1]!;
+  if (iterationTotal !== result.iterations || recursiveMaximum !== evidence.relativeResidual
+    || final.postDirectResidual !== evidence.directRelativeResidual
+    || final.postBalance !== evidence.wasmForceBalanceErrorN
+    || final.postEnergy !== evidence.energyRelativeMismatch) {
+    throw new Error("Structural refinement pass evidence does not match the final result");
+  }
+}
+
 function validateSystemBinding(
   request: EngineeringSolveRequest<StructuralSolveInput>,
   system: CompiledStructuralSystem,
@@ -98,7 +134,7 @@ export function validateInteractiveStructuralResult(
     throw new Error("Structural stress field values must be finite and nonnegative");
   }
   if (!Number.isInteger(result.iterations) || result.iterations < 1
-    || result.iterations > STRUCTURAL_MAX_ITERATIONS) {
+    || result.iterations > STRUCTURAL_MAX_TOTAL_ITERATIONS) {
     throw new Error("Structural result iterations exceed the locked solver bounds");
   }
   const metrics = [
@@ -123,15 +159,18 @@ export function validateInteractiveStructuralResult(
     throw new Error("Structural verification metadata does not match the locked reference contract");
   }
   if (!finiteNonnegative([
-    evidence.relativeResidual, evidence.forceBalanceErrorN,
-    evidence.appliedLoadN, evidence.wasmRelativeL2,
+    evidence.relativeResidual, evidence.gpuReactionBalanceErrorN,
+    evidence.wasmForceBalanceErrorN, evidence.appliedLoadN,
+    evidence.recomputedF32RelativeResidual, evidence.wasmRelativeL2,
+    evidence.wasmFieldStressRelativeL2, evidence.energyRelativeMismatch,
+    evidence.directRelativeResidual,
   ]) || evidence.appliedLoadN <= 0) {
     throw new Error("Structural numerical evidence must be finite and nonnegative");
   }
   if (evidence.relativeResidual > STRUCTURAL_RESIDUAL_TOLERANCE) {
     throw new Error("Structural residual exceeds the locked threshold");
   }
-  if (evidence.forceBalanceErrorN > evidence.appliedLoadN * STRUCTURAL_FORCE_BALANCE_TOLERANCE) {
+  if (evidence.wasmForceBalanceErrorN > evidence.appliedLoadN * STRUCTURAL_FORCE_BALANCE_TOLERANCE) {
     throw new Error("Structural force balance exceeds the locked threshold");
   }
   if (evidence.appliedLoadN !== structuralAppliedLoadMagnitude(request)) {
@@ -140,4 +179,14 @@ export function validateInteractiveStructuralResult(
   if (evidence.wasmRelativeL2 > STRUCTURAL_WASM_L2_TOLERANCE) {
     throw new Error("Structural Wasm agreement exceeds the locked threshold");
   }
+  if (evidence.wasmFieldStressRelativeL2 > STRUCTURAL_WASM_L2_TOLERANCE) {
+    throw new Error("Structural Wasm field-stress agreement exceeds the locked threshold");
+  }
+  if (evidence.wasmReactionN.length !== 3 || !evidence.wasmReactionN.every(Number.isFinite)) {
+    throw new Error("Structural Wasm reaction vector is invalid");
+  }
+  if (evidence.energyRelativeMismatch > STRUCTURAL_ENERGY_RELATIVE_TOLERANCE) {
+    throw new Error("Structural field energy exceeds the locked threshold");
+  }
+  validateRefinementEvidence(result);
 }

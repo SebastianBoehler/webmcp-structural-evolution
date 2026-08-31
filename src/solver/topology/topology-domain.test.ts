@@ -5,7 +5,7 @@ import {
   assertTopologyInterfacesConnected, projectTopologyAnalysisDensity,
   projectTopologyDensity, topologyMask,
 } from "./density-constraints";
-import { extractTopologyMesh } from "./extract-topology";
+import { extractTopologyMesh, rasterizeExtractedTopology } from "./extract-topology";
 import { validateInitialDensity } from "./topology-input";
 
 const grid = {
@@ -38,6 +38,24 @@ describe("canonical topology design domain", () => {
       grid, new Float32Array([1, 1, 1, 0]),
       { isoValue: 0.5, toleranceM: 1e-6 }, domain,
     )).toThrow(/design domain/i);
+  });
+
+  it("exactly rerasterizes a concave cobot-link voxel domain", () => {
+    const cobotGrid = {
+      cellDimensions: [20, 6, 3] as const, nodeDimensions: [21, 7, 4] as const,
+      originM: [0, 0, 0] as const, cellSizeM: 0.005,
+    };
+    const active = new Uint32Array(20 * 6 * 3);
+    for (let z = 0; z < 3; z += 1) for (let y = 0; y < 6; y += 1) for (let x = 0; x < 20; x += 1) {
+      const inWeb = y >= 2 && y <= 3;
+      const inShoulder = x <= 3;
+      const inElbow = x >= 16 && y >= 1 && y <= 4;
+      active[x + 20 * (y + 6 * z)] = Number(inWeb || inShoulder || inElbow);
+    }
+    const mesh = extractTopologyMesh(
+      cobotGrid, Float32Array.from(active), { isoValue: 0.5, toleranceM: 1e-6 }, active,
+    );
+    expect(rasterizeExtractedTopology(mesh, cobotGrid)).toEqual(active);
   });
 
   it("removes the lowest-cost active cells to make discrete target progress before iso crossing", () => {

@@ -1,5 +1,6 @@
 import {
   acquireStructuralGpu, createDeviceGuard, safeDestroy, StructuralGpuError, withStructuralGpuErrorScopes,
+  type StructuralGpuAcquisitionObserver,
 } from "../structural/structural-gpu-runtime";
 import filterShader from "./density-filter.wgsl?raw";
 export { minimumComplianceDirection, updateTopologyFromCompliance as updateTopologyDensity } from "./compliance-update-gpu";
@@ -34,8 +35,9 @@ async function runKernel(
   auxiliary: Float32Array,
   parameterData: ArrayBuffer,
   signal: AbortSignal,
+  observer?: StructuralGpuAcquisitionObserver,
 ): Promise<Float32Array> {
-  const device = await acquireStructuralGpu(signal);
+  const device = await acquireStructuralGpu(signal, observer);
   const guard = createDeviceGuard(device, signal);
   const buffers: GPUBuffer[] = [];
   try {
@@ -103,6 +105,7 @@ export async function filterTopologyDensity(
   radiusCells: number,
   designDomain: Uint32Array,
   signal: AbortSignal,
+  observer?: StructuralGpuAcquisitionObserver,
 ): Promise<Float32Array> {
   const count = dimensions.reduce((product, value) => product * value, 1);
   validateField(density, count, "Topology density");
@@ -113,5 +116,5 @@ export async function filterTopologyDensity(
     throw new StructuralGpuError("invalid-input", "Topology filter design domain is invalid");
   }
   return runKernel(filterShader, "filter_density", density, Float32Array.from(designDomain),
-    params(dimensions, count, radiusCells, 0, 1, 1), signal);
+    params(dimensions, count, radiusCells, 0, 1, 1), signal, observer);
 }

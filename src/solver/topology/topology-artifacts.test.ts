@@ -4,6 +4,7 @@ import { defineArtifactRecord } from "../../cad/artifact-contract";
 import { defineDesignDocument } from "../../cad/document-schema";
 import { defineEngineeringSolveRequest } from "../../cad/engineering-job-contract";
 import { createArtifactStore, digestArtifactPayload } from "../../engineering/artifact-store";
+import { prepareSolverRunResult } from "../../engineering/job-runner-result";
 import { compileStructuralStudy } from "../structural/compile-structural-study";
 import {
   STRUCTURAL_VERIFICATION_METADATA,
@@ -39,8 +40,16 @@ async function analysis(
     complianceJ, strainEnergyJ: complianceJ / 2,
     maximumDisplacementM: displacementM[0]!, maximumVonMisesStressPa: 10,
     verification: {
-      relativeResidual: 1e-6, forceBalanceErrorN: 0.01, appliedLoadN: 1000,
-      wasmRelativeL2: 1e-4, realGpu: true, metadata: STRUCTURAL_VERIFICATION_METADATA,
+      relativeResidual: 1e-6, recomputedF32RelativeResidual: 1e-4,
+      gpuReactionBalanceErrorN: .1, wasmForceBalanceErrorN: 0.01,
+      wasmReactionN: [-1000, 0, 0], appliedLoadN: 1000,
+      wasmRelativeL2: 1e-4, wasmFieldStressRelativeL2: 1e-4,
+      energyRelativeMismatch: 0, directRelativeResidual: 1e-4,
+      refinementCount: 0, refinementPasses: [{
+        kind: "initial", iterations: 4, recursiveResidual: 1e-6,
+        recomputedF32Residual: 1e-4, residualScaleN: 1000,
+        postDirectResidual: 1e-4, postBalance: 0.01, postEnergy: 0,
+      }], realGpu: true, metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
     rasterization: system.rasterization, displacementM,
     vonMisesStressPa: new Float32Array(system.activeCells.length).fill(10),
@@ -155,9 +164,14 @@ async function protectedEvidence() {
 
 describe("canonical topology artifact packaging", () => {
   it("rederives every artifact and decision from canonical revision-owned evidence", async () => {
-    const packed = await packInteractiveTopologyRunResult(await canonicalEvidence());
+    const evidence = await canonicalEvidence();
+    const packed = await packInteractiveTopologyRunResult(evidence);
     expect(packed.artifacts).toHaveLength(6);
     await expect(createArtifactStore().commit(packed.artifacts, () => true)).resolves.toBeUndefined();
+    await expect(prepareSolverRunResult(evidence.request, packed)).resolves.toBeDefined();
+    expect(packed.artifacts.every(({ record }) => record.dependencies.some(
+      (dependency) => dependency.kind === "entity" && dependency.reference === "study:bar-topology",
+    ))).toBe(true);
     const mesh = packed.artifacts.find(({ record }) => record.kind === "manufacturing-mesh")!;
     const voxel = packed.artifacts.find(({ record }) => record.kind === "solver-mesh")!;
     const source = (await request()).input.sourceStructuralRequest;

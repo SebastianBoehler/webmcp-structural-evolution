@@ -1,10 +1,21 @@
 import type { EngineeringSolveRequest, SolverAdapter } from "../../engineering/solver-adapter";
-import { relativeL2, solveStructuralReference } from "../../reference";
+import {
+  evaluateStructuralField,
+  evaluateStructuralIterateF64,
+  relativeL2,
+  solveStructuralReference,
+} from "../../reference";
 import { compileStructuralStudy } from "./compile-structural-study";
 import { runStructuralPcg } from "./pcg";
 import {
+  runMixedPrecisionRefinement,
+  type MixedPrecisionStructuralSolve,
+} from "./mixed-precision-refinement";
+import { postprocessStructuralField } from "./structural-gpu-postprocess";
+import {
   DEFAULT_STRUCTURAL_COMPILE_LIMITS,
   STRUCTURAL_FORCE_BALANCE_TOLERANCE,
+  STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
   STRUCTURAL_MAX_ITERATIONS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
   STRUCTURAL_VERIFICATION_METADATA,
@@ -19,6 +30,7 @@ import {
   acquireStructuralGpu,
   safeDestroy,
   StructuralGpuError,
+  type StructuralGpuAcquisitionObserver,
 } from "./structural-gpu-runtime";
 
 function unsupported(
@@ -107,20 +119,32 @@ function referenceInput(system: CompiledStructuralSystem) {
 async function verifiedResult(
   request: EngineeringSolveRequest<StructuralSolveInput>,
   system: CompiledStructuralSystem,
-  gpu: Awaited<ReturnType<typeof runStructuralPcg>>,
+  gpu: MixedPrecisionStructuralSolve,
 ): Promise<StructuralResult> {
-  const reference = await solveStructuralReference(referenceInput(system));
+  const input = referenceInput(system);
+  const reference = await solveStructuralReference(input);
+  const evaluation = gpu.fieldEvaluation;
+  if (gpu.vonMisesStressPa.length !== system.activeCells.length
+    || evaluation.vonMisesStressPa.length !== system.activeCells.length) {
+    throw new StructuralGpuError("diverged", "Refined structural stress field length is invalid");
+  }
   const displacementDelta = await relativeL2(reference.displacementM, gpu.displacementM);
   const stressDelta = await relativeL2(reference.vonMisesStressPa, gpu.vonMisesStressPa);
+  const fieldStressDelta = await relativeL2(evaluation.vonMisesStressPa, gpu.vonMisesStressPa);
   const wasmRelativeL2 = Math.max(displacementDelta, stressDelta);
   const appliedLoadN = structuralAppliedLoadMagnitude(request);
   const numericalGatesPassed = gpu.relativeResidual <= STRUCTURAL_RESIDUAL_TOLERANCE
-    && gpu.forceBalanceErrorN <= appliedLoadN * STRUCTURAL_FORCE_BALANCE_TOLERANCE
-    && wasmRelativeL2 <= STRUCTURAL_WASM_L2_TOLERANCE;
+    && evaluation.forceBalanceErrorN <= appliedLoadN * STRUCTURAL_FORCE_BALANCE_TOLERANCE
+    && wasmRelativeL2 <= STRUCTURAL_WASM_L2_TOLERANCE
+    && fieldStressDelta <= STRUCTURAL_WASM_L2_TOLERANCE
+    && evaluation.energyRelativeMismatch <= STRUCTURAL_ENERGY_RELATIVE_TOLERANCE;
   if (!numericalGatesPassed) {
     throw new StructuralGpuError(
       "diverged",
-      `Structural verification failed (residual ${gpu.relativeResidual}, balance ${gpu.forceBalanceErrorN}, Wasm L2 ${wasmRelativeL2})`,
+      `Structural verification failed (GPU iterations ${gpu.iterations}, residual ${gpu.relativeResidual}, `
+      + `recomputed f32 ${gpu.recomputedF32RelativeResidual}, GPU reaction ${gpu.forceBalanceErrorN}, `
+      + `Wasm balance ${evaluation.forceBalanceErrorN}, Wasm L2 ${wasmRelativeL2}, `
+      + `field stress L2 ${fieldStressDelta}, energy ${evaluation.energyRelativeMismatch})`,
     );
   }
   return {
@@ -128,15 +152,23 @@ async function verifiedResult(
     truthLevel: "interactive-estimate",
     grid: system.grid,
     iterations: gpu.iterations,
-    complianceJ: gpu.complianceJ,
-    strainEnergyJ: gpu.complianceJ * 0.5,
+    complianceJ: evaluation.complianceJ,
+    strainEnergyJ: evaluation.strainEnergyJ,
     maximumDisplacementM: maximumDisplacement(gpu.displacementM),
     maximumVonMisesStressPa: maximumValue(gpu.vonMisesStressPa),
     verification: {
       relativeResidual: gpu.relativeResidual,
-      forceBalanceErrorN: gpu.forceBalanceErrorN,
+      recomputedF32RelativeResidual: gpu.recomputedF32RelativeResidual,
+      gpuReactionBalanceErrorN: gpu.forceBalanceErrorN,
+      wasmForceBalanceErrorN: evaluation.forceBalanceErrorN,
+      wasmReactionN: evaluation.reactionN,
       appliedLoadN,
       wasmRelativeL2,
+      wasmFieldStressRelativeL2: fieldStressDelta,
+      energyRelativeMismatch: evaluation.energyRelativeMismatch,
+      directRelativeResidual: evaluation.directRelativeResidual,
+      refinementCount: gpu.refinementCount,
+      refinementPasses: gpu.passes,
       realGpu: true,
       metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
@@ -146,7 +178,13 @@ async function verifiedResult(
   };
 }
 
-export function createWebGpuStructuralAdapter(): SolverAdapter<StructuralSolveInput, StructuralResult> {
+export interface WebGpuStructuralAdapterOptions {
+  readonly onAcquisition?: StructuralGpuAcquisitionObserver;
+}
+
+export function createWebGpuStructuralAdapter(
+  options: WebGpuStructuralAdapterOptions = {},
+): SolverAdapter<StructuralSolveInput, StructuralResult> {
   return {
     capability: { kind: "fea" },
     supports: capability,
@@ -166,10 +204,26 @@ export function createWebGpuStructuralAdapter(): SolverAdapter<StructuralSolveIn
           error instanceof Error ? error.message : "Structural study compilation failed",
         );
       }
-      const device = await acquireStructuralGpu(signal);
+      const device = await acquireStructuralGpu(signal, options.onAcquisition);
       try {
         emit({ progress: 0.05 });
-        const gpu = await runStructuralPcg(device, system, signal, (progress) => emit({ progress }));
+        const input = referenceInput(system);
+        const balanceToleranceN = structuralAppliedLoadMagnitude(request)
+          * STRUCTURAL_FORCE_BALANCE_TOLERANCE;
+        let solvePass = 0;
+        const gpu = await runMixedPrecisionRefinement({
+          initialRhsN: system.loadsN, forceBalanceToleranceN: balanceToleranceN, signal,
+          solve: async (rhsN) => {
+            const pass = solvePass;
+            solvePass += 1;
+            return runStructuralPcg(device, system, signal, (progress) => {
+              emit({ progress: 0.05 + 0.75 * (pass + progress) / 4 });
+            }, rhsN);
+          },
+          evaluateMaster: (field) => evaluateStructuralIterateF64(input, field),
+          evaluateCandidate: (field) => evaluateStructuralField(input, field),
+          postprocess: (field) => postprocessStructuralField(device, system, signal, field),
+        });
         emit({ progress: 0.9 });
         const result = await verifiedResult(request, system, gpu);
         emit({ progress: 0.98 });

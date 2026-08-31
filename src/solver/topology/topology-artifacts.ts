@@ -103,6 +103,7 @@ async function packValidatedTopologyBundle(input: Readonly<{
     maskShape: u32([input.binaryMasks.length, input.density.length]),
   }, "density-history", baseDependencies(input.request));
   const fieldDependencies: ArtifactRecord["dependencies"] = [
+    { kind: "entity", reference: `study:${input.request.studyId}` },
     { kind: "artifact", artifactId: input.request.input.sourceStructuralRequest.input.semanticMeshArtifactId },
     { kind: "artifact", artifactId: input.rerasterizedVoxel.id },
   ];
@@ -115,8 +116,11 @@ async function packValidatedTopologyBundle(input: Readonly<{
     { vonMisesStressPa: f32(input.postAnalysis.vonMisesStressPa) },
     "post-extraction-stress", fieldDependencies);
   const decisionDependencies: ArtifactRecord["dependencies"] = [
+    { kind: "entity", reference: `study:${input.request.studyId}` },
+    ...[
     history.record, input.meshArtifact.record, input.rerasterizedVoxel, displacement.record, stress.record,
-  ].map(({ id }) => ({ kind: "artifact" as const, artifactId: id }));
+    ].map(({ id }) => ({ kind: "artifact" as const, artifactId: id })),
+  ];
   const decision = await generated(input.request, "field", TOPOLOGY_DECISION_MEDIA_TYPE, {
     decisionUtf8: utf8({
       acceptance: input.acceptance, extraction: input.extraction,

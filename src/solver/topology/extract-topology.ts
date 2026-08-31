@@ -129,7 +129,9 @@ export function rasterizeExtractedTopology(mesh: TopologyMesh, grid: StructuralG
   }
   const count = grid.cellDimensions.reduce((product, value) => product * value, 1);
   const active = new Uint32Array(count);
-  const direction: Point = [1, 0.371390676, 0.217391304];
+  // Extracted faces lie on voxel lattice planes. A cell-center +X ray crosses
+  // only X-normal faces and cannot pass through a lattice edge or vertex.
+  const direction: Point = [1, 0, 0];
   const [width, height, depth] = grid.cellDimensions;
   for (let z = 0; z < depth; z += 1) for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {

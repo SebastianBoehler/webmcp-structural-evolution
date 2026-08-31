@@ -31,8 +31,13 @@ function byteSize(value: ArrayBufferView): number {
 export function createStructuralGpuResources(
   device: GPUDevice,
   system: CompiledStructuralSystem,
+  rhsN: Float32Array = system.loadsN,
 ): StructuralGpuResources {
   const buffers: GPUBuffer[] = [];
+  if (rhsN.length !== system.fixedDofs.length || !rhsN.every(Number.isFinite)
+    || rhsN.some((value, index) => system.fixedDofs[index] !== 0 && value !== 0)) {
+    throw new StructuralGpuError("invalid-input", "Structural GPU right-hand side is invalid");
+  }
   const create = (label: string, size: number, usage: GPUBufferUsageFlags) => {
     if (size > device.limits.maxBufferSize || size > device.limits.maxStorageBufferBindingSize
       && (usage & GPUBufferUsage.STORAGE) !== 0) {
@@ -57,7 +62,9 @@ export function createStructuralGpuResources(
     const stiffness = create("structural-ke", stiffnessValues.byteLength, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     const rhs = create("structural-rhs", dofBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     const vector = (label: string) => create(label, dofBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
-    const x = vector("structural-x");
+    const x = create(
+      "structural-x", dofBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    );
     const r = vector("structural-r");
     const z = vector("structural-z");
     const p = vector("structural-p");
@@ -83,7 +90,7 @@ export function createStructuralGpuResources(
     device.queue.writeBuffer(active, 0, system.activeCells);
     device.queue.writeBuffer(fixed, 0, system.fixedDofs);
     device.queue.writeBuffer(stiffness, 0, stiffnessValues);
-    device.queue.writeBuffer(rhs, 0, system.loadsN);
+    device.queue.writeBuffer(rhs, 0, rhsN);
     return {
       gridParams, vectorParams, reductionParams, active, fixed, stiffness, rhs,
       x, r, z, p, product, diagonal, stress, partialA, partialB,

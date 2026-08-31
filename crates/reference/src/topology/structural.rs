@@ -43,7 +43,7 @@ fn dot(left: &[f64], right: &[f64]) -> f64 {
     left.iter().zip(right).map(|(a, b)| a * b).sum()
 }
 
-fn validate(input: &StructuralReferenceInput) -> Result<(), String> {
+pub(super) fn validate(input: &StructuralReferenceInput) -> Result<(), String> {
     let cells = input.cell_dimensions.iter().product::<usize>();
     let nodes = input
         .cell_dimensions

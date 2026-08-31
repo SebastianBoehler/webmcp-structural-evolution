@@ -1,5 +1,11 @@
 import { acquireWebGpu } from "../../gpu/capabilities";
 
+export interface StructuralGpuAcquisition {
+  readonly adapter: GPUAdapter;
+  readonly device: GPUDevice;
+}
+export type StructuralGpuAcquisitionObserver = (acquisition: StructuralGpuAcquisition) => void;
+
 export type StructuralGpuErrorCode =
   | "unsupported-capability"
   | "invalid-input"
@@ -30,7 +36,10 @@ export function checkAbort(signal: AbortSignal): void {
   if (signal.aborted) throw abortError();
 }
 
-export async function acquireStructuralGpu(signal: AbortSignal): Promise<GPUDevice> {
+export async function acquireStructuralGpu(
+  signal: AbortSignal,
+  observer?: StructuralGpuAcquisitionObserver,
+): Promise<GPUDevice> {
   checkAbort(signal);
   const acquisition = await acquireWebGpu();
   if (signal.aborted) {
@@ -47,6 +56,8 @@ export async function acquireStructuralGpu(signal: AbortSignal): Promise<GPUDevi
       { kind: "precision", rule: "a live WebGPU adapter and device are required" },
     );
   }
+  try { observer?.({ adapter: acquisition.adapter, device: acquisition.device }); }
+  catch (error) { safeDestroy(acquisition.device); throw error; }
   return acquisition.device;
 }
 

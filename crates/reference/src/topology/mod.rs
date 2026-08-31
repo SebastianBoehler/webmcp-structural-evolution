@@ -9,6 +9,7 @@ mod solver;
 mod solver_tests;
 mod structural;
 mod structural_element;
+mod structural_field;
 mod structural_wasm;
 
 use serde::Deserialize;

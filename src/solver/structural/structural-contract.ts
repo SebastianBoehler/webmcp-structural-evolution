@@ -68,11 +68,30 @@ export interface CompiledStructuralSystem {
 
 export interface StructuralVerification {
   readonly relativeResidual: number;
-  readonly forceBalanceErrorN: number;
+  readonly recomputedF32RelativeResidual: number;
+  readonly gpuReactionBalanceErrorN: number;
+  readonly wasmForceBalanceErrorN: number;
+  readonly wasmReactionN: readonly [number, number, number];
   readonly appliedLoadN: number;
   readonly wasmRelativeL2: number;
+  readonly wasmFieldStressRelativeL2: number;
+  readonly energyRelativeMismatch: number;
+  readonly directRelativeResidual: number;
+  readonly refinementCount: number;
+  readonly refinementPasses: readonly StructuralRefinementPass[];
   readonly realGpu: true;
   readonly metadata: StructuralVerificationMetadata;
+}
+
+export interface StructuralRefinementPass {
+  readonly kind: "initial" | "correction";
+  readonly iterations: number;
+  readonly recursiveResidual: number;
+  readonly recomputedF32Residual: number;
+  readonly residualScaleN: number;
+  readonly postDirectResidual: number;
+  readonly postBalance: number;
+  readonly postEnergy: number;
 }
 
 export type StructuralVerificationMetadata = typeof STRUCTURAL_VERIFICATION_METADATA;
@@ -100,6 +119,8 @@ export const STRUCTURAL_RESIDUAL_TOLERANCE = 1e-5;
 export const STRUCTURAL_FORCE_BALANCE_TOLERANCE = 1e-4;
 export const STRUCTURAL_WASM_L2_TOLERANCE = 2e-3;
 export const STRUCTURAL_MAX_ITERATIONS = 512;
+export const STRUCTURAL_MAX_REFINEMENTS = 3;
+export const STRUCTURAL_MAX_TOTAL_ITERATIONS = STRUCTURAL_MAX_ITERATIONS * (STRUCTURAL_MAX_REFINEMENTS + 1);
 export const STRUCTURAL_ENERGY_RELATIVE_TOLERANCE = 1e-5;
 
 const fixtureCellDimensions = Object.freeze({
@@ -116,7 +137,11 @@ const verificationThresholds = Object.freeze({
 });
 export const STRUCTURAL_VERIFICATION_METADATA = Object.freeze({
   referenceSolver: "rust-wasm-hex8-f64" as const,
+  residualMethod: "webgpu-f32-pcg-recurrence" as const,
+  refinementMethod: "wasm-f64-residual-webgpu-f32-corrections" as const,
   fixtureCellDimensions,
   maxIterations: STRUCTURAL_MAX_ITERATIONS,
+  maxRefinements: STRUCTURAL_MAX_REFINEMENTS,
+  maxTotalIterations: STRUCTURAL_MAX_TOTAL_ITERATIONS,
   thresholds: verificationThresholds,
 });

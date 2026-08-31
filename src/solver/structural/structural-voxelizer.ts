@@ -97,12 +97,16 @@ function bounds(triangles: readonly OwnedTriangle[]): { origin: Point3; maximum:
   };
 }
 
-function dimensions(origin: Point3, maximum: Point3, cellSizeM: number): Dims {
+function dimensions(
+  origin: Point3, maximum: Point3, cellSizeM: number, rasterizationToleranceM: number,
+): Dims {
   const result = maximum.map((value, axis) => {
     const extent = value - origin[axis]!;
     const scale = Math.max(1, Math.abs(value), Math.abs(origin[axis]!));
-    const toleranceM = Math.max(Number.EPSILON * scale * 16, cellSizeM * 1e-9);
-    const count = Math.ceil((extent - toleranceM) / cellSizeM);
+    const toleranceM = Math.max(rasterizationToleranceM, Number.EPSILON * scale * 16);
+    const rounded = Math.round(extent / cellSizeM);
+    const count = Math.abs(extent - rounded * cellSizeM) <= toleranceM
+      ? rounded : Math.ceil(extent / cellSizeM);
     if (!Number.isSafeInteger(count) || count < 1) throw new Error("Exact semantic mesh has an invalid voxel extent");
     return count;
   }) as [number, number, number];
@@ -194,7 +198,9 @@ async function produceFromExact(
   const bodySet = new Set(input.bodyIds), triangles = ownedTriangles(mesh, bodySet);
   validateClosedTriangleBodies(triangles, input.bodyIds, input.rasterizationToleranceM);
   const { origin, maximum } = bounds(triangles);
-  const dims = dimensions(origin, maximum, input.cellSizeM);
+  const dims = dimensions(
+    origin, maximum, input.cellSizeM, input.rasterizationToleranceM,
+  );
   const classified = await occupancy(input, dims, origin);
   validateExactMeshCorrespondence(
     origin, maximum, classified.boundsM, classified.volumeM3, triangles,

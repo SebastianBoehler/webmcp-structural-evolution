@@ -17,6 +17,10 @@ function requireFloat32Array(value: unknown, name: string): asserts value is Flo
   }
 }
 
+function requireFloat64Array(value: unknown, name: string): asserts value is Float64Array {
+  if (!(value instanceof Float64Array)) throw new TypeError(`${name} must be a Float64Array`);
+}
+
 export async function relativeL2(
   expected: Float32Array,
   actual: Float32Array,
@@ -69,6 +73,20 @@ export interface StructuralReferenceResult {
   readonly relativeResidual: number;
   readonly forceBalanceErrorN: number;
   readonly complianceJ: number;
+}
+
+export interface StructuralFieldEvaluation {
+  readonly reactionN: readonly [number, number, number];
+  readonly vonMisesStressPa: Float32Array;
+  readonly forceBalanceErrorN: number;
+  readonly complianceJ: number;
+  readonly strainEnergyJ: number;
+  readonly energyRelativeMismatch: number;
+  readonly directRelativeResidual: number;
+}
+
+export interface StructuralIterateEvaluation {
+  readonly freeResidualN: Float64Array;
 }
 
 function finite(value: number): boolean {
@@ -154,4 +172,50 @@ export async function solveStructuralReference(
     vonMisesStressPa: new Float32Array(stress),
     ...metrics,
   };
+}
+
+export async function evaluateStructuralField(
+  input: StructuralReferenceInput,
+  displacementM: Float32Array,
+): Promise<StructuralFieldEvaluation> {
+  requireFloat32Array(displacementM, "displacementM");
+  const reference = await loadReference();
+  const result = reference.evaluate_structural_field(input, displacementM);
+  const evaluation = {
+    reactionN: [...result.reaction_n] as [number, number, number],
+    vonMisesStressPa: new Float32Array(result.von_mises_stress_pa),
+    forceBalanceErrorN: result.force_balance_error_n,
+    complianceJ: result.compliance_j,
+    strainEnergyJ: result.strain_energy_j,
+    energyRelativeMismatch: result.energy_relative_mismatch,
+    directRelativeResidual: result.direct_relative_residual,
+  };
+  if (evaluation.reactionN.length !== 3 || !evaluation.reactionN.every(finite)
+    || evaluation.vonMisesStressPa.length !== input.activeCells.length
+    || !evaluation.vonMisesStressPa.every((value) => finite(value) && value >= 0)
+    || ![evaluation.forceBalanceErrorN, evaluation.complianceJ, evaluation.strainEnergyJ,
+      evaluation.energyRelativeMismatch, evaluation.directRelativeResidual].every(finite)
+    || evaluation.forceBalanceErrorN < 0 || evaluation.complianceJ < 0
+    || evaluation.strainEnergyJ < 0 || evaluation.energyRelativeMismatch < 0
+    || evaluation.directRelativeResidual < 0) {
+    throw new Error("Invalid structural field evaluation returned by Wasm.");
+  }
+  return evaluation;
+}
+
+export async function evaluateStructuralIterateF64(
+  input: StructuralReferenceInput,
+  displacementM: Float64Array,
+): Promise<StructuralIterateEvaluation> {
+  requireFloat64Array(displacementM, "displacementM");
+  const reference = await loadReference();
+  const result = reference.evaluate_structural_iterate_f64(input, displacementM);
+  const evaluation = {
+    freeResidualN: new Float64Array(result.free_residual_n),
+  };
+  if (evaluation.freeResidualN.length !== displacementM.length
+    || !evaluation.freeResidualN.every(finite)) {
+    throw new Error("Invalid structural iterate evaluation returned by Wasm.");
+  }
+  return evaluation;
 }
