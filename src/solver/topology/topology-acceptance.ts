@@ -21,9 +21,9 @@ interface AcceptanceInput {
   readonly failureStressPa: number;
 }
 
-function monotonic(values: readonly number[]): boolean {
-  return values.length > 0 && values.every((value, index) => Number.isFinite(value)
-    && value >= 0 && (index === 0 || value <= values[index - 1]!));
+function finiteHistory(values: readonly number[]): boolean {
+  return values.length > 0 && values.every((value, index) => Number.isFinite(value) && value > 0
+    && (index === 0 || value >= values[index - 1]! * (1 - 1e-5)));
 }
 
 function coherentStructuralEvidence(result: StructuralResult): boolean {
@@ -48,7 +48,9 @@ function coherentStructuralEvidence(result: StructuralResult): boolean {
 
 export function decideTopologyAcceptance(input: AcceptanceInput): TopologyAcceptanceDecision {
   const reasons: string[] = [];
-  if (!monotonic(input.objectiveHistory)) reasons.push("objective history is not monotonic");
+  if (!finiteHistory(input.objectiveHistory)) {
+    reasons.push("objective history is not positive and nondecreasing within numerical tolerance");
+  }
   if (!input.extraction.closed) reasons.push("manufacturing mesh is not closed");
   if (!input.extraction.oriented) reasons.push("manufacturing mesh orientation is inconsistent");
   if (!input.extraction.requiredInterfacesConnected) reasons.push("required interfaces are disconnected");

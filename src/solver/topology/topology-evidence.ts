@@ -4,7 +4,9 @@ import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import { compileStructuralStudy } from "../structural/compile-structural-study";
 import type { StructuralResult } from "../structural/structural-contract";
 import { validateInteractiveStructuralResult } from "../structural/structural-result-validation";
-import { topologyDiscreteLimits, topologyMask } from "./density-constraints";
+import {
+  assertTopologyInterfacesConnected, topologyDiscreteLimits, topologyMask,
+} from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology, validateExtractedTopology } from "./extract-topology";
 import type {
   TopologyObjectiveSample, TopologySolveInput,
@@ -125,12 +127,14 @@ export async function canonicalTopologyEvidence(input: Readonly<{
   const samples: TopologyObjectiveSample[] = [];
   for (const [iteration, bytes] of input.binaryMasks.entries()) {
     const mask = Uint32Array.from(bytes);
+    assertTopologyInterfacesConnected(mask, system.grid.cellDimensions, passive.requiredInterfaces);
     const derived = await structuralRequestForTopologyMask(source, mask, `iteration-${iteration}`);
     const compiled = await compileStructuralStudy(derived.request);
     const analysis = input.analyses[iteration]!;
     validateInteractiveStructuralResult(derived.request, compiled, analysis);
-    if (samples.length && analysis.complianceJ > samples.at(-1)!.objectiveJ) {
-      throw new Error("Topology objective history is not monotonic");
+    if (!(analysis.complianceJ > 0)) throw new Error("Topology structural objective must be positive");
+    if (samples.length && analysis.complianceJ < samples.at(-1)!.objectiveJ * (1 - 1e-5)) {
+      throw new Error("Topology compliance decreased beyond locked numerical tolerance during material removal");
     }
     samples.push({
       iteration, objectiveJ: analysis.complianceJ, maskDigest: derived.maskDigest,

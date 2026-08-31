@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import * as densityConstraints from "./density-constraints";
 import {
-  projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
+  assertTopologyInterfacesConnected, projectTopologyAnalysisDensity,
+  projectTopologyDensity, topologyMask,
 } from "./density-constraints";
 import { extractTopologyMesh } from "./extract-topology";
 import { validateInitialDensity } from "./topology-input";
@@ -59,5 +60,18 @@ describe("canonical topology design domain", () => {
       new Uint32Array([1, 1, 1, 1]), 2, 0.5, 0.2,
       new Set(), new Set(), new Uint32Array([1, 1, 1, 1]),
     )).toThrow(/move budget/i);
+  });
+
+  it("rejects a removal mask that disconnects required structural interfaces", () => {
+    const interfaces = [
+      { id: "support", cellIndices: new Uint32Array([0]) },
+      { id: "load", cellIndices: new Uint32Array([3]) },
+    ];
+    expect(() => assertTopologyInterfacesConnected(
+      new Uint32Array([1, 0, 0, 1]), [4, 1, 1], interfaces,
+    )).toThrow(/disconnect/i);
+    expect(() => assertTopologyInterfacesConnected(
+      new Uint32Array([1, 1, 1, 1]), [4, 1, 1], interfaces,
+    )).not.toThrow();
   });
 });

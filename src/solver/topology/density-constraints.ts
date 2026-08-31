@@ -1,3 +1,38 @@
+import type { RequiredTopologyInterface } from "./topology-contract";
+
+export function assertTopologyInterfacesConnected(
+  mask: Uint32Array,
+  dimensions: readonly [number, number, number],
+  interfaces: readonly RequiredTopologyInterface[],
+): void {
+  const [width, height, depth] = dimensions;
+  if (mask.length !== width * height * depth || mask.some((value) => value !== 0 && value !== 1)) {
+    throw new Error("Topology connectivity mask is invalid");
+  }
+  const required = interfaces.flatMap(({ cellIndices }) => [...cellIndices]);
+  if (required.length === 0 || required.some((cell) => cell >= mask.length || mask[cell] !== 1)) {
+    throw new Error("Topology required interface is absent from the analysis mask");
+  }
+  const visited = new Uint8Array(mask.length), queue = [required[0]!];
+  visited[required[0]!] = 1;
+  const plane = width * height;
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const cell = queue[cursor]!, z = Math.floor(cell / plane);
+    const rest = cell - z * plane, y = Math.floor(rest / width), x = rest - y * width;
+    const neighbors = [
+      x > 0 ? cell - 1 : -1, x + 1 < width ? cell + 1 : -1,
+      y > 0 ? cell - width : -1, y + 1 < height ? cell + width : -1,
+      z > 0 ? cell - plane : -1, z + 1 < depth ? cell + plane : -1,
+    ];
+    for (const neighbor of neighbors) if (neighbor >= 0 && mask[neighbor] === 1 && !visited[neighbor]) {
+      visited[neighbor] = 1; queue.push(neighbor);
+    }
+  }
+  if (required.some((cell) => visited[cell] !== 1)) {
+    throw new Error("Topology removal disconnected required structural interfaces");
+  }
+}
+
 export function topologyMask(
   density: Float32Array,
   isoValue: number,

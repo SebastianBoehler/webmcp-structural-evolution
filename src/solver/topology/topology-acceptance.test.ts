@@ -133,7 +133,7 @@ describe("topology extraction and acceptance", () => {
     expect(validation.closed).toBe(false);
   });
 
-  it("accepts only monotonic, manufacturing-valid, post-extraction structural evidence", () => {
+  it("accepts finite compliance history that rises as material is removed", () => {
     const analysis = {
       truthLevel: "interactive-estimate", complianceJ: 8, maximumDisplacementM: 0.01,
       strainEnergyJ: 4, maximumVonMisesStressPa: 10, iterations: 4,
@@ -149,7 +149,7 @@ describe("topology extraction and acceptance", () => {
       displacementM: new Float32Array(24), vonMisesStressPa: new Float32Array([10]),
     } as StructuralResult;
     const base = {
-      objectiveHistory: [10, 9, 8], materialFraction: 0.7, analysis,
+      objectiveHistory: [8, 9, 10], materialFraction: 0.7, analysis,
       extraction: {
         closed: true, oriented: true, requiredInterfacesConnected: true,
         protectedVoidsClear: true, minimumFeatureSatisfied: true,
@@ -164,7 +164,10 @@ describe("topology extraction and acceptance", () => {
       eligible: true, accepted: false, exportable: false,
       promotionRequired: "task-5-live-gate", reasons: [],
     });
-    expect(decideTopologyAcceptance({ ...base, objectiveHistory: [10, 11] }).eligible).toBe(false);
+    expect(decideTopologyAcceptance({ ...base, objectiveHistory: [8, 9, 10] }).eligible).toBe(true);
+    expect(decideTopologyAcceptance({ ...base, objectiveHistory: [100, 90] }).eligible).toBe(false);
+    expect(decideTopologyAcceptance({ ...base, objectiveHistory: [8, Number.NaN] }).eligible).toBe(false);
+    expect(decideTopologyAcceptance({ ...base, objectiveHistory: [8, 0] }).eligible).toBe(false);
     expect(decideTopologyAcceptance({
       ...base, analysis: { ...analysis, maximumDisplacementM: 0.03 },
     }).reasons).toContain("post-extraction displacement exceeds the acceptance limit");

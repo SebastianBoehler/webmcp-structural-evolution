@@ -77,9 +77,9 @@ describe("WebGPU topology adapter", () => {
       }
       return next;
     });
-    let compliance = 110;
+    let compliance = 70;
     dependencies.structuralRun.mockReset().mockImplementation(async (source) => {
-      compliance -= 10;
+      compliance += 10;
       return resultFor(source, compliance);
     });
   });
@@ -103,7 +103,7 @@ describe("WebGPU topology adapter", () => {
 
       expect(solved.truthLevel).toBe("interactive-estimate");
       expect(solved.output.density.every((value) => value >= 0 && value <= 1)).toBe(true);
-      expect(solved.output.objectiveHistory).toEqual([100, 90, 80]);
+      expect(solved.output.objectiveHistory).toEqual([80, 90, 100]);
       expect(solved.output.acceptance).toMatchObject({
         eligible: true, accepted: false, exportable: false,
         promotionRequired: "task-5-live-gate",
@@ -114,10 +114,10 @@ describe("WebGPU topology adapter", () => {
       expect((dependencies.update.mock.calls[0]?.[1] as Float32Array).length).toBe(sourceSystem.fixedDofs.length);
       expect(partial).toEqual(expect.arrayContaining([
         expect.objectContaining({ partial: expect.objectContaining({
-          kind: "topology-objective-history", samples: [expect.objectContaining({ objectiveJ: 100 })],
+          kind: "topology-objective-history", samples: [expect.objectContaining({ objectiveJ: 80 })],
         }) }),
         expect.objectContaining({ partial: expect.objectContaining({
-          samples: expect.arrayContaining([expect.objectContaining({ objectiveJ: 80 })]),
+          samples: expect.arrayContaining([expect.objectContaining({ objectiveJ: 100 })]),
         }) }),
       ]));
       expect(solved.artifacts).toHaveLength(6);
@@ -182,7 +182,7 @@ describe("WebGPU topology adapter", () => {
     expect(Array.from(masks.slice(0, 16))).toEqual(Array.from(initialDensity, (value) => value >= 0.5 ? 1 : 0));
   });
 
-  it("rejects absent manufacturing constraints and non-monotonic objective history", async () => {
+  it("rejects absent manufacturing constraints but permits physical compliance growth", async () => {
     expect(() => TopologyStudySchema.parse({
       id: "missing-feature", kind: "topology", sourceStudyId: "bar-static",
       configurationState: "configured", objective: "minimum-compliance",
@@ -197,10 +197,12 @@ describe("WebGPU topology adapter", () => {
 
     dependencies.structuralRun.mockReset()
       .mockImplementationOnce(async (source) => resultFor(source, 100))
-      .mockImplementationOnce(async (source) => resultFor(source, 101));
+      .mockImplementationOnce(async (source) => resultFor(source, 101))
+      .mockImplementationOnce(async (source) => resultFor(source, 102))
+      .mockImplementationOnce(async (source) => resultFor(source, 103));
     await expect(createWebGpuTopologyAdapter().run(
-      await request("non-monotonic"), new AbortController().signal, () => undefined,
-    )).rejects.toMatchObject({ code: "diverged", message: expect.stringMatching(/objective history/i) });
+      await request("physical-compliance"), new AbortController().signal, () => undefined,
+    )).resolves.toMatchObject({ output: { objectiveHistory: [100, 101, 102] } });
   });
 
   it("cancels between completed iterations while preserving emitted objective history", async () => {
@@ -216,7 +218,7 @@ describe("WebGPU topology adapter", () => {
       (event) => partial.push(event as typeof partial[number]),
     )).rejects.toMatchObject({ name: "AbortError" });
     expect(dependencies.structuralRun).toHaveBeenCalledOnce();
-    expect(partial.at(-1)?.partial?.samples?.map(({ objectiveJ }) => objectiveJ)).toEqual([100]);
+    expect(partial.at(-1)?.partial?.samples?.map(({ objectiveJ }) => objectiveJ)).toEqual([80]);
   });
 
   it("fails closed instead of substituting Wasm when WebGPU is unavailable", async () => {

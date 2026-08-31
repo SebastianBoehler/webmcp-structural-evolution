@@ -3,7 +3,8 @@ import { compileStructuralStudy } from "../structural/compile-structural-study";
 import { StructuralGpuError } from "../structural/structural-gpu-runtime";
 import { createWebGpuStructuralAdapter } from "../structural/webgpu-structural-adapter";
 import {
-  assertTopologyScheduleFeasible, projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
+  assertTopologyInterfacesConnected, assertTopologyScheduleFeasible,
+  projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
 } from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology, validateExtractedTopology } from "./extract-topology";
 import { createTopologyMeshArtifact, packInteractiveTopologyRunResult } from "./topology-artifacts";
@@ -69,15 +70,18 @@ export function createWebGpuTopologyAdapter(): SolverAdapter<TopologySolveInput,
         const analyze = async (iteration: number) => {
           checkAbort(signal);
           const active = topologyMask(density, study.extraction.isoValue, system.activeCells);
+          assertTopologyInterfacesConnected(active, system.grid.cellDimensions, passive.requiredInterfaces);
           const derived = await structuralRequestForTopologyMask(source, active, `iteration-${iteration}`);
           const solved = await structural.run(derived.request, signal, () => undefined);
           checkAbort(signal);
           const result = solved.output;
-          if (!Number.isFinite(result.complianceJ) || result.complianceJ < 0) {
-            throw new StructuralGpuError("diverged", "Topology structural objective is not finite and nonnegative");
+          if (!Number.isFinite(result.complianceJ) || result.complianceJ <= 0) {
+            throw new StructuralGpuError("diverged", "Topology structural objective is not finite and positive");
           }
-          if (samples.length && result.complianceJ > samples.at(-1)!.objectiveJ) {
-            throw new StructuralGpuError("diverged", "Topology objective history is not monotonic");
+          if (samples.length && result.complianceJ < samples.at(-1)!.objectiveJ * (1 - 1e-5)) {
+            throw new StructuralGpuError(
+              "diverged", "Topology compliance decreased beyond locked numerical tolerance during material removal",
+            );
           }
           samples.push({
             iteration, objectiveJ: result.complianceJ, maskDigest: derived.maskDigest,

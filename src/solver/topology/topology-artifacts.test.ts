@@ -56,8 +56,8 @@ async function canonicalEvidence() {
     new Uint8Array([1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1]),
   ];
   const analyses = await Promise.all(masks.map((mask, index) =>
-    analysis(source, mask, `iteration-${index}`, 100 - index * 10)));
-  const postAnalysis = await analysis(source, masks[2]!, "post-probe", 70);
+    analysis(source, mask, `iteration-${index}`, 100 + index * 10)));
+  const postAnalysis = await analysis(source, masks[2]!, "post-probe", 130);
   return {
     request: topology,
     density: new Float32Array([1, 1, 1, 1, 1, 0.4, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 0.4, 1]),
@@ -82,8 +82,8 @@ async function withMasks(
   return {
     ...base, density, binaryMasks: masks,
     analyses: await Promise.all(masks.map((mask, index) =>
-      analysis(source, mask, `iteration-${index}`, 100 - index * 10))),
-    postAnalysis: await analysis(source, masks.at(-1)!, "post-probe", 70),
+      analysis(source, mask, `iteration-${index}`, 100 + index * 10))),
+    postAnalysis: await analysis(source, masks.at(-1)!, "post-probe", 130),
   };
 }
 
