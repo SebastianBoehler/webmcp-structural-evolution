@@ -23,11 +23,12 @@ function cubeDensity(): Float32Array {
   }
   return density;
 }
+const fullDomain = (count: number) => new Uint32Array(count).fill(1);
 
 describe("topology extraction and acceptance", () => {
   it("extracts a closed oriented mesh and independently rerasterizes the same occupied cells", () => {
     const density = cubeDensity();
-    const mesh = extractTopologyMesh(grid, density, { isoValue: 0.5, toleranceM: 1e-6 });
+    const mesh = extractTopologyMesh(grid, density, { isoValue: 0.5, toleranceM: 1e-6 }, fullDomain(125));
     const validation = validateExtractedTopology(mesh, grid, {
       requiredInterfaces: [
         { id: "fixed", cellIndices: new Uint32Array([index(1, 2, 2)]) },
@@ -48,7 +49,7 @@ describe("topology extraction and acceptance", () => {
 
   it("rejects open, inward, disconnected, protected-void, and undersized candidates", () => {
     const density = cubeDensity();
-    const mesh = extractTopologyMesh(grid, density, { isoValue: 0.5, toleranceM: 1e-6 });
+    const mesh = extractTopologyMesh(grid, density, { isoValue: 0.5, toleranceM: 1e-6 }, fullDomain(125));
     const common = {
       requiredInterfaces: [
         { id: "fixed", cellIndices: new Uint32Array([index(1, 2, 2)]) },
@@ -74,7 +75,7 @@ describe("topology extraction and acceptance", () => {
   });
 
   it("fails closed on malformed geometry and proves outward orientation by signed volume", () => {
-    const mesh = extractTopologyMesh(grid, cubeDensity(), { isoValue: 0.5, toleranceM: 1e-6 });
+    const mesh = extractTopologyMesh(grid, cubeDensity(), { isoValue: 0.5, toleranceM: 1e-6 }, fullDomain(125));
     const common = {
       requiredInterfaces: [{ id: "fixed", cellIndices: new Uint32Array([index(1, 2, 2)]) }],
       protectedVoidCellIndices: new Uint32Array(), minimumFeatureM: 0.01,
@@ -99,6 +100,37 @@ describe("topology extraction and acceptance", () => {
       expect(validateExtractedTopology(malformed, grid, common)).toMatchObject({ closed: false, oriented: false });
       expect(() => rasterizeExtractedTopology(malformed, grid)).toThrow(/finite, nondegenerate, closed/i);
     }
+  });
+
+  it("rejects a one-cell plate against a two-cell local thickness", () => {
+    const plateGrid = {
+      cellDimensions: [5, 5, 1] as const, nodeDimensions: [6, 6, 2] as const,
+      originM: [0, 0, 0] as const, cellSizeM: 0.01,
+    };
+    const density = new Float32Array(25).fill(1);
+    const mesh = extractTopologyMesh(plateGrid, density, { isoValue: 0.5, toleranceM: 1e-6 }, fullDomain(25));
+    const validation = validateExtractedTopology(mesh, plateGrid, {
+      requiredInterfaces: [{ id: "plate", cellIndices: new Uint32Array([12]) }],
+      protectedVoidCellIndices: new Uint32Array(), minimumFeatureM: 0.02,
+    });
+    expect(validation.minimumFeatureSatisfied).toBe(false);
+  });
+
+  it("rejects a closed edge-paired mesh with a disconnected vertex link", () => {
+    const manifoldGrid = {
+      cellDimensions: [3, 3, 3] as const, nodeDimensions: [4, 4, 4] as const,
+      originM: [0, 0, 0] as const, cellSizeM: 0.01,
+    };
+    const density = new Float32Array(27);
+    for (const cell of [4, 13, 14, 16, 23, 24, 25, 26]) density[cell] = 1;
+    const mesh = extractTopologyMesh(
+      manifoldGrid, density, { isoValue: 0.5, toleranceM: 1e-6 }, fullDomain(27),
+    );
+    const validation = validateExtractedTopology(mesh, manifoldGrid, {
+      requiredInterfaces: [{ id: "shape", cellIndices: new Uint32Array([4]) }],
+      protectedVoidCellIndices: new Uint32Array(), minimumFeatureM: 0.01,
+    });
+    expect(validation.closed).toBe(false);
   });
 
   it("accepts only monotonic, manufacturing-valid, post-extraction structural evidence", () => {

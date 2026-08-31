@@ -10,7 +10,7 @@ struct Params {
 };
 
 @group(0) @binding(0) var<storage, read> density: array<f32>;
-@group(0) @binding(1) var<storage, read> unused: array<f32>;
+@group(0) @binding(1) var<storage, read> design_domain: array<f32>;
 @group(0) @binding(2) var<storage, read_write> output: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
 
@@ -18,6 +18,7 @@ struct Params {
 fn filter_density(@builtin(global_invocation_id) id: vec3<u32>) {
   let index = id.x;
   if (index >= params.count) { return; }
+  if (design_domain[index] < 0.5) { output[index] = 0.0; return; }
   let plane = params.width * params.height;
   let z = index / plane;
   let rest = index - z * plane;
@@ -35,6 +36,7 @@ fn filter_density(@builtin(global_invocation_id) id: vec3<u32>) {
         let distance = sqrt(f32(dx * dx + dy * dy + dz * dz));
         let weight = max(0.0, f32(params.radius) + 1.0 - distance);
         let source = u32(sample.x) + params.width * (u32(sample.y) + params.height * u32(sample.z));
+        if (design_domain[source] < 0.5) { continue; }
         weighted += density[source] * weight;
         weights += weight;
       }

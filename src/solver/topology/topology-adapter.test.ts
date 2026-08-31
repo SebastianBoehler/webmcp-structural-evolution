@@ -5,12 +5,15 @@ import { digestArtifactPayload } from "../../engineering/artifact-store";
 import type { SolverAdapter } from "../../engineering/solver-adapter";
 import { TopologyStudySchema } from "../../engineering/study-schema";
 import { compileStructuralStudy } from "../structural/compile-structural-study";
+import { StructuralGpuError } from "../structural/structural-gpu-runtime";
+import { structuralAppliedLoadMagnitude } from "../structural/structural-result-validation";
 import {
   STRUCTURAL_VERIFICATION_METADATA,
   type StructuralResult,
   type StructuralSolveInput,
 } from "../structural/structural-contract";
 import { structuralRequest } from "../structural/structural-test-fixtures";
+import { topologyScenarioRequest } from "./topology-test-fixtures";
 import { createWebGpuTopologyAdapter, type TopologySolveInput } from "./topology-adapter";
 
 const dependencies = vi.hoisted(() => ({
@@ -52,9 +55,10 @@ async function resultFor(
   const output: StructuralResult = {
     truthLevel: "interactive-estimate", grid: system.grid, iterations: 4,
     complianceJ, strainEnergyJ: complianceJ / 2,
-    maximumDisplacementM: 0.01, maximumVonMisesStressPa: 10,
+    maximumDisplacementM: displacementM[0]!, maximumVonMisesStressPa: 10,
     verification: {
-      relativeResidual: 1e-6, forceBalanceErrorN: 0.01, appliedLoadN: 1000,
+      relativeResidual: 1e-6, forceBalanceErrorN: 0.01,
+      appliedLoadN: structuralAppliedLoadMagnitude(source),
       wasmRelativeL2: 1e-4, realGpu: true, metadata: STRUCTURAL_VERIFICATION_METADATA,
     },
     rasterization: system.rasterization, displacementM, vonMisesStressPa,
@@ -81,12 +85,20 @@ describe("WebGPU topology adapter", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it.each(["reference-drone", "se6-cobot-link"])(
-    "runs one general structural loop and post-extraction re-analysis for %s",
-    async (jobId) => {
+  it.each([
+    ["drone", 50, "flight-loads", "mass-cut"],
+    ["cobot", 36, "joint-load-case", "link-lightweighting"],
+  ] as const)(
+    "runs one general structural loop and post-extraction re-analysis for the %s geometry",
+    async (scenario, cellCount, structuralStudyId, topologyStudyId) => {
       const partial: unknown[] = [];
+      const scenarioRequest = await topologyScenarioRequest(scenario);
+      expect(scenarioRequest.input.sourceStructuralRequest.studyId).toBe(structuralStudyId);
+      expect(scenarioRequest.studyId).toBe(topologyStudyId);
+      const sourceSystem = await compileStructuralStudy(scenarioRequest.input.sourceStructuralRequest);
+      expect(sourceSystem.activeCells.some((value) => value === 0)).toBe(true);
       const solved = await createWebGpuTopologyAdapter().run(
-        await request(jobId), new AbortController().signal, (event) => partial.push(event),
+        scenarioRequest, new AbortController().signal, (event) => partial.push(event),
       );
 
       expect(solved.truthLevel).toBe("interactive-estimate");
@@ -98,6 +110,8 @@ describe("WebGPU topology adapter", () => {
       });
       expect(solved.output.extraction).toMatchObject({ closed: true, oriented: true });
       expect(dependencies.structuralRun).toHaveBeenCalledTimes(4);
+      expect(dependencies.update.mock.calls[0]?.[1]).toBeInstanceOf(Float32Array);
+      expect((dependencies.update.mock.calls[0]?.[1] as Float32Array).length).toBe(sourceSystem.fixedDofs.length);
       expect(partial).toEqual(expect.arrayContaining([
         expect.objectContaining({ partial: expect.objectContaining({
           kind: "topology-objective-history", samples: [expect.objectContaining({ objectiveJ: 100 })],
@@ -117,10 +131,11 @@ describe("WebGPU topology adapter", () => {
       const payload = history!.payload as Record<string, ArrayBufferView>;
       const shape = payload.maskShape as Uint32Array;
       const masks = payload.binaryMasks as Uint8Array;
-      expect(Array.from(shape)).toEqual([3, 16]);
+      expect(Array.from(shape)).toEqual([3, cellCount]);
       for (let sampleIndex = 0; sampleIndex < shape[0]!; sampleIndex += 1) {
         const start = sampleIndex * shape[1]!;
         const activeCells = Uint32Array.from(masks.slice(start, start + shape[1]!));
+        expect(activeCells.every((value, cell) => value === 0 || sourceSystem.activeCells[cell] === 1)).toBe(true);
         await expect(digestArtifactPayload({ activeCells }))
           .resolves.toBe(solved.output.objectiveSamples[sampleIndex]!.maskDigest);
       }
@@ -145,7 +160,7 @@ describe("WebGPU topology adapter", () => {
       .mockImplementationOnce(async (source) => resultFor(source, 101));
     await expect(createWebGpuTopologyAdapter().run(
       await request("non-monotonic"), new AbortController().signal, () => undefined,
-    )).rejects.toThrow(/objective history/i);
+    )).rejects.toMatchObject({ code: "diverged", message: expect.stringMatching(/objective history/i) });
   });
 
   it("cancels between completed iterations while preserving emitted objective history", async () => {
@@ -178,11 +193,21 @@ describe("WebGPU topology adapter", () => {
     await expect(createWebGpuTopologyAdapter().run(
       { ...base, settings: { targetVolumeFraction: 0.1 } },
       new AbortController().signal, () => undefined,
-    )).rejects.toThrow(/revision-owned/i);
+    )).rejects.toMatchObject({ code: "invalid-input", message: expect.stringMatching(/revision-owned/i) });
     await expect(createWebGpuTopologyAdapter().run(
       { ...base, input: { ...base.input, moveLimit: 0.9 } } as never,
       new AbortController().signal, () => undefined,
-    )).rejects.toThrow(/solve input/i);
+    )).rejects.toMatchObject({ code: "invalid-input", message: expect.stringMatching(/solve input/i) });
     expect(dependencies.structuralRun).not.toHaveBeenCalled();
+  });
+
+  it("preserves typed WebGPU resource failures", async () => {
+    const failure = new StructuralGpuError(
+      "resource-limit", "Topology update exceeds the device workgroup limit",
+    );
+    dependencies.update.mockRejectedValueOnce(failure);
+    await expect(createWebGpuTopologyAdapter().run(
+      await request("resource-limit"), new AbortController().signal, () => undefined,
+    )).rejects.toBe(failure);
   });
 });

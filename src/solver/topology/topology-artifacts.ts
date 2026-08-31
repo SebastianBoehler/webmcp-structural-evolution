@@ -1,9 +1,12 @@
 import { defineArtifactRecord, type ArtifactRecord } from "../../cad/artifact-contract";
+import { defineEngineeringSolveRequest } from "../../cad/engineering-job-contract";
 import { digestArtifactPayload, type ArtifactPayload } from "../../engineering/artifact-store";
 import type { EngineeringSolveRequest, SolverGeneratedArtifact, SolverRunResult } from "../../engineering/solver-adapter";
 import { revisionId } from "../../domain/revisions";
-import type { StructuralResult } from "../structural/structural-contract";
-import type { StructuralVoxelPayload } from "../structural/structural-contract";
+import type {
+  StructuralResult, StructuralSolveInput, StructuralVoxelPayload,
+} from "../structural/structural-contract";
+import { decideTopologyAcceptance } from "./topology-acceptance";
 import {
   TOPOLOGY_DECISION_MEDIA_TYPE,
   TOPOLOGY_DENSITY_MEDIA_TYPE,
@@ -15,6 +18,7 @@ import {
   type TopologyResult,
   type TopologySolveInput,
 } from "./topology-contract";
+import { canonicalTopologyEvidence, validateTopologyPostAnalysis } from "./topology-evidence";
 
 type Request = EngineeringSolveRequest<TopologySolveInput>;
 
@@ -72,7 +76,7 @@ export async function createTopologyMeshArtifact(
   }, "extracted-manufacturing-mesh", baseDependencies(request));
 }
 
-export async function packTopologyRunResult(input: Readonly<{
+async function packValidatedTopologyBundle(input: Readonly<{
   request: Request;
   density: Float32Array;
   samples: readonly TopologyObjectiveSample[];
@@ -84,6 +88,7 @@ export async function packTopologyRunResult(input: Readonly<{
   postAnalysis: StructuralResult;
   extraction: TopologyExtractionValidation;
   acceptance: TopologyAcceptanceDecision;
+  materialFraction: number;
 }>): Promise<SolverRunResult<TopologyResult>> {
   if (input.binaryMasks.length !== input.samples.length || input.binaryMasks.some(
     (mask) => mask.length !== input.density.length || mask.some((value) => value !== 0 && value !== 1),
@@ -125,13 +130,12 @@ export async function packTopologyRunResult(input: Readonly<{
       },
     }),
   }, "decision-manifest", decisionDependencies);
-  const materialFraction = input.density.filter((value) => value >= input.mesh.isoValue).length / input.density.length;
   return {
     truthLevel: "interactive-estimate",
     output: {
       truthLevel: "interactive-estimate", density: new Float32Array(input.density),
       objectiveHistory: input.samples.map(({ objectiveJ }) => objectiveJ),
-      objectiveSamples: [...input.samples], materialFraction,
+      objectiveSamples: [...input.samples], materialFraction: input.materialFraction,
       manufacturingMesh: input.mesh, extraction: input.extraction,
       rerasterizedVoxelArtifact: input.rerasterizedVoxel,
       postExtractionAnalysis: input.postAnalysis, acceptance: input.acceptance,
@@ -142,4 +146,45 @@ export async function packTopologyRunResult(input: Readonly<{
       displacement, stress, decision,
     ],
   };
+}
+
+export async function packInteractiveTopologyRunResult(input: Readonly<{
+  request: Request;
+  density: Float32Array;
+  binaryMasks: readonly Uint8Array[];
+  analyses: readonly StructuralResult[];
+  postAnalysis: StructuralResult;
+}>): Promise<SolverRunResult<TopologyResult>> {
+  const outer = await defineEngineeringSolveRequest<TopologySolveInput>(input.request);
+  const source = await defineEngineeringSolveRequest<StructuralSolveInput>(
+    outer.input.sourceStructuralRequest,
+  );
+  const request: Request = {
+    ...outer,
+    input: {
+      sourceStructuralRequest: source,
+      initialDensity: new Float32Array(outer.input.initialDensity),
+    },
+  };
+  const canonical = await canonicalTopologyEvidence({ ...input, request });
+  const meshArtifact = await createTopologyMeshArtifact(request, canonical.mesh);
+  const post = await validateTopologyPostAnalysis(
+    request, meshArtifact.record, canonical.rerasterized, input.postAnalysis,
+  );
+  const materialFraction = canonical.rerasterized.reduce((sum, value) => sum + value, 0)
+    / canonical.system.activeCellCount;
+  const acceptance = decideTopologyAcceptance({
+    objectiveHistory: canonical.samples.map(({ objectiveJ }) => objectiveJ), materialFraction,
+    analysis: input.postAnalysis, extraction: canonical.extraction,
+    constraints: canonical.study.acceptance,
+    failureStressPa: canonical.system.material.failureStressPa,
+  });
+  return packValidatedTopologyBundle({
+    request, density: input.density,
+    samples: canonical.samples, binaryMasks: input.binaryMasks,
+    meshArtifact, mesh: canonical.mesh,
+    rerasterizedVoxel: post.voxelArtifact,
+    rerasterizedPayload: post.request.input.voxelPayload,
+    postAnalysis: input.postAnalysis, extraction: canonical.extraction, acceptance, materialFraction,
+  });
 }

@@ -1,13 +1,15 @@
-import { acquireStructuralGpu, createDeviceGuard, safeDestroy, withStructuralGpuErrorScopes } from "../structural/structural-gpu-runtime";
+import {
+  acquireStructuralGpu, createDeviceGuard, safeDestroy, StructuralGpuError, withStructuralGpuErrorScopes,
+} from "../structural/structural-gpu-runtime";
 import filterShader from "./density-filter.wgsl?raw";
-import sensitivityShader from "./sensitivity.wgsl?raw";
+export { minimumComplianceDirection, updateTopologyFromCompliance as updateTopologyDensity } from "./compliance-update-gpu";
 
 type Dimensions = readonly [number, number, number];
 
 function validateField(field: Float32Array, count: number, name: string): void {
   if (!(field instanceof Float32Array) || field.length !== count
     || field.some((value) => !Number.isFinite(value))) {
-    throw new Error(`${name} must be a finite Float32Array matching the topology grid`);
+    throw new StructuralGpuError("invalid-input", `${name} must be a finite Float32Array matching the topology grid`);
   }
 }
 
@@ -40,7 +42,7 @@ async function runKernel(
     return await withStructuralGpuErrorScopes(device, guard, async () => {
       const bytes = density.byteLength;
       if (bytes > device.limits.maxBufferSize || bytes > device.limits.maxStorageBufferBindingSize) {
-        throw new Error("Topology density exceeds the WebGPU storage-buffer limit");
+        throw new StructuralGpuError("resource-limit", "Topology density exceeds the WebGPU storage-buffer limit");
       }
       const create = (label: string, size: number, usage: GPUBufferUsageFlags) => {
         const buffer = device.createBuffer({ label, size, usage }); buffers.push(buffer); return buffer;
@@ -73,7 +75,7 @@ async function runKernel(
       ] });
       const workgroups = Math.ceil(density.length / 64);
       if (workgroups > device.limits.maxComputeWorkgroupsPerDimension) {
-        throw new Error("Topology density exceeds the WebGPU workgroup limit");
+        throw new StructuralGpuError("resource-limit", "Topology density exceeds the WebGPU workgroup limit");
       }
       const encoder = device.createCommandEncoder({ label: entryPoint });
       const pass = encoder.beginComputePass({ label: entryPoint });
@@ -85,7 +87,7 @@ async function runKernel(
       const result = new Float32Array(readback.getMappedRange(0, bytes).slice(0));
       readback.unmap();
       if (result.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
-        throw new Error("Topology WebGPU kernel returned an invalid density");
+        throw new StructuralGpuError("diverged", "Topology WebGPU kernel returned an invalid density");
       }
       return result;
     });
@@ -99,31 +101,17 @@ export async function filterTopologyDensity(
   density: Float32Array,
   dimensions: Dimensions,
   radiusCells: number,
+  designDomain: Uint32Array,
   signal: AbortSignal,
 ): Promise<Float32Array> {
   const count = dimensions.reduce((product, value) => product * value, 1);
   validateField(density, count, "Topology density");
   if (!Number.isInteger(radiusCells) || radiusCells < 1 || radiusCells > 8) {
-    throw new Error("Topology filter radius must resolve to 1 through 8 cells");
+    throw new StructuralGpuError("invalid-input", "Topology filter radius must resolve to 1 through 8 cells");
   }
-  return runKernel(filterShader, "filter_density", density, density,
+  if (designDomain.length !== count || designDomain.some((value) => value !== 0 && value !== 1)) {
+    throw new StructuralGpuError("invalid-input", "Topology filter design domain is invalid");
+  }
+  return runKernel(filterShader, "filter_density", density, Float32Array.from(designDomain),
     params(dimensions, count, radiusCells, 0, 1, 1), signal);
-}
-
-export async function updateTopologyDensity(
-  density: Float32Array,
-  sensitivity: Float32Array,
-  dimensions: Dimensions,
-  targetVolumeFraction: number,
-  moveLimit: number,
-  signal: AbortSignal,
-): Promise<Float32Array> {
-  const count = dimensions.reduce((product, value) => product * value, 1);
-  validateField(density, count, "Topology density");
-  validateField(sensitivity, count, "Topology sensitivity");
-  const average = density.reduce((sum, value) => sum + value, 0) / count;
-  const maximum = Math.max(...sensitivity);
-  const scale = average > 0 ? Math.min(1, targetVolumeFraction / average) : 1;
-  return runKernel(sensitivityShader, "update_density", density, sensitivity,
-    params(dimensions, count, 1, moveLimit, scale, maximum), signal);
 }

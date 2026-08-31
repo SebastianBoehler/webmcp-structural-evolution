@@ -40,10 +40,16 @@ export function extractTopologyMesh(
   grid: StructuralGrid,
   density: Float32Array,
   settings: Readonly<{ isoValue: number; toleranceM: number }>,
+  designDomain: Uint32Array,
 ): TopologyMesh {
   const count = grid.cellDimensions.reduce((product, value) => product * value, 1);
-  if (density.length !== count || density.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
+  if (density.length !== count || designDomain.length !== count
+    || designDomain.some((value) => value !== 0 && value !== 1)
+    || density.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
     throw new Error("Topology density must be finite, bounded, and match the structural grid");
+  }
+  if (density.some((value, cell) => value >= settings.isoValue && designDomain[cell] === 0)) {
+    throw new Error("Topology extraction contains material outside the canonical design domain");
   }
   if (!Number.isFinite(settings.isoValue) || settings.isoValue <= 0 || settings.isoValue >= 1) {
     throw new Error("Topology extraction iso-value must lie inside (0, 1)");
@@ -165,8 +171,27 @@ function edgeChecks(mesh: TopologyMesh): { closed: boolean; oriented: boolean } 
       directed.set(`${a}:${b}`, (directed.get(`${a}:${b}`) ?? 0) + 1);
     }
   }
+  const linkManifold = [...Array(mesh.positionsM.length / 3).keys()].every((vertex) => {
+    const link = new Map<number, Set<number>>();
+    for (let cursor = 0; cursor < mesh.triangles.length; cursor += 3) {
+      const triangle = [mesh.triangles[cursor]!, mesh.triangles[cursor + 1]!, mesh.triangles[cursor + 2]!];
+      const local = triangle.indexOf(vertex);
+      if (local < 0) continue;
+      const left = triangle[(local + 1) % 3]!, right = triangle[(local + 2) % 3]!;
+      if (!link.has(left)) link.set(left, new Set());
+      if (!link.has(right)) link.set(right, new Set());
+      link.get(left)!.add(right); link.get(right)!.add(left);
+    }
+    const first = link.keys().next().value as number | undefined;
+    if (first === undefined || [...link.values()].some((neighbors) => neighbors.size !== 2)) return false;
+    const seen = new Set([first]), queue = [first];
+    while (queue.length) for (const next of link.get(queue.pop()!)!) {
+      if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+    return seen.size === link.size;
+  });
   return {
-    closed: valid && [...undirected.values()].every((count) => count === 2),
+    closed: valid && linkManifold && [...undirected.values()].every((count) => count === 2),
     oriented: valid && signedVolume > mesh.toleranceM ** 3 && [...undirected.keys()].every((key) => {
       const [a, b] = key.split(":");
       return directed.get(`${a}:${b}`) === 1 && directed.get(`${b}:${a}`) === 1;
@@ -206,7 +231,7 @@ function minimumFeature(active: Uint32Array, grid: StructuralGrid, minimumM: num
     return length;
   };
   for (let z = 0; z < depth; z += 1) for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    if (active[cellIndex(grid, x, y, z)] && [0, 1, 2].filter((axis) => run(x, y, z, axis) >= cells).length < 2) return false;
+    if (active[cellIndex(grid, x, y, z)] && [0, 1, 2].some((axis) => run(x, y, z, axis) < cells)) return false;
   }
   return true;
 }

@@ -89,14 +89,18 @@ export function topologyPassiveCells(
 
 export function validateInitialDensity(
   input: TopologySolveInput,
-  cellCount: number,
+  designDomain: Uint32Array,
   required: ReadonlySet<number>,
   protectedCells: ReadonlySet<number>,
 ): Float32Array {
   const density = input.initialDensity;
-  if (!(density instanceof Float32Array) || density.length !== cellCount
+  if (!(density instanceof Float32Array) || density.length !== designDomain.length
+    || designDomain.some((value) => value !== 0 && value !== 1)
     || density.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
     throw new Error("Topology initial density must be finite, bounded in [0,1], and match the source grid");
+  }
+  if (density.some((value, cell) => value !== 0 && designDomain[cell] === 0)) {
+    throw new Error("Topology initial density contains material outside the canonical design domain");
   }
   if ([...required].some((cell) => density[cell] !== 1)) {
     throw new Error("Topology initial density must preserve every passive structural interface cell");
