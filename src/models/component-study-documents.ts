@@ -111,12 +111,18 @@ export async function withDroneComponentStudies(
   const support = intent.supports[0]!, load = intent.loads[0]!;
   const loadRegion = load.region as { id?: unknown };
   if (typeof loadRegion.id !== "string") throw new Error("Drone load region requires a canonical ID");
-  sourceCenter(support.region, "support");
+  const supportPosition = sourceCenter(support.region, "support");
+  const loadPosition = sourceCenter(load.region, "load region");
+  const projectedSupport = supportPosition.map((value, axis) =>
+    value + value - loadPosition[axis]!) as unknown as Point;
+  const supportFace = faceToward(
+    document, intent.bodyId, support.id, projectedSupport,
+  );
   const loadFace = faceToward(
-    document, intent.bodyId, loadRegion.id, sourceCenter(load.region, "load region"),
+    document, intent.bodyId, loadRegion.id, loadPosition,
   );
   const specs = [
-    { id: support.id, axis: loadFace.axis, side: -loadFace.side as -1 | 1 },
+    supportFace,
     loadFace,
     ...protectedInterfaces.map(({ id, mount }) =>
       faceToward(document, intent.bodyId, id, sourceCenter(mount, `interface ${id}`))),

@@ -4,6 +4,7 @@ import { OcctKernel } from "occt-wasm";
 import { createOcctBridge } from "../cad/kernel/occt-bridge";
 import { normalizeDensity, normalizePressure } from "../domain/engineering-units";
 import { rebuildDocument } from "../cad/kernel/feature-rebuild";
+import { resolveNamedSelections } from "../cad/kernel/named-selection-resolution";
 import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { referenceAssemblyInstance } from "../samples/reference-drone-assembly";
@@ -11,6 +12,7 @@ import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
 import { SE6_CATALOG } from "../samples/cobot/cobot-catalog";
 import { SE6_JOINTS, SE6_STAGE_IDS } from "../samples/cobot/cobot-mechanism-geometry";
 import { defineComponentCadSource, ComponentCadSourceSchema } from "./component-cad-authority";
+import { withDroneComponentStudies } from "./component-study-documents";
 import {
   assertRebuiltBodyCoverage,
   assertStagePartition,
@@ -105,6 +107,28 @@ describe("authoritative component documents", () => {
     expect(model.document.namedSelections.map(({ id }) => id)).toEqual(expect.arrayContaining([
       ...model.supports.map(({ id }) => id), loadRegionId, ...retainedBodyInterfaces,
     ]));
+  });
+
+  it("resolves an offset retained support by its position rather than opposite the load", async () => {
+    const model = await droneMotorSideArmDocument();
+    const document = await withDroneComponentStudies(model.document, {
+      bodyId: "body-interface-body",
+      supports: [{ id: "offset-support", region: { centerM: [0, 0.08, 0.003] } }],
+      loads: [{ region: { id: "east-load", centerM: [0.1, 0, 0.003] }, forceN: [1, 0, 0] }],
+      protectedInterfaces: model.protectedInterfaces,
+    });
+    const bridge = createOcctBridge(await OcctKernel.init());
+    try {
+      const rebuilt = await rebuildDocument(
+        bridge, document, ["semantic-mesh"], new AbortController().signal,
+      );
+      const resolved = resolveNamedSelections(document, rebuilt.semanticMesh!.faces)
+        .find(({ selectionId }) => selectionId === "offset-support");
+      const face = rebuilt.semanticMesh!.faces.find(({ id }) => id === resolved?.topologyId);
+
+      expect(face?.signature.centroidM[1]).toBeGreaterThan(0.01);
+      expect(Math.abs(face!.signature.centroidM[0])).toBeLessThan(1e-9);
+    } finally { bridge.dispose(); }
   });
 
   it("deduplicates matching qualified interfaces and rejects a conflicting duplicate", () => {
