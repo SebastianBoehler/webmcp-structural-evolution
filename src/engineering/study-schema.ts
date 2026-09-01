@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { EntityIdSchema } from "../cad/model-schema";
+import type { NamedSelection } from "../cad/model-schema";
 import {
   HistoricalMechanismStudySchema,
   LegacyMechanismStudySchema,
@@ -39,6 +40,7 @@ export const MaterialDefinitionSchema = z.object({
   youngsModulusPa: positive,
   poissonRatio: finite.gt(-1).lt(0.5),
   failureStressPa: positive,
+  thermalConductivityWmK: z.number().optional(),
 }).strict();
 
 export const StructuralLoadSchema = z.object({
@@ -98,6 +100,16 @@ export const ThermalSteadyStudySchema = z.object({
   kind: z.literal("thermal-steady"),
   bodyIds: uniqueIdsSchema(1, "Thermal study body IDs must be unique"),
   materialId: EntityIdSchema,
+  boundaries: z.object({
+    temperatures: z.array(z.object({
+      selectionId: EntityIdSchema,
+      temperatureK: finite,
+    }).strict()),
+    heatFluxes: z.array(z.object({
+      selectionId: EntityIdSchema,
+      heatFluxWm2: finite,
+    }).strict()),
+  }).strict().optional(),
 }).strict();
 export const LegacyStudySchema = z.discriminatedUnion("kind", [
   StructuralStudySchema,
@@ -133,7 +145,9 @@ export type Study = z.infer<typeof StudySchema>;
 export type StudyIntegrityInput = Readonly<{
   bodies: readonly Readonly<{ id: string }>[];
   materials: readonly MaterialDefinition[];
-  namedSelections: readonly Readonly<{ id: string; reference: Readonly<{ bodyId: string }> }>[];
+  namedSelections: readonly Readonly<Pick<NamedSelection, "id"> & {
+    reference: Readonly<Pick<NamedSelection["reference"], "bodyId" | "expectedKind">>;
+  }>[];
   studies: readonly Study[];
   instances: readonly Readonly<{ id: string }>[];
   mates: readonly Readonly<{ id: string; firstInstanceId: string; secondInstanceId: string }>[];
@@ -178,6 +192,25 @@ function addStructuralIntegrityIssues(
       context.addIssue({ code: "custom", message: `Named selection is unresolved: ${selectionId}` });
     } else if (!study.bodyIds.includes(selection.bodyId)) {
       context.addIssue({ code: "custom", message: `Named selection is incompatible with study bodies: ${selectionId}` });
+    }
+  }
+}
+
+function addThermalIntegrityIssues(
+  study: ThermalSteadyStudy,
+  bodyIds: ReadonlySet<string>,
+  materialIds: ReadonlySet<string>,
+  selections: ReadonlyMap<string, { bodyId: string; expectedKind?: string }>,
+  context: z.RefinementCtx,
+): void {
+  addUnresolvedIssues(study.bodyIds, bodyIds, "Body", context);
+  addUnresolvedIssues([study.materialId], materialIds, "Material", context);
+  for (const boundary of [...(study.boundaries?.temperatures ?? []), ...(study.boundaries?.heatFluxes ?? [])]) {
+    const selection = selections.get(boundary.selectionId);
+    if (!selection || selection.expectedKind !== "face") {
+      context.addIssue({ code: "custom", message: `Thermal boundary selection is unresolved: ${boundary.selectionId}` });
+    } else if (!study.bodyIds.includes(selection.bodyId)) {
+      context.addIssue({ code: "custom", message: `Thermal boundary selection is incompatible with study bodies: ${boundary.selectionId}` });
     }
   }
 }
@@ -233,8 +266,7 @@ export function addStudyIntegrityIssues(value: StudyIntegrityInput, context: z.R
         }
         break;
       case "thermal-steady":
-        addUnresolvedIssues(study.bodyIds, bodyIds, "Body", context);
-        addUnresolvedIssues([study.materialId], materialIds, "Material", context);
+        addThermalIntegrityIssues(study, bodyIds, materialIds, selections, context);
         break;
     }
   }

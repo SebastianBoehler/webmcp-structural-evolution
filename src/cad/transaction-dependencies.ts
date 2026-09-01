@@ -59,7 +59,9 @@ export function addDependentReferences(document: DesignDocument, changed: Set<Ch
           break;
         case "thermal-steady":
           if (changed.has(`material:${study.materialId}`)
-            || study.bodyIds.some((id) => changed.has(`body:${id}`))) {
+            || study.bodyIds.some((id) => changed.has(`body:${id}`))
+            || [...(study.boundaries?.temperatures ?? []), ...(study.boundaries?.heatFluxes ?? [])]
+              .some(({ selectionId }) => changed.has(`named-selection:${selectionId}`))) {
             add(`study:${study.id}`);
           }
           break;

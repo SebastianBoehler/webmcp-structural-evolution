@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 
 import { createDesignDocument } from "../cad/document-schema";
+import { addDependentReferences } from "../cad/transaction-dependencies";
 import { applyDesignTransaction } from "../cad/transactions";
 
 const actor = { kind: "human", id: "sebastian" } as const;
@@ -132,7 +133,7 @@ it("defines study intent, propagates its references, and prevents consumed remov
     commands: [{
       id: "define-thermal",
       type: "define-study",
-      study: { id: "transient-thermal", kind: "thermal-steady", bodyIds: ["link-body"], materialId: "al-6061" },
+      study: { id: "transient-thermal", kind: "thermal-steady", bodyIds: ["link-body"], materialId: "al-6061", boundaries: { temperatures: [{ selectionId: "fixed-end", temperatureK: 300 }], heatFluxes: [{ selectionId: "tip", heatFluxWm2: 1000 }] } },
     }],
   });
   expect(transient).toMatchObject({
@@ -140,6 +141,10 @@ it("defines study intent, propagates its references, and prevents consumed remov
     changedReferences: ["document:link", "study:transient-thermal"],
   });
   if (!transient.ok) return;
+
+  const thermalChanges = new Set(["named-selection:tip" as const]);
+  addDependentReferences(transient.document, thermalChanges);
+  expect(thermalChanges).toContain("study:transient-thermal");
 
   const transientRemoval = await applyDesignTransaction(transient.document, {
     id: "remove-transient-study",
