@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createArtifactIndex } from "../cad/artifact-contract";
+import { invalidateArtifacts } from "../cad/artifact-invalidation";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
+import { applyDesignTransaction } from "../cad/transactions";
 import { createArtifactStore, digestArtifactPayload } from "../engineering/artifact-store";
 import { canonicalJson } from "../domain/canonical-json";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
@@ -18,7 +21,18 @@ vi.mock("./mechanism-solver", () => ({ solveMechanismStudy: seam.solveMechanismS
 import { createMechanismAdapter } from "./mechanism-adapter";
 
 async function request(kind: "mechanism" | "fea" = "mechanism", input: unknown = { schemaVersion: 1 }) {
-  const document = await mechanismDocument();
+  const base = await mechanismDocument();
+  const added = await applyDesignTransaction(base, {
+    id: "add-link-length", expectedRevision: base.revision,
+    actor: { kind: "human", id: "mechanism-author" }, preconditions: [],
+    commands: [{
+      id: "define-link-length", type: "define-parameter",
+      parameter: { id: "link-length", label: "Link length",
+        value: { kind: "length", value: { value: 1, unit: "m" } } },
+    }],
+  });
+  if (!added.ok) throw new Error("mechanism parameter fixture failed");
+  const document = added.document;
   return defineEngineeringSolveRequest({
     jobId: "mechanism-job", kind, sourceRevision: document.revision,
     inputArtifacts: [], settings: {}, studyId: "motion", document, input,
@@ -74,6 +88,11 @@ describe("mechanism solver adapter", () => {
     });
     expect(packed.artifacts[0].record.dependencies).toEqual(expect.arrayContaining([
       { kind: "entity", reference: "study:motion" },
+      { kind: "entity", reference: "parameter:link-length" },
+      { kind: "entity", reference: "feature:base-feature" },
+      { kind: "entity", reference: "feature:link-feature" },
+      { kind: "entity", reference: "body:base-body" },
+      { kind: "entity", reference: "body:link-body" },
       { kind: "entity", reference: "instance:base" },
       { kind: "entity", reference: "instance:link" },
       { kind: "entity", reference: "mate:joint" },
@@ -99,6 +118,20 @@ describe("mechanism solver adapter", () => {
     expect(roundTrip).toBeInstanceOf(Uint8Array);
     expect(roundTrip).not.toBe(bytes);
     expect(roundTrip).toEqual(bytes);
+
+    const changed = await applyDesignTransaction(solveRequest.document, {
+      id: "change-link-length", expectedRevision: solveRequest.sourceRevision,
+      actor: { kind: "human", id: "mechanism-author" }, preconditions: [],
+      commands: [{ id: "set-link-length", type: "set-parameter", parameterId: "link-length",
+        value: { kind: "length", value: { value: 2, unit: "m" } } }],
+    });
+    if (!changed.ok) throw new Error("mechanism parameter edit failed");
+    const invalidated = invalidateArtifacts(
+      createArtifactIndex(solveRequest.sourceRevision, [packed.artifacts[0].record]),
+      changed.changedReferences,
+      changed.document.revision,
+    );
+    expect(invalidated.invalidatedIds).toContain(packed.artifacts[0].record.id);
   });
 
   it("rejects non-mechanism jobs and non-canonical adapter input at capability selection", async () => {

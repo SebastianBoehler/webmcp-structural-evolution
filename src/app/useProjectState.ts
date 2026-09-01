@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { JsonValue } from "../domain/canonical-json";
 import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
@@ -23,6 +23,9 @@ import { abandonedProbe, cancelActiveProbe, type ActiveProbeOperation } from "./
 import type { ExperimentRailApi, ProjectStateApi, ProjectStateOptions } from "./project-state-types";
 import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
 import { useExactCadProjectGate } from "./use-exact-cad-project-gate";
+import { useProjectOptionSync } from "./use-project-option-sync";
+import { useActiveProbeUnmount } from "./use-active-probe-unmount";
+import { useWorkspaceInspection } from "./use-workspace-inspection";
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
 
 export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
@@ -38,6 +41,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const interventionGenerationRef = useRef(0);
   const verifiedOutputsRef = useRef(new Map<string, Float32Array>());
   const exactCadGate = useExactCadProjectGate(options.exactCadGate);
+  const workspaceInspection = useWorkspaceInspection(options.workspace);
 
   const commit = (next: FoundationProjectState) => {
     const frozen = publishProjectState(next, verifiedOutputsRef.current);
@@ -46,21 +50,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     return frozen;
   };
 
-  const capabilityKey = JSON.stringify(options.capability);
-  useEffect(() => {
-    const current = stateRef.current!;
-    if (JSON.stringify(current.capability) === capabilityKey) return;
-    commit({ ...current, capability: options.capability });
-  }, [capabilityKey]);
-  useEffect(() => {
-    const current = stateRef.current!;
-    if (current.contextRevision === options.contextRevision) return;
-    commit({
-      ...current,
-      contextRevision: options.contextRevision,
-      stagedBranches: current.stagedBranches.map((branch) => ({ ...branch, stale: true })),
-    });
-  }, [options.contextRevision]);
+  useProjectOptionSync(options, workspaceInspection?.headRevision ?? options.contextRevision, stateRef, commit);
 
   const addReceipt = async (
     action: string,
@@ -91,18 +81,8 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     addReceipt,
   });
 
-  useEffect(() => () => {
-    const operation = operationRef.current;
-    if (!operation) return;
-    operation.abandoned = true;
-    if (operation.branchRevision) {
-      void cancelActiveProbe(operation, cancellationDependencies()).catch(() => undefined);
-    } else {
-      operation.detachExternalAbort?.();
-      operation.controller.abort();
-      operationRef.current = null;
-    }
-  }, []);
+  useActiveProbeUnmount(operationRef, (operation) =>
+    cancelActiveProbe(operation, cancellationDependencies()));
 
   const services = useMemo<FoundationServices>(() => ({
     async inspectContext(input) {
@@ -313,5 +293,5 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     commit,
     addReceipt,
   }), []);
-  return { state, services, experimentRail, exactCadGate };
+  return { state, services, experimentRail, exactCadGate, workspaceInspection };
 }

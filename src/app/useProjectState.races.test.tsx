@@ -7,6 +7,11 @@ import { runFoundationProbe } from "../webmcp/executors";
 import { foundationToolDefinitions } from "../webmcp/register-tools";
 import { testFoundationContext } from "../test/foundation-context";
 import { useProjectState } from "./useProjectState";
+import {
+  createEngineeringWorkspaceService,
+  type EngineeringWorkspaceService,
+} from "../workspace/engineering-workspace-service";
+import { rename, workspaceOptions } from "../workspace/workspace-test-fixtures";
 
 const revisionA = "a".repeat(64);
 const selection = (id: string, label: string) => testFoundationContext({ id, label }).selection;
@@ -297,3 +302,61 @@ test.each(["older-first", "newer-first"] as const)(
     digestSpy.mockRestore();
   },
 );
+
+test("subscribes to the shared engineering workspace and unsubscribes on unmount", async () => {
+  let listener: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  const root = await (await import("../engineering/job-runner-test-fixtures")).sourceDocument();
+  let snapshot = {
+    document: root,
+    headRevision: root.revision,
+    acceptedRevision: root.revision,
+    artifacts: [],
+    artifactCount: 0,
+    invalidatedArtifactCount: 0,
+    jobs: [],
+    receipts: [],
+    receiptCount: 0,
+  };
+  const inspect = vi.fn(() => snapshot);
+  const workspace = {
+    inspect,
+    subscribe(next: () => void) {
+      snapshot = { ...snapshot, artifactCount: 1 };
+      listener = next;
+      return unsubscribe;
+    },
+  } as unknown as EngineeringWorkspaceService;
+  const hook = renderHook(() => useProjectState({ ...options(vi.fn(async () => verified())), workspace }));
+
+  await waitFor(() => expect(hook.result.current.workspaceInspection).toMatchObject({ artifactCount: 1 }));
+  snapshot = { ...snapshot, artifactCount: 2 };
+  act(() => listener?.());
+  await waitFor(() => expect(hook.result.current.workspaceInspection).toMatchObject({ artifactCount: 2 }));
+
+  hook.unmount();
+  expect(unsubscribe).toHaveBeenCalledOnce();
+});
+
+test("uses the workspace snapshot and head revision as the authoritative project context", async () => {
+  const workspace = createEngineeringWorkspaceService(await workspaceOptions());
+  const initialSnapshot = workspace.inspect();
+  const hook = renderHook(() => useProjectState({
+    ...options(vi.fn(async () => verified())), workspace,
+  }));
+
+  await waitFor(() => expect(hook.result.current.workspaceInspection).toBe(initialSnapshot));
+  await waitFor(() => expect(hook.result.current.state.contextRevision).toBe(initialSnapshot.headRevision));
+  expect(hook.result.current.state.selection).toEqual(options(vi.fn()).context.selection);
+  expect(hook.result.current.state.locks).toEqual(options(vi.fn()).context.locks);
+
+  await act(async () => {
+    await workspace.apply(rename(initialSnapshot.document, "workspace-head", "Workspace head"));
+  });
+  const changedSnapshot = workspace.inspect();
+
+  await waitFor(() => expect(hook.result.current.workspaceInspection).toBe(changedSnapshot));
+  await waitFor(() => expect(hook.result.current.state.contextRevision).toBe(changedSnapshot.headRevision));
+  expect(changedSnapshot).not.toBe(initialSnapshot);
+  workspace.dispose();
+});

@@ -262,8 +262,7 @@ function appendCanonical(value: unknown, context: CanonicalChunks): void {
   throw new TypeError("CAD output payload is not transferable canonical data");
 }
 
-export async function digestCadOutputPayload(payload: unknown): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error("Web Crypto SHA-256 is unavailable");
+export function encodeCadOutputPayload(payload: unknown): ArrayBuffer {
   const context: CanonicalChunks = { chunks: [], byteLength: 0, nodes: 0 };
   appendCanonical(payload, context);
   const bytes = new Uint8Array(context.byteLength);
@@ -272,6 +271,12 @@ export async function digestCadOutputPayload(payload: unknown): Promise<string> 
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  return bytes.buffer;
+}
+
+export async function digestCadOutputPayload(payload: unknown): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error("Web Crypto SHA-256 is unavailable");
+  const bytes = encodeCadOutputPayload(payload);
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

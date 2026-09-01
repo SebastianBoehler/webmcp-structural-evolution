@@ -1,0 +1,275 @@
+import type { ArtifactRecord } from "../cad/artifact-contract";
+import type { DesignTransaction } from "../cad/command-schema";
+import {
+  applyDesignSessionTransaction,
+  attachDesignSessionArtifacts,
+} from "../cad/design-session";
+import type { CadKernelAdapter } from "../cad/runtime-contracts";
+import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
+import { revisionId } from "../domain/revisions";
+import { freezeSnapshot } from "../domain/snapshots";
+import {
+  ArtifactStoreError,
+  createArtifactStore,
+  synchronizeArtifactStoreInvalidation,
+} from "../engineering/artifact-store";
+import { createEngineeringJobRunner, type EngineeringJobRunner } from "../engineering/job-runner";
+import type { JobLedgerEntry } from "../engineering/job-ledger";
+import {
+  evaluateCad,
+  runDryRun,
+  WorkspaceError,
+} from "./workspace-cad";
+import { compareWorkspaceResults, exportWorkspaceArtifact } from "./workspace-authority";
+import {
+  createWorkspaceEventBus,
+  type WorkspaceEventInput,
+} from "./workspace-events";
+import { createWorkspaceMutationQueue } from "./workspace-mutation-queue";
+import {
+  validateStudyCompilation,
+  type StudyRequestPlanner,
+} from "./workspace-study-plan";
+import type {
+  EngineeringWorkspaceOptions,
+  EngineeringWorkspaceService,
+} from "./workspace-service-contract";
+import type { WorkspaceInspection } from "./workspace-inspection";
+
+export type { StudyCompilation, StudyRequestPlanner, StudyRequestPlanners } from "./workspace-study-plan";
+export type {
+  EngineeringWorkspaceOptions,
+  EngineeringWorkspaceService,
+  LaunchStudyRequest,
+} from "./workspace-service-contract";
+
+function uniqueArtifacts(records: readonly ArtifactRecord[]): ArtifactRecord[] {
+  return [...new Map(records.map((record) => [record.id, record])).values()];
+}
+
+function own<Value>(value: Value): Value {
+  try { return structuredClone(value); }
+  catch { throw new WorkspaceError("invalid-input", "Workspace request cannot contain shared or uncloneable memory"); }
+}
+function latestEntry(entries: readonly JobLedgerEntry[], jobId: string): JobLedgerEntry {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    if (entry.event.jobId === jobId) return entry;
+  }
+  throw new WorkspaceError("unknown-job", `Engineering job is unknown: ${jobId}`);
+}
+
+export function createEngineeringWorkspaceService(options: EngineeringWorkspaceOptions): EngineeringWorkspaceService {
+  let session = options.session;
+  let adapter: CadKernelAdapter | undefined;
+  let disposed = false;
+  let inspectionCache: WorkspaceInspection | undefined;
+  const mutations = createWorkspaceMutationQueue();
+  const bus = createWorkspaceEventBus();
+  const rawExports = new Map<string, Uint8Array>();
+  const verifiedIds = new Set<string>();
+  const jobRevisions = new Map<string, string>();
+  const usedNonces = new Set<string>();
+  const document = () => session.history.documents[session.history.headRevision]!;
+  const active = () => session.artifacts.index.artifacts;
+  const assertActive = () => {
+    if (disposed) throw new WorkspaceError("disposed", "Engineering workspace service is disposed");
+  };
+  const runner: EngineeringJobRunner = createEngineeringJobRunner({
+    registry: options.registry,
+    store: options.store,
+    currentDocument: document,
+  });
+  const attach = (records: readonly ArtifactRecord[]) => {
+    const existing = new Set(active().map(({ id }) => id));
+    const next = uniqueArtifacts(records).filter(({ id }) => !existing.has(id));
+    if (next.length) session = attachDesignSessionArtifacts(session, next);
+  };
+  const publish = (event: WorkspaceEventInput) => {
+    inspectionCache = undefined;
+    bus.publish(event);
+  };
+  const runnerUnsubscribe = runner.subscribe((entry) => {
+    if (disposed) return;
+    if (entry.event.state === "verified") {
+      const records = uniqueArtifacts(entry.event.artifacts);
+      attach(records);
+      records.forEach(({ id }) => verifiedIds.add(id));
+      publish({ type: "artifacts-changed", headRevision: document().revision,
+        artifactIds: records.map(({ id }) => id) });
+    }
+    publish({ type: "job-changed", entry });
+    if (["verified", "failed", "cancelled"].includes(entry.event.state)) {
+      jobRevisions.delete(entry.event.jobId);
+    }
+  });
+
+  const inspection = (): WorkspaceInspection => {
+    inspectionCache ??= freezeSnapshot({
+      document: document(),
+      headRevision: session.history.headRevision,
+      acceptedRevision: session.history.acceptedRevision,
+      artifacts: active(),
+      artifactCount: active().length,
+      invalidatedArtifactCount: session.artifacts.invalidatedIds.length,
+      jobs: runner.entries(),
+      receipts: session.receipts,
+      receiptCount: session.receipts.length,
+    });
+    return inspectionCache;
+  };
+
+  const applyOne = async (transaction: DesignTransaction): Promise<ActionReceipt> => {
+    assertActive();
+    for (;;) {
+      const base = session;
+      const result = await applyDesignSessionTransaction(base, transaction, options.clock);
+      if (session !== base) continue;
+      session = result.session;
+      const receipt = session.receipts.at(-1)!;
+      const changed = result.result.ok && result.result.document.revision !== transaction.expectedRevision;
+      if (changed) {
+        await synchronizeArtifactStoreInvalidation(options.store, session.artifacts);
+        for (const id of session.artifacts.invalidatedIds) {
+          rawExports.delete(id);
+          verifiedIds.delete(id);
+        }
+        for (const [jobId, revision] of jobRevisions)
+          if (revision !== document().revision) runner.cancel(jobId);
+      }
+      publish({ type: "transaction-recorded", receipt, headRevision: document().revision, designChanged: changed });
+      return receipt;
+    }
+  };
+
+  return {
+    inspect() { assertActive(); return inspection(); },
+    dryRun(request, signal = new AbortController().signal) {
+      assertActive();
+      const snapshot = own(request);
+      if (snapshot.transaction.expectedRevision !== document().revision) {
+        return Promise.reject(new WorkspaceError("stale-revision", "Dry-run expected revision is stale"));
+      }
+      return runDryRun(document(), snapshot, signal, options.createCadAdapter,
+        options.createEphemeralStore ?? createArtifactStore, options.clock);
+    },
+    apply(transaction) {
+      let snapshot: DesignTransaction;
+      try { snapshot = own(transaction); }
+      catch (error) { return Promise.reject(error); }
+      return mutations.run(() => applyOne(snapshot));
+    },
+    async rebuild(request, signal = new AbortController().signal) {
+      assertActive();
+      request = own(request);
+      if (request.expectedRevision !== document().revision) {
+        throw new WorkspaceError("stale-revision", "Rebuild expected revision is stale");
+      }
+      adapter ??= options.createCadAdapter();
+      const evaluated = await evaluateCad(adapter, document(), request, signal);
+      const createdAt = options.clock.now();
+      const receipt = defineActionReceipt({
+        id: await revisionId({ action: "rebuild", request, createdAt }),
+        action: "rebuild",
+        validatedInputs: request,
+        affectedRevision: request.expectedRevision,
+        outcome: { status: "succeeded", result: { artifactIds: evaluated.artifacts.map(({ id }) => id) } },
+        duration: { value: Math.max(0, options.clock.elapsedMs()), unit: "ms" },
+        createdAt,
+      });
+      return mutations.run(async () => {
+        if (document().revision !== request.expectedRevision) {
+          throw new WorkspaceError("stale-revision", "Rebuild completed for a stale revision");
+        }
+        const existing = new Set(active().map(({ id }) => id));
+        const next = uniqueArtifacts(evaluated.artifacts).filter(({ id }) => !existing.has(id));
+        const nextSession = next.length ? attachDesignSessionArtifacts(session, next) : session;
+        try {
+          await options.store.commit(evaluated.inputs,
+            () => !disposed && document().revision === request.expectedRevision);
+        } catch (error) {
+          if (error instanceof ArtifactStoreError && error.code === "commit-guard-rejected") {
+            throw new WorkspaceError("stale-revision", "Rebuild completed for a stale revision");
+          }
+          throw error;
+        }
+        session = nextSession;
+        evaluated.exportPayloads.forEach((payload, id) => rawExports.set(id, payload));
+        publish({ type: "artifacts-changed", headRevision: document().revision,
+          artifactIds: evaluated.artifacts.map(({ id }) => id) });
+        return receipt;
+      });
+    },
+    async launchStudy(request) {
+      assertActive();
+      request = own(request);
+      const current = document();
+      if (request.expectedRevision !== current.revision) throw new WorkspaceError("stale-revision", "Study launch expected revision is stale");
+      const study = current.studies.find(({ id }) => id === request.studyId);
+      if (!study) throw new WorkspaceError("unknown-study", `Study is unresolved: ${request.studyId}`);
+      const planner = options.planners[study.kind] as StudyRequestPlanner<typeof study.kind> | undefined;
+      if (!planner) throw new WorkspaceError("unavailable-study-planner", `No planner is registered for study kind: ${study.kind}`);
+      const planned = await planner({ document: current, study: study as never, artifacts: active() });
+      if (document().revision !== request.expectedRevision) throw new WorkspaceError("stale-revision", "Study launch became stale while planning");
+      const compilation = await validateStudyCompilation(planned, current, study, active());
+      if (document().revision !== request.expectedRevision) {
+        throw new WorkspaceError("stale-revision", "Study launch became stale during request validation");
+      }
+      return mutations.run(async () => {
+        if (document().revision !== request.expectedRevision) {
+          throw new WorkspaceError("stale-revision", "Study launch became stale before input commit");
+        }
+        const existing = new Set(active().map(({ id }) => id));
+        const next = compilation.inputs.map(({ record }) => record)
+          .filter(({ id }) => !existing.has(id));
+        const nextSession = next.length ? attachDesignSessionArtifacts(session, next) : session;
+        await options.store.commit(compilation.inputs,
+          () => !disposed && document().revision === request.expectedRevision);
+        session = nextSession;
+        if (next.length) publish({ type: "artifacts-changed", headRevision: document().revision,
+          artifactIds: next.map(({ id }) => id) });
+        const handle = runner.launch(compilation.request);
+        jobRevisions.set(handle.jobId, compilation.request.sourceRevision);
+        return { jobId: handle.jobId };
+      });
+    },
+    async cancelJob(jobId) {
+      assertActive();
+      if (!runner.cancel(jobId)) throw new WorkspaceError("job-not-cancellable", `Engineering job cannot be cancelled: ${jobId}`);
+    },
+    inspectJob(jobId) { assertActive(); return latestEntry(runner.entries(), jobId); },
+    compareResults(left, right) {
+      assertActive();
+      return compareWorkspaceResults(left, right, active(), verifiedIds, options.store);
+    },
+    exportArtifact(artifactId, approval) {
+      assertActive();
+      approval = own(approval);
+      if (!options.verifyExportApproval) return Promise.reject(new WorkspaceError(
+        "approval-authority-unavailable", "Export approval authority is unavailable",
+      ));
+      return exportWorkspaceArtifact(artifactId, approval, document().revision, active(),
+        rawExports, usedNonces, options.verifyExportApproval,
+        () => {
+          const eligible = active().find(({ id }) => id === artifactId);
+          return document().revision === approval.headRevision
+            && eligible?.kind === "export"
+            && eligible.sourceRevision === approval.sourceRevision
+            && eligible.contentDigest === approval.contentDigest
+            && eligible.mediaType === approval.mediaType
+            && rawExports.has(artifactId);
+        });
+    },
+    subscribe(listener) { assertActive(); return bus.subscribe(listener); },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      runnerUnsubscribe();
+      for (const entry of runner.entries()) runner.cancel(entry.event.jobId);
+      adapter?.dispose?.();
+      adapter = undefined;
+      rawExports.clear();
+      bus.clear();
+    },
+  };
+}

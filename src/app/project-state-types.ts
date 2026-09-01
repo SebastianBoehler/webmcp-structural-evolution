@@ -5,6 +5,8 @@ import type { FoundationServices } from "../webmcp/executors";
 import type { FoundationProjectState, SemanticSelection } from "../webmcp/schemas";
 import type { ExactCadGateResult } from "../cad/kernel/browser-cad-gate";
 import type { ExactCadProjectGateState } from "./use-exact-cad-project-gate";
+import type { EngineeringWorkspaceService } from "../workspace/engineering-workspace-service";
+import type { WorkspaceInspection } from "../workspace/workspace-inspection";
 
 type ProbeRunner = (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
 
@@ -18,6 +20,7 @@ export interface ProjectStateOptions {
   readonly compute?: ProbeRunner;
   readonly buildProbeInput?: (variant: import("../webmcp/schemas").ProbeVariant) => ProbeInput;
   readonly exactCadGate?: (signal: AbortSignal) => Promise<ExactCadGateResult>;
+  readonly workspace?: EngineeringWorkspaceService;
 }
 
 export interface ExperimentRailApi {
@@ -30,4 +33,5 @@ export interface ProjectStateApi {
   readonly services: FoundationServices;
   readonly experimentRail: ExperimentRailApi;
   readonly exactCadGate: ExactCadProjectGateState;
+  readonly workspaceInspection: WorkspaceInspection | null;
 }

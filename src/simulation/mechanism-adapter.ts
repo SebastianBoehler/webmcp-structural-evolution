@@ -75,6 +75,15 @@ async function packReplay(
     dependencies: [
       { kind: "entity" as const, reference: `document:${request.document.id}` as const },
       { kind: "entity" as const, reference: `study:${request.studyId}` as const },
+      ...request.document.parameters.map(({ id }) => ({
+        kind: "entity" as const, reference: `parameter:${id}` as const,
+      })),
+      ...request.document.features.map(({ id }) => ({
+        kind: "entity" as const, reference: `feature:${id}` as const,
+      })),
+      ...request.document.bodies.map(({ id }) => ({
+        kind: "entity" as const, reference: `body:${id}` as const,
+      })),
       ...request.document.instances.map(({ id }) => ({
         kind: "entity" as const, reference: `instance:${id}` as const,
       })),
