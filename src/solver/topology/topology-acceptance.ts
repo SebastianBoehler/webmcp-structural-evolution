@@ -1,5 +1,5 @@
 import {
-  STRUCTURAL_VERIFICATION_METADATA,
+  structuralVerificationMetadata,
   type StructuralResult,
 } from "../structural/structural-contract";
 import type {
@@ -10,6 +10,7 @@ import type {
 interface AcceptanceInput {
   readonly objectiveHistory: readonly number[];
   readonly materialFraction: number;
+  readonly structuralSettings: unknown;
   readonly analysis: StructuralResult;
   readonly extraction: TopologyExtractionValidation;
   readonly constraints: Readonly<{
@@ -26,7 +27,7 @@ function finiteHistory(values: readonly number[]): boolean {
     && (index === 0 || value >= values[index - 1]! * (1 - 1e-5)));
 }
 
-function coherentStructuralEvidence(result: StructuralResult): boolean {
+function coherentStructuralEvidence(result: StructuralResult, settings: unknown): boolean {
   const metrics = [
     result.iterations, result.complianceJ, result.strainEnergyJ,
     result.maximumDisplacementM, result.maximumVonMisesStressPa,
@@ -48,7 +49,8 @@ function coherentStructuralEvidence(result: StructuralResult): boolean {
     && result.vonMisesStressPa.every((value) => Number.isFinite(value) && value >= 0)
     && Math.abs(result.strainEnergyJ * 2 - result.complianceJ)
       <= Math.max(1, result.complianceJ) * 1e-5
-    && JSON.stringify(result.verification.metadata) === JSON.stringify(STRUCTURAL_VERIFICATION_METADATA);
+    && JSON.stringify(result.verification.metadata)
+      === JSON.stringify(structuralVerificationMetadata(settings));
 }
 
 export function decideTopologyAcceptance(input: AcceptanceInput): TopologyAcceptanceDecision {
@@ -61,7 +63,9 @@ export function decideTopologyAcceptance(input: AcceptanceInput): TopologyAccept
   if (!input.extraction.requiredInterfacesConnected) reasons.push("required interfaces are disconnected");
   if (!input.extraction.protectedVoidsClear) reasons.push("protected voids are obstructed");
   if (!input.extraction.minimumFeatureSatisfied) reasons.push("minimum feature is violated");
-  if (!coherentStructuralEvidence(input.analysis)) reasons.push("post-extraction structural evidence is incoherent");
+  if (!coherentStructuralEvidence(input.analysis, input.structuralSettings)) {
+    reasons.push("post-extraction structural evidence is incoherent");
+  }
   if (!input.analysis.verification.realGpu) reasons.push("post-extraction analysis is not real WebGPU evidence");
   if (input.analysis.maximumDisplacementM > input.constraints.maximumDisplacementM) {
     reasons.push("post-extraction displacement exceeds the acceptance limit");

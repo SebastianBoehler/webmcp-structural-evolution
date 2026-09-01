@@ -1,4 +1,5 @@
 import { defineDesignDocument, type DesignDocument } from "../cad/document-schema";
+import { applyDirection, rotationFromEuler } from "../cad/rigid-transform";
 import type { AssemblyDraft } from "../domain/assembly-model";
 import type { ComponentDefinition } from "../domain/component-model";
 import { normalizeDensity, normalizeMass, normalizePressure, type DensitySchema, type PressureSchema } from "../domain/engineering-units";
@@ -61,6 +62,18 @@ const rad = (value: number) => ({ value, unit: "rad" as const });
 const zeroTransform = { position: { x: m(0), y: m(0), z: m(0) }, orientation: { roll: rad(0), pitch: rad(0), yaw: rad(0) } };
 const ids = (instance: Instance) => ({ frame: `${instance.instanceId}-frame`, sketch: `${instance.instanceId}-sketch`, feature: `${instance.instanceId}-feature`, body: `${instance.instanceId}-body`, component: `${instance.instanceId}-component` });
 
+function centeredExtrusionFrame(instance: Instance, centerZ: number, distanceM: number) {
+  const { position, orientation } = instance.transform;
+  const rotation = rotationFromEuler(
+    orientation.roll.value, orientation.pitch.value, orientation.yaw.value,
+  );
+  const offset = applyDirection({ rotation }, [0, 0, centerZ - distanceM / 2]);
+  return { position: {
+    x: m(position.x.value + offset[0]), y: m(position.y.value + offset[1]),
+    z: m(position.z.value + offset[2]),
+  }, orientation };
+}
+
 function definitionFor(catalog: readonly ComponentDefinition[], instance: Instance): ComponentDefinition {
   const definition = catalog.find(({ revision }) => revision === instance.componentRevision);
   if (!definition) throw new Error(`Component definition is unresolved: ${instance.instanceId}`);
@@ -108,7 +121,9 @@ async function compile(
   const interfaces: InterfaceBinding[] = [];
   for (const instance of assembly.components) {
     const definition = definitionFor(catalog, instance), names = ids(instance), volume = definition.envelope;
-    frames.push({ id: names.frame, label: instance.instanceId, parentId: "world", transform: instance.transform });
+    const distanceM = volume.kind === "box" ? volume.size.z.value : volume.height.value;
+    frames.push({ id: names.frame, label: instance.instanceId, parentId: "world",
+      transform: centeredExtrusionFrame(instance, volume.center.z.value, distanceM) });
     if (volume.kind === "box") {
       const outline = `${instance.instanceId}-outline`;
       sketches.push({ id: names.sketch, plane: `frame:${names.frame}`, entities: [{ id: outline, kind: "rectangle", centerM: [volume.center.x.value, volume.center.y.value], sizeM: [volume.size.x.value, volume.size.y.value] }], constraints: [{ id: `${instance.instanceId}-width`, kind: "distance", first: { entityId: outline, point: "left" }, second: { entityId: outline, point: "right" }, axis: "x", valueM: volume.size.x.value }, { id: `${instance.instanceId}-height`, kind: "distance", first: { entityId: outline, point: "bottom" }, second: { entityId: outline, point: "top" }, axis: "y", valueM: volume.size.y.value }] });
@@ -190,7 +205,21 @@ export function assertRebuiltBodyCoverage(componentInstances: readonly string[],
 
 export async function se6MechanismDocument(): Promise<AuthoritativeComponentDocument> {
   const compiled = await compile("se6-mechanism-components", "SE-6 52-part parametric mechanism", se6Assembly, SE6_CATALOG);
-  const members: Record<(typeof SE6_STAGE_IDS)[number], readonly string[]> = { base: SE6_INSTANCE_GROUPS.base, "axis-1": [...SE6_INSTANCE_GROUPS.shoulder, "cable-segment-shoulder"], "axis-2": [...SE6_INSTANCE_GROUPS.upperArm, "cable-segment-upper"], "axis-3": [...SE6_INSTANCE_GROUPS.forearm, "cable-segment-elbow"], "axis-4": [...SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j4-")), "cable-segment-wrist"], "axis-5": SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j5-")), "axis-6": [...SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j6-")), ...SE6_INSTANCE_GROUPS.tooling, "wrist-strain-relief"] };
+  const movingJ1 = new Set(["j1-turntable", "j1-bearing-ring", "j1-cover"]);
+  const members: Record<(typeof SE6_STAGE_IDS)[number], readonly string[]> = {
+    base: SE6_INSTANCE_GROUPS.base.filter((id) => !movingJ1.has(id)),
+    "axis-1": [...SE6_INSTANCE_GROUPS.base.filter((id) => movingJ1.has(id)),
+      ...SE6_INSTANCE_GROUPS.shoulder, "cable-segment-shoulder"],
+    "axis-2": [...SE6_INSTANCE_GROUPS.upperArm, "cable-segment-upper"],
+    "axis-3": [...SE6_INSTANCE_GROUPS.forearm, "cable-segment-elbow"],
+    "axis-4": [...SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j4-")),
+      "j5-pitch-housing", "cable-segment-wrist"],
+    "axis-5": SE6_INSTANCE_GROUPS.wrist.filter((id) =>
+      (id.startsWith("j5-") && id !== "j5-pitch-housing") || id === "j6-tool-roll"),
+    "axis-6": [...SE6_INSTANCE_GROUPS.wrist.filter((id) =>
+      id.startsWith("j6-") && id !== "j6-tool-roll"),
+      ...SE6_INSTANCE_GROUPS.tooling, "wrist-strain-relief"],
+  };
   const stages = Object.freeze(Object.fromEntries(SE6_STAGE_IDS.map((id) => [id, members[id]])) as Record<string, readonly string[]>);
   assertStagePartition(stages, compiled.componentInstances);
   const document = await withSe6MechanismStudy(compiled.document);

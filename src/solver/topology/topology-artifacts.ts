@@ -179,6 +179,7 @@ export async function packInteractiveTopologyRunResult(input: Readonly<{
     / canonical.system.activeCellCount;
   const acceptance = decideTopologyAcceptance({
     objectiveHistory: canonical.samples.map(({ objectiveJ }) => objectiveJ), materialFraction,
+    structuralSettings: source.settings,
     analysis: input.postAnalysis, extraction: canonical.extraction,
     constraints: canonical.study.acceptance,
     failureStressPa: canonical.system.material.failureStressPa,

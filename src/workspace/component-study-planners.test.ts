@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { OcctKernel } from "occt-wasm";
+import * as RAPIER from "@dimforge/rapier3d-deterministic-compat";
 
 import { defineArtifactRecord } from "../cad/artifact-contract";
 import { createDesignSession } from "../cad/design-session";
@@ -18,6 +19,7 @@ import {
 import { createComponentStudyPlanners } from "./component-study-planners";
 import { createEngineeringWorkspaceService } from "./engineering-workspace-service";
 import { compileStructuralStudy } from "../solver/structural/compile-structural-study";
+import { activeComponents } from "../solver/structural/structural-grid-validation";
 import type { StructuralSolveInput } from "../solver/structural/structural-contract";
 import { createWebGpuStructuralAdapter } from "../solver/structural/webgpu-structural-adapter";
 import type { ThermalSolveInput } from "../solver/thermal/thermal-contract";
@@ -27,9 +29,15 @@ import type { TopologySolveInput } from "../solver/topology/topology-contract";
 import { configuredTopologyStudy, topologyPassiveCells } from "../solver/topology/topology-input";
 import { MECHANISM_MAX_CLEARANCE_SAMPLES } from "../simulation/mechanism-contract";
 import { createMechanismAdapter, type MechanismAdapterInput } from "../simulation/mechanism-adapter";
+import { createRapierState } from "../simulation/mechanism-rapier-world";
+import { captureInitialContactEvents } from "../simulation/mechanism-rapier-contacts";
+import { se6Assembly } from "../samples/cobot/cobot-assembly";
 
 let bridge: OcctBridge;
-beforeAll(async () => { bridge = createOcctBridge(await OcctKernel.init()); });
+beforeAll(async () => {
+  bridge = createOcctBridge(await OcctKernel.init());
+  await RAPIER.init();
+});
 afterAll(() => bridge.dispose());
 
 function exactAdapter(evaluate: (request: unknown) => void | Promise<void>): CadKernelAdapter {
@@ -122,8 +130,14 @@ describe("exact component study planners", () => {
     const topology = seen[1] as EngineeringSolveRequest<TopologySolveInput>;
     expect((topology.input.sourceStructuralRequest.settings as { pcgIterationBudget?: number })
       .pcgIterationBudget).toBe(1_024);
-    await expect(compileStructuralStudy(topology.input.sourceStructuralRequest)).resolves.toBeDefined();
+    const compiled = await compileStructuralStudy(topology.input.sourceStructuralRequest);
     const passive = topologyPassiveCells(topology, configuredTopologyStudy(topology));
+    const componentLabels = activeComponents(compiled.activeCells, compiled.grid.cellDimensions);
+    const activeLabels = new Set([...componentLabels].filter((label) => label >= 0));
+    expect(activeLabels).toEqual(new Set([0]));
+    expect(passive.requiredInterfaces.every(({ cellIndices }) =>
+      [...cellIndices].every((cell) => componentLabels[cell] === 0))).toBe(true);
+    expect([...passive.protectedCells].every((cell) => topology.input.initialDensity[cell] === 0)).toBe(true);
     expect(passive.requiredInterfaces.map(({ id }) => id)).toEqual(expect.arrayContaining(
       model.protectedInterfaces.filter(({ id }) => id.startsWith("body-interface-"))
         .map(({ id }) => id),
@@ -186,7 +200,8 @@ describe("exact component study planners", () => {
     ]));
     if (_kind === "mechanism") {
       const input = (seen[0]!.input as { mechanismInput: {
-        bodies: { id: string }[]; colliders: { id: string; bodyId: string }[];
+        bodies: { id: string }[]; colliders: { id: string; bodyId: string; sourceBodyId: string;
+          bodyLocalTransform: { positionM: readonly [number, number, number] } }[];
         clearancePairs: { firstColliderId: string; secondColliderId: string }[];
         durationSteps: number; outputStrideSteps: number;
       } }).mechanismInput;
@@ -203,6 +218,33 @@ describe("exact component study planners", () => {
         Math.abs(colliderStage.get(firstColliderId)! - colliderStage.get(secondColliderId)!) > 1)).toBe(true);
       const frames = input.durationSteps / input.outputStrideSteps + 1;
       expect(frames * input.clearancePairs.length).toBeLessThanOrEqual(MECHANISM_MAX_CLEARANCE_SAMPLES);
+      const authoredCenters = new Map(se6Assembly.components.map(({ instanceId, transform }) => [
+        `${instanceId}-body`, [transform.position.x.value, transform.position.y.value,
+          transform.position.z.value] as const,
+      ]));
+      for (const collider of input.colliders) {
+        const center = authoredCenters.get(collider.sourceBodyId)!;
+        collider.bodyLocalTransform.positionM.forEach((value, axis) =>
+          expect(value).toBeCloseTo(center[axis]!, 10));
+      }
+      const state = createRapierState(RAPIER, input as never);
+      try {
+        const contacts: Parameters<typeof captureInitialContactEvents>[1] = [];
+        captureInitialContactEvents(state, contacts);
+        const shoulder = input.colliders.find(({ sourceBodyId }) =>
+          sourceBodyId === "shoulder-boss-body")!.id;
+        const pedestal = input.colliders.find(({ sourceBodyId }) =>
+          sourceBodyId === "pedestal-body")!.id;
+        expect(contacts).not.toContainEqual(expect.objectContaining({
+          firstColliderId: [shoulder, pedestal].sort()[0],
+          secondColliderId: [shoulder, pedestal].sort()[1],
+        }));
+        const sourceByCollider = new Map(input.colliders.map(({ id, sourceBodyId }) => [id, sourceBodyId]));
+        expect(contacts.filter(({ penetrationM }) => penetrationM > 0).map((contact) => ({
+          first: sourceByCollider.get(contact.firstColliderId),
+          second: sourceByCollider.get(contact.secondColliderId), penetrationM: contact.penetrationM,
+        }))).toEqual([]);
+      } finally { state.world.free(); }
       expect(createMechanismAdapter().supports(
         seen[0]! as EngineeringSolveRequest<MechanismAdapterInput>,
       )).toEqual({ supported: true });

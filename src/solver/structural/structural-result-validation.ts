@@ -4,9 +4,9 @@ import {
   STRUCTURAL_FORCE_BALANCE_TOLERANCE,
   STRUCTURAL_MAX_REFINEMENTS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
-  STRUCTURAL_VERIFICATION_METADATA,
   STRUCTURAL_WASM_L2_TOLERANCE,
   structuralPcgIterationBudget,
+  structuralVerificationMetadata,
   type CompiledStructuralSystem,
   type StructuralResult,
   type StructuralSolveInput,
@@ -158,7 +158,8 @@ export function validateInteractiveStructuralResult(
   }
   const evidence = result.verification;
   if (evidence.realGpu !== true
-    || JSON.stringify(evidence.metadata) !== JSON.stringify(STRUCTURAL_VERIFICATION_METADATA)) {
+    || JSON.stringify(evidence.metadata)
+      !== JSON.stringify(structuralVerificationMetadata(request.settings))) {
     throw new Error("Structural verification metadata does not match the locked reference contract");
   }
   if (!finiteNonnegative([

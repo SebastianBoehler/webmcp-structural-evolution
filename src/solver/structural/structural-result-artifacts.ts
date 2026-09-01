@@ -7,6 +7,7 @@ import { compileStructuralStudy } from "./compile-structural-study";
 import {
   STRUCTURAL_FIELD_MEDIA_TYPE,
   STRUCTURAL_RESULT_MEDIA_TYPE,
+  structuralPcgIterationBudget,
   type StructuralResult,
   type StructuralSolveInput,
 } from "./structural-contract";
@@ -63,6 +64,8 @@ export async function packInteractiveStructuralRunResult(
   const base = baseDependencies(request);
   const settingsDigest = await revisionId({
     solver: "webgpu-hex8-elasticity-1.0.0",
+    requestSettings: request.settings,
+    pcgIterationBudget: structuralPcgIterationBudget(request.settings),
     grid: result.grid,
     rasterization: result.rasterization,
   });

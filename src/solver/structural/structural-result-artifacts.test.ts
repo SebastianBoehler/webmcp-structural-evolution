@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { defineEngineeringSolveRequest } from "../../cad/engineering-job-contract";
 import { prepareSolverRunResult } from "../../engineering/job-runner-result";
 import { compileStructuralStudy } from "./compile-structural-study";
 import {
+  COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET,
   STRUCTURAL_RESULT_MEDIA_TYPE,
-  STRUCTURAL_VERIFICATION_METADATA,
+  structuralVerificationMetadata,
   type CompiledStructuralSystem,
   type StructuralResult,
 } from "./structural-contract";
@@ -39,7 +41,7 @@ describe("structural result artifacts", () => {
         referenceSolver: "rust-wasm-hex8-f64",
         residualMethod: "webgpu-f32-pcg-recurrence",
         fixtureCellDimensions: { axial: [20, 2, 2], cantilever: [24, 4, 2] },
-        maxIterations: 1_024,
+        maxIterations: 512,
         thresholds: {
           relativeResidual: 1e-5, relativeForceBalance: 1e-4, wasmRelativeL2: 2e-3,
           axialRelativeError: 0.02, cantileverRelativeError: 0.05,
@@ -47,6 +49,26 @@ describe("structural result artifacts", () => {
         },
       },
     });
+  });
+
+  it("binds generic and component iteration budgets into evidence and artifact identity", async () => {
+    const generic = await validFixture();
+    const component = await validFixture({
+      pcgIterationBudget: COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET,
+    });
+    const genericEnvelope = await packInteractiveStructuralRunResult(generic.request, generic.result);
+    const componentEnvelope = await packInteractiveStructuralRunResult(component.request, component.result);
+
+    expect(summaryVerification(genericEnvelope)).toMatchObject({
+      metadata: { maxIterations: 512, maxTotalIterations: 2_048 },
+    });
+    expect(summaryVerification(componentEnvelope)).toMatchObject({
+      metadata: { maxIterations: 1_024, maxTotalIterations: 4_096 },
+    });
+    expect(new Set(genericEnvelope.artifacts.map(({ record }) => record.settingsDigest)).size).toBe(1);
+    expect(new Set(componentEnvelope.artifacts.map(({ record }) => record.settingsDigest)).size).toBe(1);
+    expect(genericEnvelope.artifacts[0].record.settingsDigest)
+      .not.toBe(componentEnvelope.artifacts[0].record.settingsDigest);
   });
 
   it("rejects every caller-supplied converged truth claim before Task 5", async () => {
@@ -167,8 +189,11 @@ describe("structural result artifacts", () => {
   });
 });
 
-async function validFixture() {
-  const request = await structuralRequest();
+async function validFixture(settings: Record<string, number> = {}) {
+  const baseRequest = await structuralRequest();
+  const request = await defineEngineeringSolveRequest<typeof baseRequest.input>({
+    ...baseRequest, settings,
+  });
   const system = await compileStructuralStudy(request);
   const displacementM = new Float32Array(system.fixedDofs.length);
   displacementM[3] = 1e-6;
@@ -189,7 +214,7 @@ async function validFixture() {
         recomputedF32Residual: 1e-4, residualScaleN: 1000,
         postDirectResidual: 1e-4, postBalance: 1e-6, postEnergy: 0,
       }], realGpu: true,
-      metadata: STRUCTURAL_VERIFICATION_METADATA,
+      metadata: structuralVerificationMetadata(settings),
     },
     rasterization: system.rasterization, displacementM, vonMisesStressPa,
   };

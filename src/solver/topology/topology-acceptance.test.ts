@@ -157,7 +157,7 @@ describe("topology extraction and acceptance", () => {
       displacementM: new Float32Array(24), vonMisesStressPa: new Float32Array([10]),
     } as StructuralResult;
     const base = {
-      objectiveHistory: [8, 9, 10], materialFraction: 0.7, analysis,
+      objectiveHistory: [8, 9, 10], materialFraction: 0.7, structuralSettings: undefined, analysis,
       extraction: {
         closed: true, oriented: true, requiredInterfacesConnected: true,
         protectedVoidsClear: true, minimumFeatureSatisfied: true,

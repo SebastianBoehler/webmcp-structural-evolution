@@ -94,7 +94,7 @@ export interface StructuralRefinementPass {
   readonly postEnergy: number;
 }
 
-export type StructuralVerificationMetadata = typeof STRUCTURAL_VERIFICATION_METADATA;
+export type StructuralVerificationMetadata = ReturnType<typeof structuralVerificationMetadata>;
 
 export interface StructuralResult {
   readonly truthLevel: "interactive-estimate" | "converged-numerical-solve";
@@ -144,13 +144,18 @@ const verificationThresholds = Object.freeze({
   cantileverRelativeError: 0.05,
   energyRelativeMismatch: STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
 });
-export const STRUCTURAL_VERIFICATION_METADATA = Object.freeze({
-  referenceSolver: "rust-wasm-hex8-f64" as const,
-  residualMethod: "webgpu-f32-pcg-recurrence" as const,
-  refinementMethod: "wasm-f64-residual-webgpu-f32-corrections" as const,
-  fixtureCellDimensions,
-  maxIterations: STRUCTURAL_MAX_ITERATIONS,
-  maxRefinements: STRUCTURAL_MAX_REFINEMENTS,
-  maxTotalIterations: STRUCTURAL_MAX_TOTAL_ITERATIONS,
-  thresholds: verificationThresholds,
-});
+export function structuralVerificationMetadata(settings: unknown) {
+  const maxIterations = structuralPcgIterationBudget(settings);
+  return Object.freeze({
+    referenceSolver: "rust-wasm-hex8-f64" as const,
+    residualMethod: "webgpu-f32-pcg-recurrence" as const,
+    refinementMethod: "wasm-f64-residual-webgpu-f32-corrections" as const,
+    fixtureCellDimensions,
+    maxIterations,
+    maxRefinements: STRUCTURAL_MAX_REFINEMENTS,
+    maxTotalIterations: maxIterations * (STRUCTURAL_MAX_REFINEMENTS + 1),
+    thresholds: verificationThresholds,
+  });
+}
+
+export const STRUCTURAL_VERIFICATION_METADATA = structuralVerificationMetadata(undefined);
