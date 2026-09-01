@@ -90,7 +90,8 @@ export const MechanismPointForceSchema = z.object({
   forceWorldN: MechanismVector3Schema.refine((force) => force.some((value) => value !== 0), "Point force must be nonzero"),
 }).strict();
 export const MechanismClearancePairSchema = z.object({
-  id: EntityIdSchema, firstColliderId: EntityIdSchema, secondColliderId: EntityIdSchema,
+  id: EntityIdSchema, sourceQueryId: EntityIdSchema,
+  firstColliderId: EntityIdSchema, secondColliderId: EntityIdSchema,
 }).strict().refine(({ firstColliderId, secondColliderId }) => firstColliderId !== secondColliderId,
   "Clearance pair must reference distinct colliders");
 

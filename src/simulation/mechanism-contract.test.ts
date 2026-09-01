@@ -46,7 +46,7 @@ export async function inputCandidate() {
     gravityWorldMps2: [0, -9.81, 0] as const,
     pointForces: [{ bodyId: "link", pointLocalM: [0.1, 0, 0] as const, forceWorldN: [0, 5, 0] as const }],
     durationSteps: 480, outputStrideSteps: 4,
-    clearancePairs: [{ id: "base-link-clearance", firstColliderId: "base-collider", secondColliderId: "link-collider" }],
+    clearancePairs: [{ id: "base-link-clearance", sourceQueryId: "base-link-clearance", firstColliderId: "base-collider", secondColliderId: "link-collider" }],
   };
 }
 
@@ -231,8 +231,8 @@ describe("mechanism input contract", () => {
       bodies: [{ id: "base", kind: "fixed", sourceBodyIds, transform: transform() }],
       colliders, joints: [], pointForces: [], durationSteps: 60_000, outputStrideSteps: 1,
       clearancePairs: [
-        { id: "first-clearance", firstColliderId: "base-collider-0", secondColliderId: "base-collider-1" },
-        { id: "second-clearance", firstColliderId: "base-collider-0", secondColliderId: "base-collider-2" },
+        { id: "first-clearance", sourceQueryId: "first-query", firstColliderId: "base-collider-0", secondColliderId: "base-collider-1" },
+        { id: "second-clearance", sourceQueryId: "second-query", firstColliderId: "base-collider-0", secondColliderId: "base-collider-2" },
       ],
     })).rejects.toThrow("Mechanism replay clearance-sample budget exceeded");
   });

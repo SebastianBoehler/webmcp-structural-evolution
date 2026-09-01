@@ -48,7 +48,7 @@ beforeEach(async () => {
       firstAxisLocal: [0, 0, 1], secondAxisLocal: [0, 0, 1], lowerRad: -1, upperRad: 1,
     }],
     gravityWorldMps2: [0, -9.81, 0], pointForces: [], durationSteps: 480, outputStrideSteps: 4,
-    clearancePairs: [{ id: "base-link-clearance", firstColliderId: "base-collider", secondColliderId: "link-collider" }],
+    clearancePairs: [{ id: "base-link-clearance", sourceQueryId: "base-link-clearance", firstColliderId: "base-collider", secondColliderId: "link-collider" }],
   });
 });
 
