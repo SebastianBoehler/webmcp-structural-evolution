@@ -12,6 +12,9 @@ import {
   MechanismInputQuaternionSchema, MechanismInputTransformSchema, MechanismOutputQuaternionSchema,
   MechanismOutputVector3Schema, MechanismVector3Schema, MECHANISM_UNIT_TOLERANCE,
 } from "./mechanism-math";
+import {
+  DEFAULT_MECHANISM_SOLVER_WORK, MechanismSolverWorkSchema,
+} from "./mechanism-solver-work";
 
 export { MECHANISM_UNIT_TOLERANCE } from "./mechanism-math";
 export const MECHANISM_STEP_HZ = 240;
@@ -97,6 +100,7 @@ export const MechanismClearancePairSchema = z.object({
 
 const inputShape = {
   sourceRevision: RevisionSchema, studyId: EntityIdSchema,
+  solverWork: MechanismSolverWorkSchema.default(DEFAULT_MECHANISM_SOLVER_WORK),
   bodies: z.array(MechanismBodySchema).min(1).max(MAX_BODIES),
   joints: z.array(MechanismJointSchema).max(MAX_BODIES),
   gravityWorldMps2: MechanismVector3Schema,

@@ -29,6 +29,7 @@ import type { TopologySolveInput } from "../solver/topology/topology-contract";
 import { configuredTopologyStudy, topologyPassiveCells } from "../solver/topology/topology-input";
 import { MECHANISM_MAX_CLEARANCE_SAMPLES } from "../simulation/mechanism-contract";
 import { createMechanismAdapter, type MechanismAdapterInput } from "../simulation/mechanism-adapter";
+import { runCanonicalRapierMechanism } from "../simulation/mechanism-solver-kernel";
 import { createRapierState } from "../simulation/mechanism-rapier-world";
 import { captureInitialContactEvents } from "../simulation/mechanism-rapier-contacts";
 import { se6Assembly } from "../samples/cobot/cobot-assembly";
@@ -245,6 +246,10 @@ describe("exact component study planners", () => {
           second: sourceByCollider.get(contact.secondColliderId), penetrationM: contact.penetrationM,
         }))).toEqual([]);
       } finally { state.world.free(); }
+      const started = performance.now();
+      const solved = await runCanonicalRapierMechanism(input as never, new AbortController().signal);
+      expect(solved.verification.maximumJointErrorM).toBeLessThanOrEqual(1e-5);
+      expect(performance.now() - started).toBeLessThan(5_000);
       expect(createMechanismAdapter().supports(
         seen[0]! as EngineeringSolveRequest<MechanismAdapterInput>,
       )).toEqual({ supported: true });

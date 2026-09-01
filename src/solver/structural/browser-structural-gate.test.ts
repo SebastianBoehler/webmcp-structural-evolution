@@ -13,12 +13,12 @@ describe("structural and topology browser gate report", () => {
     })).toThrow("live browser");
   });
 
-  it("rejects a report shell that omits either exact topology geometry", () => {
+  it("rejects a report shell that omits assigned component evidence", () => {
     expect(() => parseStructuralTopologyGateReport({
       status: "passed", evidenceSource: "automated-recording-device",
       realGpu: false, promoted: false,
-      topology: { drone: { geometryDigest: "a".repeat(64) } },
-    })).toThrow("drone and cobot");
+      topology: {},
+    })).toThrow("SE-6 topology");
   });
 
   it("accepts a serializable blocked report only with an exact blocker", () => {
@@ -41,7 +41,7 @@ describe("structural and topology browser gate report", () => {
     });
     expect(gateReportAuthorizesManufacturing(report)).toBe(false);
     expect(isLiveStructuralGateCapability({ sessionId: "a".repeat(64) })).toBe(false);
-    expect(() => serializeLiveAcceptedTopologyStl({ sessionId: "a".repeat(64) }, "drone"))
+    expect(() => serializeLiveAcceptedTopologyStl({ sessionId: "a".repeat(64) }, "drone" as never))
       .toThrow(/session-bound Task 5 capability/i);
     expect(() => serializeLiveAcceptedTopologyStl({ sessionId: "a".repeat(64) }, "unknown" as never))
       .toThrow(/session-bound Task 5 capability/i);

@@ -15,7 +15,21 @@ import type { StructuralGpuAcquisitionObserver } from "./structural-gpu-runtime"
 export type ComponentStructuralShowcase = Readonly<{
   benchmark: ExactBrowserBenchmark;
   model: ShowcaseModelEvidence;
+  structural: Readonly<{ result: StructuralResult; timingMs: number }>;
+  topology?: Readonly<{
+    result: TopologyResult; artifacts: readonly ArtifactRecord[]; timingMs: number;
+  }>;
 }>;
+
+const studyAssignments = Object.freeze({
+  drone: Object.freeze({ structuralStudyId: "drone-arm-structural" }),
+  cobot: Object.freeze({ structuralStudyId: "se6-upper-arm-structural",
+    topologyStudyId: "se6-upper-arm-topology" }),
+});
+
+export function componentStructuralStudyAssignments() {
+  return studyAssignments;
+}
 
 function exactArtifact(request: ExactBrowserBenchmark["structuralRequest"], kind: "brep" | "render-mesh") {
   const artifact = request.inputArtifacts.find((candidate) => candidate.kind === kind);
@@ -27,20 +41,26 @@ async function buildOne(
   model: AuthoritativeComponentDocument,
   id: Extract<BrowserBenchmarkId, "drone" | "cobot">,
   structuralStudyId: string,
-  topologyStudyId: string,
+  topologyStudyId: string | undefined,
   signal: AbortSignal,
   observe: StructuralGpuAcquisitionObserver,
 ): Promise<ComponentStructuralShowcase> {
-  await runComponentStudy<StructuralSolveInput, StructuralResult>(model, structuralStudyId,
+  const structuralStarted = performance.now();
+  const structural = await runComponentStudy<StructuralSolveInput, StructuralResult>(model, structuralStudyId,
     createWebGpuStructuralAdapter({ onAcquisition: observe }), signal);
-  const topology = await runComponentStudy<TopologySolveInput, TopologyResult>(model,
-    topologyStudyId, createWebGpuTopologyAdapter({ onAcquisition: observe }), signal);
-  const request = topology.request;
-  const study = model.document.studies.find(({ id: candidate }) => candidate === topologyStudyId);
-  if (!study || study.kind !== "topology" || study.configurationState !== "configured") {
+  const structuralTimingMs = performance.now() - structuralStarted;
+  const topologyStarted = performance.now();
+  const topology = topologyStudyId === undefined ? undefined
+    : await runComponentStudy<TopologySolveInput, TopologyResult>(model,
+      topologyStudyId, createWebGpuTopologyAdapter({ onAcquisition: observe }), signal);
+  const topologyTimingMs = performance.now() - topologyStarted;
+  const study = topologyStudyId === undefined ? undefined
+    : model.document.studies.find(({ id: candidate }) => candidate === topologyStudyId);
+  if (topologyStudyId !== undefined
+    && (!study || study.kind !== "topology" || study.configurationState !== "configured")) {
     throw new Error("Component topology study is not configured");
   }
-  const structuralRequest = request.input.sourceStructuralRequest;
+  const structuralRequest = topology?.request.input.sourceStructuralRequest ?? structural.request;
   const sourceStudy = model.document.studies.find(({ id: candidate }) => candidate === structuralStudyId);
   if (!sourceStudy || sourceStudy.kind !== "structural-linear" || sourceStudy.loads.length !== 1) {
     throw new Error("Component structural study is unresolved");
@@ -51,12 +71,17 @@ async function buildOne(
     definition: { id, sizeM: [dimensions[0]! * cellSizeM, dimensions[1]! * cellSizeM,
       dimensions[2]! * cellSizeM] as const, cellSizeM,
       forceN: [...sourceStudy.loads[0]!.forceN] as [number, number, number],
-      topologyTarget: study.targetVolumeFraction, topologyAcceptance: study.acceptance },
-    structuralRequest, topologyRequest: request,
+      ...(study?.kind === "topology" && study.configurationState === "configured"
+        ? { topologyTarget: study.targetVolumeFraction,
+        topologyAcceptance: study.acceptance } : {}) },
+    structuralRequest, ...(topology ? { topologyRequest: topology.request } : {}),
     exactBrepArtifact: exactArtifact(structuralRequest, "brep"),
     semanticMeshArtifact: exactArtifact(structuralRequest, "render-mesh"),
   });
-  return Object.freeze({ benchmark, model: componentShowcaseEvidence(model, "verified") });
+  return Object.freeze({ benchmark, model: componentShowcaseEvidence(model, "verified"),
+    structural: { result: structural.result.output, timingMs: structuralTimingMs },
+    ...(topology ? { topology: { result: topology.result.output,
+      artifacts: topology.result.artifacts.map(({ record }) => record), timingMs: topologyTimingMs } } : {}) });
 }
 
 export async function buildComponentStructuralShowcases(
@@ -65,7 +90,9 @@ export async function buildComponentStructuralShowcases(
 ): Promise<Readonly<{ drone: ComponentStructuralShowcase; cobot: ComponentStructuralShowcase }>> {
   const [drone, cobot] = await Promise.all([droneMotorSideArmDocument(), se6UpperArmDocument()]);
   return {
-    drone: await buildOne(drone, "drone", "drone-arm-structural", "drone-arm-topology", signal, observe),
-    cobot: await buildOne(cobot, "cobot", "se6-upper-arm-structural", "se6-upper-arm-topology", signal, observe),
+    drone: await buildOne(drone, "drone", studyAssignments.drone.structuralStudyId,
+      undefined, signal, observe),
+    cobot: await buildOne(cobot, "cobot", studyAssignments.cobot.structuralStudyId,
+      studyAssignments.cobot.topologyStudyId, signal, observe),
   };
 }

@@ -18,9 +18,9 @@ import { droneMotorSideArmDocument, se6UpperArmDocument } from "../../models/com
 export interface LiveStructuralGateCapability {
   readonly sessionId: string;
 }
-type BenchmarkKey = "drone" | "cobot";
+type BenchmarkKey = "cobot";
 type BoundCandidate = Readonly<{ sessionId: string; mesh: TopologyMesh }>;
-const capabilities = new WeakMap<object, Readonly<Record<BenchmarkKey, BoundCandidate>>>();
+const capabilities = new WeakMap<object, BoundCandidate>();
 
 function ownMesh(mesh: TopologyMesh): TopologyMesh {
   if (!(mesh.positionsM instanceof Float32Array) || mesh.positionsM.length === 0
@@ -73,15 +73,12 @@ export async function runStructuralTopologyBrowserGateSession(
   let candidates: GateTopologyCandidates | undefined;
   const report = await runAudit(signal, (value) => { candidates = value; });
   if (report.status !== "passed") return { report, models: candidates
-    ? [candidates.drone.model, candidates.cobot.model] : initialModels };
+    ? [candidates.models.drone, candidates.models.cobot] : initialModels };
   if (!candidates) throw new Error("Passed structural topology gate omitted its bound candidates");
   const capability = Object.freeze({ sessionId: report.sessionId });
-  const [drone, cobot] = await Promise.all([
-    bindCandidate(report, "drone", candidates.drone),
-    bindCandidate(report, "cobot", candidates.cobot),
-  ]);
-  capabilities.set(capability, Object.freeze({ drone, cobot }));
-  return { report, capability, models: [candidates.drone.model, candidates.cobot.model] };
+  const cobot = await bindCandidate(report, "cobot", candidates.cobot);
+  capabilities.set(capability, cobot);
+  return { report, capability, models: [candidates.models.drone, candidates.models.cobot] };
 }
 
 export async function runStructuralTopologyBrowserGate(
@@ -113,10 +110,10 @@ export function serializeLiveAcceptedTopologyStl(
   benchmark: BenchmarkKey,
 ): DataView {
   const state = capabilities.get(capability);
-  if (!state || (benchmark !== "drone" && benchmark !== "cobot")) {
+  if (!state || benchmark !== "cobot") {
     throw new Error("Topology STL export requires a live session-bound Task 5 capability");
   }
-  const { mesh, sessionId } = state[benchmark];
+  const { mesh, sessionId } = state;
   const triangleCount = mesh.triangles.length / 3;
   const buffer = new ArrayBuffer(84 + triangleCount * 50), view = new DataView(buffer);
   const header = new TextEncoder().encode(`Task5 ${benchmark} ${sessionId}`.slice(0, 80));

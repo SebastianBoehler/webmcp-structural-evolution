@@ -80,7 +80,7 @@ export async function solveMechanismStudy(
   if (evidence.mechanismInputDigest !== compiled.input.mechanismInputDigest) {
     throw new Error("Mechanism worker evidence does not match the compiled input");
   }
-  await assertMechanismSolverProvenance(evidence, workerArtifactDigest);
+  await assertMechanismSolverProvenance(evidence, workerArtifactDigest, compiled.input.solverWork);
   abort(signal);
   if (canonicalJson(evidence.verification) !== canonicalJson(mechanismVerification(compiled.input, replay.frames))) {
     throw new Error("Mechanism worker verification does not match the validated replay");

@@ -14,7 +14,7 @@ createMechanismSolverWorkerRuntime(scope, async (input, signal) => {
   }
   const workerArtifactDigest = await fetchArtifactDigest(import.meta.url, signal);
   if (signal.aborted) throw new DOMException("cancelled", "AbortError");
-  const provenance = await mechanismSolverProvenance(workerArtifactDigest);
+  const provenance = await mechanismSolverProvenance(workerArtifactDigest, input.solverWork);
   if (signal.aborted) throw new DOMException("cancelled", "AbortError");
   return MechanismWorkerOutputSchema.parse({ replay: solved.replay, evidence: {
     mechanismInputDigest: solved.replay.mechanismInputDigest,

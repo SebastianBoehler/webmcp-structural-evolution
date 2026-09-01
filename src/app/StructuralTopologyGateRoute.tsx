@@ -9,7 +9,7 @@ import { ShowcaseModelEvidence } from "./ShowcaseModelEvidence";
 interface GateView {
   readonly report: StructuralTopologyGateReport;
   readonly models: Awaited<ReturnType<typeof runStructuralTopologyBrowserGateSession>>["models"];
-  readonly serializedBytes?: Readonly<{ drone: number; cobot: number }>;
+  readonly serializedBytes?: Readonly<{ cobot: number }>;
 }
 
 export function StructuralTopologyGateRoute(): JSX.Element {
@@ -22,7 +22,6 @@ export function StructuralTopologyGateRoute(): JSX.Element {
     void runStructuralTopologyBrowserGateSession(controller.signal).then((next) => {
       if (controller.signal.aborted) return;
       const serializedBytes = next.capability ? {
-        drone: serializeLiveAcceptedTopologyStl(next.capability, "drone").byteLength,
         cobot: serializeLiveAcceptedTopologyStl(next.capability, "cobot").byteLength,
       } : undefined;
       setView({ report: next.report, models: next.models, serializedBytes });
@@ -40,7 +39,7 @@ export function StructuralTopologyGateRoute(): JSX.Element {
       <ShowcaseModelEvidence models={view.models}/>
       <p role={view.report.status === "blocked" ? "alert" : "status"}>
         {view.report.status === "passed"
-          ? `Live gate passed; session-bound STL serialization verified (${view.serializedBytes?.drone ?? 0} drone bytes, ${view.serializedBytes?.cobot ?? 0} cobot bytes).`
+          ? `Live gate passed; session-bound SE-6 STL serialization verified (${view.serializedBytes?.cobot ?? 0} bytes).`
           : `Blocked at ${view.report.blocker.stage}: ${view.report.blocker.message}`}
       </p>
       <pre data-testid="structural-topology-gate-report">

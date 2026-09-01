@@ -3,6 +3,7 @@ import type { AuthoritativeComponentDocument } from "../models/component-documen
 import { compileCollisionShape } from "../simulation/collision-approximation";
 import { defineCompiledMechanismStudy } from "../simulation/compile-mechanism-study";
 import { defineMechanismInput } from "../simulation/mechanism-contract";
+import { COMPONENT_MECHANISM_SOLVER_WORK } from "../simulation/mechanism-solver-work";
 import {
   assertPrimitiveDynamics, exactPrimitiveOrConvexProof, indexBodyMeshes,
 } from "../simulation/mechanism-geometry";
@@ -88,7 +89,8 @@ export async function compileExactComponentMechanism(
       }));
   });
   const input = await defineMechanismInput({ sourceRevision: model.document.revision,
-    studyId: "se6-motion", bodies, colliders, joints, gravityWorldMps2: [0, 0, -9.80665],
+    studyId: "se6-motion", solverWork: COMPONENT_MECHANISM_SOLVER_WORK,
+    bodies, colliders, joints, gravityWorldMps2: [0, 0, -9.80665],
     pointForces: [], durationSteps: 240, outputStrideSteps: 4, clearancePairs });
   return defineCompiledMechanismStudy(input, exact.artifacts);
 }

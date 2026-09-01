@@ -52,16 +52,16 @@ describe("structural topology report-only route", () => {
     expect(error).not.toHaveBeenCalled();
   });
 
-  it("exercises both session-bound serializers after a passed run", async () => {
+  it("serializes only the assigned SE-6 topology after a passed run", async () => {
     const capability = { sessionId: "a".repeat(64) };
     vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({
       report: { status: "passed" } as never, capability, models: [],
     });
     vi.mocked(serializeLiveAcceptedTopologyStl)
-      .mockReturnValueOnce(new DataView(new ArrayBuffer(134)))
       .mockReturnValueOnce(new DataView(new ArrayBuffer(184)));
     render(<App />);
-    expect(await screen.findByText(/134 drone bytes, 184 cobot bytes/i)).toBeVisible();
-    expect(serializeLiveAcceptedTopologyStl).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/SE-6 STL serialization verified \(184 bytes\)/i)).toBeVisible();
+    expect(serializeLiveAcceptedTopologyStl).toHaveBeenCalledOnce();
+    expect(serializeLiveAcceptedTopologyStl).toHaveBeenCalledWith(capability, "cobot");
   });
 });

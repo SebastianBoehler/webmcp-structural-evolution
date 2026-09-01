@@ -61,6 +61,11 @@ const structuralCase = z.object({
   }
 });
 
+const componentStructuralCase = z.object({
+  exactBrepArtifactId: digest, semanticMeshArtifactId: digest, voxelArtifactId: digest,
+  bindingDigest: digest, grid, numerical, timingMs: nonnegative,
+}).strict();
+
 const extraction = z.object({
   closed: z.literal(true), oriented: z.literal(true),
   requiredInterfacesConnected: z.literal(true), protectedVoidsClear: z.literal(true),
@@ -123,8 +128,11 @@ const passed = z.object({
     axialRelativeError: z.literal(STRUCTURAL_VERIFICATION_METADATA.thresholds.axialRelativeError),
     cantileverRelativeError: z.literal(STRUCTURAL_VERIFICATION_METADATA.thresholds.cantileverRelativeError),
   }).strict(),
-  structural: z.object({ axial: structuralCase, cantilever: structuralCase }).strict(),
-  topology: z.object({ drone: topologyCase, cobot: topologyCase }).strict(),
+  structural: z.object({
+    axial: structuralCase, cantilever: structuralCase,
+    drone: componentStructuralCase, cobot: componentStructuralCase,
+  }).strict(),
+  topology: z.object({ cobot: topologyCase }).strict(),
   cancellation: z.object({
     outcome: z.literal("cancelled"), lateTerminal: z.literal(false),
     artifactsCommitted: z.literal(0), recoveryRunPassed: z.literal(true), timingMs: nonnegative,
@@ -135,10 +143,10 @@ const passed = z.object({
   }).strict(),
   timingsMs: z.object({ total: nonnegative }).strict(), console: consoleEvidence,
 }).strict().superRefine((value, context) => {
-  if (value.topology.drone.exactBrepArtifactId === value.topology.cobot.exactBrepArtifactId
-    || value.topology.drone.voxelArtifactId === value.topology.cobot.voxelArtifactId
-    || JSON.stringify(value.topology.drone.grid) === JSON.stringify(value.topology.cobot.grid)) {
-    context.addIssue({ code: "custom", message: "Drone and cobot topology geometries must be genuinely distinct" });
+  if (value.structural.drone.exactBrepArtifactId === value.structural.cobot.exactBrepArtifactId
+    || value.structural.drone.voxelArtifactId === value.structural.cobot.voxelArtifactId
+    || JSON.stringify(value.structural.drone.grid) === JSON.stringify(value.structural.cobot.grid)) {
+    context.addIssue({ code: "custom", message: "Drone and cobot component geometries must be genuinely distinct" });
   }
   if (value.console.statusLines.length === 0 || value.console.errorCount !== 0) {
     context.addIssue({ code: "custom", message: "Live console evidence is incomplete or contains errors" });
@@ -167,15 +175,16 @@ export function parseStructuralTopologyGateReport(value: unknown): StructuralTop
   const candidate = value as Record<string, unknown>;
   if (candidate.status === "passed") {
     const topology = candidate.topology as Record<string, unknown> | undefined;
-    if (topology !== undefined && (!topology.drone || !topology.cobot)) {
-      throw new Error("A passed report requires both drone and cobot topology evidence");
+    const structural = candidate.structural as Record<string, unknown> | undefined;
+    if (topology !== undefined && !topology.cobot) {
+      throw new Error("A passed report requires SE-6 topology evidence");
     }
     if (candidate.evidenceSource !== "live-browser-webgpu"
       || candidate.realGpu !== true) {
       throw new Error("A passed report requires live browser WebGPU authority");
     }
-    if (!topology?.drone || !topology.cobot) {
-      throw new Error("A passed report requires both drone and cobot topology evidence");
+    if (!topology?.cobot || !structural?.drone || !structural.cobot) {
+      throw new Error("A passed report requires drone structural and SE-6 structural/topology evidence");
     }
     return passed.parse(value);
   }

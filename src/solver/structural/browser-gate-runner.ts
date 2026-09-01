@@ -1,4 +1,5 @@
 import { revisionId } from "../../domain/revisions";
+import type { ArtifactRecord } from "../../cad/artifact-contract";
 import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import { createTopologyMeshArtifact } from "../topology/topology-artifacts";
 import type { TopologyMesh, TopologyResult, TopologySolveInput } from "../topology/topology-contract";
@@ -23,14 +24,15 @@ import { buildComponentStructuralShowcases } from "./component-structural-showca
 import type { ShowcaseModelEvidence } from "../../workspace/component-showcase-evidence";
 import { runStructuralCancellationCase, solveGateRequest } from "./browser-gate-runtime";
 type PassedReport = Extract<StructuralTopologyGateReport, { status: "passed" }>;
-type TopologyEvidence = PassedReport["topology"]["drone"];
+type TopologyEvidence = PassedReport["topology"]["cobot"];
 export type GateTopologyCandidate = Readonly<{
   evidence: TopologyEvidence; mesh: TopologyMesh;
   request: EngineeringSolveRequest<TopologySolveInput>;
   model: ShowcaseModelEvidence;
 }>;
 export type GateTopologyCandidates = Readonly<{
-  drone: GateTopologyCandidate; cobot: GateTopologyCandidate;
+  cobot: GateTopologyCandidate;
+  models: Readonly<{ drone: ShowcaseModelEvidence; cobot: ShowcaseModelEvidence }>;
 }>;
 const now = () => performance.now();
 function numerical(result: StructuralResult) {
@@ -74,12 +76,40 @@ async function structuralCase(benchmark: ExactBrowserBenchmark, audit: GateGpuAu
     timingMs: now() - started,
   };
 }
-async function topologyCase(benchmark: ExactBrowserBenchmark, audit: GateGpuAudit) {
+async function componentStructuralCase(
+  benchmark: ExactBrowserBenchmark, result: StructuralResult, timingMs: number,
+) {
+  if (result.truthLevel !== "interactive-estimate" || result.verification.realGpu !== true) {
+    throw new Error(`${benchmark.definition.id} did not return real WebGPU structural evidence`);
+  }
+  return {
+    exactBrepArtifactId: benchmark.exactBrepArtifact.id,
+    semanticMeshArtifactId: benchmark.semanticMeshArtifact.id,
+    voxelArtifactId: benchmark.structuralRequest.input.voxelArtifactId,
+    bindingDigest: await revisionId({
+      documentRevision: benchmark.structuralRequest.document.revision,
+      studyId: benchmark.structuralRequest.studyId,
+      namedSelections: benchmark.structuralRequest.document.namedSelections,
+      artifacts: benchmark.structuralRequest.inputArtifacts.map(({ id }) => id),
+    }),
+    grid: {
+      dimensions: [...result.grid.cellDimensions] as [number, number, number],
+      activeCells: benchmark.structuralRequest.input.voxelPayload.activeCells.reduce((sum, value) => sum + value, 0),
+      cellSizeM: result.grid.cellSizeM,
+    }, numerical: numerical(result), timingMs,
+  };
+}
+async function topologyCase(
+  benchmark: ExactBrowserBenchmark, audit: GateGpuAudit,
+  precomputed?: Readonly<{ output: TopologyResult; artifacts: readonly ArtifactRecord[]; timingMs: number }>,
+) {
   if (!benchmark.topologyRequest || benchmark.definition.topologyTarget === undefined) {
     throw new Error(`${benchmark.definition.id} topology request is unavailable`);
   }
   const started = now();
-  const solved = await solveGateRequest<TopologySolveInput, TopologyResult>(benchmark.topologyRequest, audit.observe);
+  const solved = precomputed ?? await solveGateRequest<TopologySolveInput, TopologyResult>(
+    benchmark.topologyRequest, audit.observe,
+  );
   const output = solved.output;
   if (!output.acceptance.eligible || output.acceptance.reasons.length > 0) {
     const study = benchmark.topologyRequest.document.studies.find(
@@ -164,7 +194,7 @@ async function topologyCase(benchmark: ExactBrowserBenchmark, audit: GateGpuAudi
         / output.postExtractionAnalysis.maximumVonMisesStressPa,
     },
     auditDecision: { eligible: true as const, accepted: false as const, exportable: false as const },
-    timingMs: now() - started,
+    timingMs: precomputed?.timingMs ?? now() - started,
   };
   return { evidence, mesh: output.manufacturingMesh, request: benchmark.topologyRequest };
 }
@@ -190,10 +220,20 @@ export async function runStructuralTopologyBrowserGate(
     const axial = await structuralCase(benchmarks.get("axial")!, audit);
     const cantilever = await structuralCase(benchmarks.get("cantilever")!, audit);
     status("Axial and cantilever analytical/Wasm gates passed");
+    const droneStructural = await componentStructuralCase(
+      component.drone.benchmark, component.drone.structural.result, component.drone.structural.timingMs,
+    );
+    const cobotStructural = await componentStructuralCase(
+      component.cobot.benchmark, component.cobot.structural.result, component.cobot.structural.timingMs,
+    );
+    status("Drone motor-side and SE-6 upper-arm component structural gates passed");
     stage = "topology-solves";
-    const drone = await topologyCase(benchmarks.get("drone")!, audit);
-    const cobot = await topologyCase(benchmarks.get("cobot")!, audit);
-    status("Distinct drone and cobot topology/re-analysis gates passed");
+    if (!component.cobot.topology) throw new Error("SE-6 component topology result is unavailable");
+    const cobot = await topologyCase(benchmarks.get("cobot")!, audit, {
+      output: component.cobot.topology.result, artifacts: component.cobot.topology.artifacts,
+      timingMs: component.cobot.topology.timingMs,
+    });
+    status("SE-6 upper-arm topology/re-analysis gate passed");
     stage = "cancellation";
     const cancellation = await runStructuralCancellationCase(benchmarks.get("cantilever")!, audit.observe);
     status("In-flight cancellation and fresh-worker recovery passed");
@@ -210,8 +250,8 @@ export async function runStructuralTopologyBrowserGate(
         axialRelativeError: STRUCTURAL_VERIFICATION_METADATA.thresholds.axialRelativeError,
         cantileverRelativeError: STRUCTURAL_VERIFICATION_METADATA.thresholds.cantileverRelativeError,
       } as const,
-      structural: { axial, cantilever },
-      topology: { drone: drone.evidence, cobot: cobot.evidence }, cancellation,
+      structural: { axial, cantilever, drone: droneStructural, cobot: cobotStructural },
+      topology: { cobot: cobot.evidence }, cancellation,
       gpuDiagnostics: audit.verifiedDiagnostics(), timingsMs: { total: now() - started },
       console: { statusLines: lines, ...consoleAudit.evidence() },
     };
@@ -220,8 +260,8 @@ export async function runStructuralTopologyBrowserGate(
     if (!await verifyStructuralTopologyGateReportDigest(parsed)) {
       throw new Error("Structural topology gate report seal did not verify");
     }
-    capture?.({ drone: { ...drone, model: component.drone.model },
-      cobot: { ...cobot, model: component.cobot.model } });
+    capture?.({ cobot: { ...cobot, model: component.cobot.model },
+      models: { drone: component.drone.model, cobot: component.cobot.model } });
     return parsed;
   } catch (error) {
     if (signal.aborted) throw error;
