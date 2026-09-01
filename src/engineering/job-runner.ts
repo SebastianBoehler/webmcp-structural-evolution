@@ -14,6 +14,7 @@ import {
   prepareSolverRunResult,
   staleRevisionError,
   toEngineeringJobError,
+  type PreparedSolverRunResult,
 } from "./job-runner-result";
 import type { SolverRegistry } from "./solver-registry";
 import type { SolverProgressEvent, SolverRunResult } from "./solver-adapter";
@@ -44,7 +45,17 @@ export interface EngineeringJobRunnerOptions {
   readonly registry: SolverRegistry;
   readonly store: ArtifactStore;
   readonly currentDocument: () => DesignDocument;
+  readonly finalize?: (finalization: EngineeringJobFinalization) => Promise<void>;
 }
+
+export type EngineeringJobFinalization = Readonly<{
+  jobId: string;
+  sourceRevision: string;
+  artifacts: PreparedSolverRunResult<unknown>["artifacts"];
+  commit(): Promise<void>;
+  verify(): boolean;
+  fail(error: EngineeringJobError): void;
+}>;
 
 type JobControl<Output> = {
   readonly jobId: string;
@@ -159,20 +170,33 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
     try {
       const prepared = await prepareSolverRunResult(control.request, result);
       if (!active(control) || invalidOrStale(control)) return;
-      await options.store.commit(prepared.artifacts, () => acceptCommit(control));
-      if (!control.commitAccepted) {
-        if (active(control) && !invalidOrStale(control)) {
-          fail(control, { code: "internal-error", message: "Artifact store completed without accepting the commit fence" });
-        }
-        return;
-      }
-      complete(control, {
+      const commit = async () => {
+        await options.store.commit(prepared.artifacts, () => acceptCommit(control));
+        if (!control.commitAccepted) throw new Error("Artifact store completed without accepting the commit fence");
+      };
+      const verify = () => control.commitAccepted && complete(control, {
         jobId: control.jobId,
         state: "verified",
         truthLevel: prepared.truthLevel,
         progress: 1,
         artifacts: prepared.artifacts.map(({ record }) => record),
       }, prepared.output);
+      if (options.finalize) {
+        await options.finalize({
+          jobId: control.jobId,
+          sourceRevision: control.request.sourceRevision,
+          artifacts: prepared.artifacts,
+          commit,
+          verify,
+          fail: (error) => fail(control, error),
+        });
+        if (!control.terminal && active(control)) {
+          fail(control, { code: "internal-error", message: "Engineering finalizer returned without a terminal state" });
+        }
+      } else {
+        await commit();
+        verify();
+      }
     } catch (error) {
       if (control.commitAccepted) {
         fail(control, toEngineeringJobError(error));

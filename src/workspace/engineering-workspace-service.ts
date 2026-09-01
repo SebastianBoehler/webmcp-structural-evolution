@@ -79,12 +79,25 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
     registry: options.registry,
     store: options.store,
     currentDocument: document,
+    finalize: (finalization) => mutations.run(async () => {
+      if (disposed || document().revision !== finalization.sourceRevision) {
+        finalization.fail({
+          code: "stale-revision",
+          message: "Source revision is no longer the current design document",
+        });
+        return;
+      }
+      const existing = new Set(active().map(({ id }) => id));
+      const records = uniqueArtifacts(finalization.artifacts.map(({ record }) => record));
+      const next = records.filter(({ id }) => !existing.has(id));
+      const nextSession = next.length ? attachDesignSessionArtifacts(session, next) : session;
+      await finalization.commit();
+      session = nextSession;
+      if (!finalization.verify()) {
+        throw new WorkspaceError("job-finalization-failed", "Engineering job could not enter verified state");
+      }
+    }),
   });
-  const attach = (records: readonly ArtifactRecord[]) => {
-    const existing = new Set(active().map(({ id }) => id));
-    const next = uniqueArtifacts(records).filter(({ id }) => !existing.has(id));
-    if (next.length) session = attachDesignSessionArtifacts(session, next);
-  };
   const publish = (event: WorkspaceEventInput) => {
     inspectionCache = undefined;
     bus.publish(event);
@@ -93,7 +106,6 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
     if (disposed) return;
     if (entry.event.state === "verified") {
       const records = uniqueArtifacts(entry.event.artifacts);
-      attach(records);
       records.forEach(({ id }) => verifiedIds.add(id));
       publish({ type: "artifacts-changed", headRevision: document().revision,
         artifactIds: records.map(({ id }) => id) });
@@ -125,12 +137,14 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       const base = session;
       const result = await applyDesignSessionTransaction(base, transaction, options.clock);
       if (session !== base) continue;
-      session = result.session;
-      const receipt = session.receipts.at(-1)!;
+      const receipt = result.session.receipts.at(-1)!;
       const changed = result.result.ok && result.result.document.revision !== transaction.expectedRevision;
       if (changed) {
-        await synchronizeArtifactStoreInvalidation(options.store, session.artifacts);
-        for (const id of session.artifacts.invalidatedIds) {
+        await synchronizeArtifactStoreInvalidation(options.store, result.session.artifacts);
+      }
+      session = result.session;
+      if (changed) {
+        for (const id of result.session.artifacts.invalidatedIds) {
           rawExports.delete(id);
           verifiedIds.delete(id);
         }

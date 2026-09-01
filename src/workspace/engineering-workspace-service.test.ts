@@ -472,7 +472,7 @@ describe("engineering workspace authority", () => {
     const fields = service.inspect().artifacts.filter(({ kind }) => kind === "field");
 
     await expect(service.compareResults(fields[0]!.id, fields[1]!.id)).resolves.toMatchObject({
-      sourceRevision: revision, comparable: true,
+      leftSourceRevision: revision, rightSourceRevision: revision, comparable: true,
       leftArtifactId: fields[0]!.id, rightArtifactId: fields[1]!.id,
     });
     await expect(service.compareResults(fields[0]!.id, fields[0]!.id)).rejects.toThrow(/distinct/i);

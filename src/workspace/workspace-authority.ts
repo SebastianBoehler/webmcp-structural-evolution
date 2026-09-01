@@ -28,7 +28,7 @@ export async function compareWorkspaceResults(
   if (!verifiedIds.has(leftId) || !verifiedIds.has(rightId)) {
     throw new WorkspaceError("unverified-results", "Result comparison requires verified artifacts");
   }
-  if (left.sourceRevision !== right.sourceRevision || left.kind !== right.kind
+  if (left.kind !== right.kind
     || left.units !== right.units || left.mediaType !== right.mediaType) {
     throw new WorkspaceError("incomparable-results", "Results do not share a comparable artifact contract");
   }
@@ -37,7 +37,8 @@ export async function compareWorkspaceResults(
   return {
     leftArtifactId: leftId,
     rightArtifactId: rightId,
-    sourceRevision: left.sourceRevision,
+    leftSourceRevision: left.sourceRevision,
+    rightSourceRevision: right.sourceRevision,
     comparable: true,
     kind: left.kind,
     units: left.units,

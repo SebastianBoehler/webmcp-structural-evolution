@@ -30,7 +30,8 @@ export type TransactionPreview = DeepReadonly<{
 export type ResultComparison = DeepReadonly<{
   leftArtifactId: string;
   rightArtifactId: string;
-  sourceRevision: string;
+  leftSourceRevision: string;
+  rightSourceRevision: string;
   comparable: true;
   kind: ArtifactRecord["kind"];
   units: ArtifactRecord["units"];
