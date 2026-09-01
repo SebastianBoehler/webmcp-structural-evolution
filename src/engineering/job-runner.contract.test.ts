@@ -50,7 +50,7 @@ describe("engineering job runner result and subscriber contracts", () => {
 
   it("accepts generated artifacts with closed study and artifact dependencies", async () => {
     const document = await sourceDocument();
-    const seedRequest = await request(document, "closed-generated-dependencies");
+    const seedRequest = await request(document, "closed-generated-dependencies", []);
     const input = await artifactForResult(seedRequest, bytes(3));
     const solveRequest = await request(document, "closed-generated-dependencies", [input]);
     const firstPayload = bytes(4);

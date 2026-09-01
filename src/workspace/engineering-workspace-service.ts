@@ -237,14 +237,20 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
         const next = compilation.inputs.map(({ record }) => record)
           .filter(({ id }) => !existing.has(id));
         const nextSession = next.length ? attachDesignSessionArtifacts(session, next) : session;
-        await options.store.commit(compilation.inputs,
-          () => !disposed && document().revision === request.expectedRevision);
-        session = nextSession;
-        if (next.length) publish({ type: "artifacts-changed", headRevision: document().revision,
-          artifactIds: next.map(({ id }) => id) });
-        const handle = runner.launch(compilation.request);
-        jobRevisions.set(handle.jobId, compilation.request.sourceRevision);
-        return { jobId: handle.jobId };
+        const reservation = runner.reserve(compilation.request);
+        jobRevisions.set(reservation.jobId, compilation.request.sourceRevision);
+        try {
+          await options.store.commit(compilation.inputs,
+            () => !disposed && document().revision === request.expectedRevision);
+          session = nextSession;
+          if (next.length) publish({ type: "artifacts-changed", headRevision: document().revision,
+            artifactIds: next.map(({ id }) => id) });
+          reservation.start();
+          return { jobId: reservation.jobId };
+        } catch (error) {
+          runner.cancel(reservation.jobId);
+          throw error;
+        }
       });
     },
     async cancelJob(jobId) {
@@ -254,7 +260,10 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
     inspectJob(jobId) { assertActive(); return latestEntry(runner.entries(), jobId); },
     compareResults(left, right) {
       assertActive();
-      return compareWorkspaceResults(left, right, active(), verifiedIds, options.store);
+      const head = document().revision;
+      return compareWorkspaceResults(left, right, active(), verifiedIds, options.store,
+        () => document().revision === head
+          && [left, right].every((id) => verifiedIds.has(id) && active().some((record) => record.id === id)));
     },
     exportArtifact(artifactId, approval) {
       assertActive();

@@ -41,6 +41,33 @@ function cyclicArtifactDependency(
   return [...graph.keys()].some(visit);
 }
 
+function reachesRequestInput(
+  id: string, generated: ReadonlyMap<string, ArtifactRecord>, inputIds: ReadonlySet<string>,
+  visited = new Set<string>(),
+): boolean {
+  if (inputIds.has(id)) return true;
+  if (visited.has(id)) return false;
+  visited.add(id);
+  const record = generated.get(id);
+  return record?.dependencies.some((dependency) => dependency.kind === "artifact"
+    && reachesRequestInput(dependency.artifactId, generated, inputIds, visited)) ?? false;
+}
+
+function completeMechanismEntities(request: EngineeringSolveRequest<unknown>, record: ArtifactRecord): boolean {
+  const dependencies = new Set(record.dependencies.flatMap((dependency) =>
+    dependency.kind === "entity" ? [dependency.reference] : []));
+  const required = [
+    `document:${request.document.id}`, `study:${request.studyId}`,
+    ...request.document.parameters.map(({ id }) => `parameter:${id}`),
+    ...request.document.features.map(({ id }) => `feature:${id}`),
+    ...request.document.bodies.map(({ id }) => `body:${id}`),
+    ...request.document.components.map(({ id }) => `component:${id}`),
+    ...request.document.instances.map(({ id }) => `instance:${id}`),
+    ...request.document.mates.map(({ id }) => `mate:${id}`),
+  ];
+  return required.every((reference) => dependencies.has(reference));
+}
+
 export function generatedArtifactDependencyError(
   request: EngineeringSolveRequest<unknown>,
   records: readonly ArtifactRecord[],
@@ -65,7 +92,18 @@ export function generatedArtifactDependencyError(
       }
     }
   }
-  return cyclicArtifactDependency(records, request.inputArtifacts)
-    ? "Generated artifact dependencies cannot contain a cycle"
-    : undefined;
+  if (cyclicArtifactDependency(records, request.inputArtifacts)) {
+    return "Generated artifact dependencies cannot contain a cycle";
+  }
+  const generated = new Map(records.map((record) => [record.id, record]));
+  if (inputIds.size > 0) {
+    const unlined = records.find((record) => !reachesRequestInput(record.id, generated, inputIds));
+    return unlined ? `Generated artifact lacks authoritative request-input lineage: ${unlined.id}` : undefined;
+  }
+  if (request.kind !== "mechanism") {
+    return "Solver request has no authoritative artifact input lineage";
+  }
+  return records.every((record) => completeMechanismEntities(request, record))
+    ? undefined
+    : "Mechanism result lacks conservative exact-document entity lineage";
 }

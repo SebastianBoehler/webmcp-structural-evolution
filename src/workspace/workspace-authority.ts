@@ -21,6 +21,7 @@ export async function compareWorkspaceResults(
   artifacts: readonly ArtifactRecord[],
   verifiedIds: ReadonlySet<string>,
   store: ArtifactStore,
+  isCurrent: () => boolean = () => true,
 ): Promise<ResultComparison> {
   if (leftId === rightId) throw new WorkspaceError("identical-results", "Result comparison requires distinct artifact IDs");
   const left = activeArtifact(artifacts, leftId);
@@ -34,6 +35,9 @@ export async function compareWorkspaceResults(
   }
   const [leftPayload, rightPayload] = await Promise.all([store.get(leftId), store.get(rightId)]);
   if (!leftPayload || !rightPayload) throw new WorkspaceError("missing-payload", "Comparable result payload is unavailable");
+  if (!isCurrent()) {
+    throw new WorkspaceError("ineligible-artifact", "Comparable results are no longer active and verified");
+  }
   return {
     leftArtifactId: leftId,
     rightArtifactId: rightId,

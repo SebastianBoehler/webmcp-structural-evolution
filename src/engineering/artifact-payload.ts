@@ -46,30 +46,24 @@ function resizable(buffer: ArrayBuffer): boolean {
 }
 
 function viewKind(value: ArrayBufferView): ViewKind {
-  if (value instanceof DataView) return "DataView";
-  if (value instanceof Int8Array) return "Int8Array";
-  if (value instanceof Uint8Array) return "Uint8Array";
-  if (value instanceof Uint8ClampedArray) return "Uint8ClampedArray";
-  if (value instanceof Int16Array) return "Int16Array";
-  if (value instanceof Uint16Array) return "Uint16Array";
-  if (value instanceof Int32Array) return "Int32Array";
-  if (value instanceof Uint32Array) return "Uint32Array";
-  if (typeof Float16Array !== "undefined" && value instanceof Float16Array) return "Float16Array";
-  if (value instanceof Float32Array) return "Float32Array";
-  if (value instanceof Float64Array) return "Float64Array";
-  if (value instanceof BigInt64Array) return "BigInt64Array";
-  if (value instanceof BigUint64Array) return "BigUint64Array";
+  const tag = Object.prototype.toString.call(value).slice(8, -1) as ViewKind;
+  if ([
+    "DataView", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
+    "Int32Array", "Uint32Array", "Float16Array", "Float32Array", "Float64Array",
+    "BigInt64Array", "BigUint64Array",
+  ].includes(tag)) return tag;
   throw new ArtifactStoreError("unsafe-payload", "Artifact payload contains an unsupported typed view");
 }
 
 function payloadBuffer(view: ArrayBufferView): ArrayBuffer {
-  if (!(view.buffer instanceof ArrayBuffer)) {
+  if (Object.prototype.toString.call(view.buffer) !== "[object ArrayBuffer]") {
     throw new ArtifactStoreError("unsafe-payload", "Artifact payload views cannot use shared backing buffers");
   }
-  if (resizable(view.buffer)) {
+  const buffer = view.buffer as ArrayBuffer;
+  if (resizable(buffer)) {
     throw new ArtifactStoreError("unsafe-payload", "Artifact payload views cannot use resizable backing buffers");
   }
-  return view.buffer;
+  return buffer;
 }
 
 function copyView(value: ArrayBufferView, kind = viewKind(value)): ArrayBufferView {

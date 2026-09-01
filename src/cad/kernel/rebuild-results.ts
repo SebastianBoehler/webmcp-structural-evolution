@@ -39,9 +39,17 @@ async function artifactFor(
         kind: "entity" as const,
         reference: `parameter:${id}`,
       })),
+      ...request.document.features.map(({ id }) => ({
+        kind: "entity" as const,
+        reference: `feature:${id}` as const,
+      })),
       ...request.document.bodies.map(({ id }) => ({
         kind: "entity" as const,
         reference: `body:${id}`,
+      })),
+      ...request.document.components.map(({ id }) => ({
+        kind: "entity" as const,
+        reference: `component:${id}` as const,
       })),
     ],
   });

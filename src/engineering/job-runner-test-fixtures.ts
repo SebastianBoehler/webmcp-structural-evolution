@@ -1,7 +1,7 @@
 import { defineArtifactRecord, type ArtifactRecord } from "../cad/artifact-contract";
 import { defineDesignDocument, type DesignDocument } from "../cad/document-schema";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
-import { createArtifactStore, type ArtifactPayload, type ArtifactStore } from "./artifact-store";
+import { createArtifactStore, digestArtifactPayload, type ArtifactPayload, type ArtifactStore } from "./artifact-store";
 import type { EngineeringSolveRequest, SolverAdapter, SolverRunResult } from "./solver-adapter";
 
 export type SolveInput = { readonly grid: readonly [number, number, number] };
@@ -61,13 +61,20 @@ export async function sourceDocument(label = "Link"): Promise<DesignDocument> {
 export async function request(
   document: DesignDocument,
   jobId: string,
-  inputArtifacts: readonly ArtifactRecord[] = [],
+  inputArtifacts?: readonly ArtifactRecord[],
 ): Promise<EngineeringSolveRequest<SolveInput>> {
+  const artifacts = inputArtifacts ?? [await defineArtifactRecord({
+    kind: "solver-mesh", sourceRevision: document.revision,
+    producer: { name: "runner-test-input", version: "1" }, settingsDigest: "a".repeat(64),
+    contentDigest: await digestArtifactPayload(bytes(9, 8, 7)),
+    units: "m", mediaType: "application/vnd.engineering.runner-input",
+    dependencies: [{ kind: "entity", reference: "body:link-body" }],
+  })];
   return defineEngineeringSolveRequest({
     jobId,
     kind: "fea",
     sourceRevision: document.revision,
-    inputArtifacts,
+    inputArtifacts: artifacts,
     settings: {},
     studyId: "link-static",
     input: { grid: [8, 4, 2] },
@@ -79,10 +86,17 @@ export function studyDependency(requestValue: EngineeringSolveRequest<unknown>) 
   return [{ kind: "entity", reference: `study:${requestValue.studyId}` }] as const;
 }
 
+function resultDependencies(requestValue: EngineeringSolveRequest<unknown>) {
+  return [
+    ...studyDependency(requestValue),
+    ...requestValue.inputArtifacts.map(({ id }) => ({ kind: "artifact" as const, artifactId: id })),
+  ];
+}
+
 export async function artifactForResult(
   requestValue: EngineeringSolveRequest<unknown>,
   payload: ArtifactPayload = bytes(1, 2, 3),
-  dependencies: readonly unknown[] = studyDependency(requestValue),
+  dependencies: readonly unknown[] = resultDependencies(requestValue),
 ): Promise<ArtifactRecord> {
   const { digestArtifactPayload } = await import("./artifact-store");
   return defineArtifactRecord({
@@ -100,7 +114,7 @@ export async function artifactForResult(
 export async function resultFor(
   requestValue: EngineeringSolveRequest<unknown>,
   payload: ArtifactPayload = bytes(1, 2, 3),
-  dependencies: readonly unknown[] = studyDependency(requestValue),
+  dependencies: readonly unknown[] = resultDependencies(requestValue),
 ): Promise<SolverRunResult<SolveOutput>> {
   const record = await artifactForResult(requestValue, payload, dependencies);
   return {

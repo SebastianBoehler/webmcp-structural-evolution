@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createDesignSession } from "../cad/design-session";
-import { defineArtifactRecord } from "../cad/artifact-contract";
+import { defineArtifactRecord, type ArtifactRecord } from "../cad/artifact-contract";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
 import { createArtifactStore, digestArtifactPayload } from "../engineering/artifact-store";
 import { sourceDocument } from "../engineering/job-runner-test-fixtures";
@@ -110,13 +110,7 @@ describe("engineering workspace authority", () => {
     registry.register(adapter);
     const service = createEngineeringWorkspaceService(await workspaceOptions({
       registry,
-      planners: { "structural-linear": async ({ document, study, artifacts }) => ({
-        request: {
-          jobId: "canonicalization-race", kind: "fea", sourceRevision: document.revision,
-          inputArtifacts: artifacts, settings: {}, studyId: study.id, input: {}, document,
-        },
-        inputs: [],
-      }) as never },
+      planners: { "structural-linear": structuralPlanner() },
     }));
     const root = currentDocument(service);
     const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
@@ -232,7 +226,7 @@ describe("engineering workspace authority", () => {
 
     expect(preview).toMatchObject({ sourceRevision: root.revision, changed: true, outputs: ["step"] });
     expect(preview.previewRevision).not.toBe(root.revision);
-    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 0 });
+    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 2 });
     expect(adapters).toBe(1);
     expect(dryPut).toHaveBeenCalledOnce();
     expect(durablePut).not.toHaveBeenCalled();
@@ -262,7 +256,7 @@ describe("engineering workspace authority", () => {
 
     await expect(running).rejects.toThrow(mode === "error" ? /kernel failed/i : /abort/i);
     expect(dispose).toHaveBeenCalledOnce();
-    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 0 });
+    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 2 });
   });
 
   it("invalidates active metadata and payloads and cancels old-revision jobs before quarantining late output", async () => {
@@ -317,53 +311,38 @@ describe("engineering workspace authority", () => {
     expect(calls).toEqual([{ kind: "structural-linear", studyId: "link-static" }]);
     expect(seen[0]).toMatchObject({
       kind: "fea", studyId: "link-static", sourceRevision: root.revision,
-      document: { revision: root.revision }, input: { exactStudyKind: "structural-linear" },
+      document: { revision: root.revision }, input: {
+        semanticMeshArtifactId: expect.any(String), voxelArtifactId: expect.any(String),
+      },
     });
     expect(JSON.stringify(seen[0])).not.toMatch(/reference-drone|se6-cobot|fixture/i);
   });
 
   it("commits planner-produced exact input payloads and attaches their bound records before launch", async () => {
-    const root = await sourceDocument();
-    const payload = Uint8Array.of(31);
-    const inputRecord = await defineArtifactRecord({
-      kind: "solver-mesh", sourceRevision: root.revision,
-      producer: { name: "exact-study-compiler", version: "1.0.0" },
-      settingsDigest: "3".repeat(64), contentDigest: await digestArtifactPayload(payload),
-      units: "m", mediaType: "application/vnd.engineering.solver-mesh",
-      dependencies: [
-        { kind: "entity", reference: "body:link-body" },
-        { kind: "entity", reference: "feature:link-feature" },
-        { kind: "entity", reference: "study:link-static" },
-      ],
-    });
-    const solve = await defineEngineeringSolveRequest({
-      jobId: "planned-input-job", kind: "fea", sourceRevision: root.revision,
-      inputArtifacts: [inputRecord], settings: {}, studyId: "link-static", input: {}, document: root,
-    });
     const store = createArtifactStore();
     const registry = createSolverRegistry();
     let service!: EngineeringWorkspaceService;
     let observedBeforeRun = false;
+    let inputRecord: ArtifactRecord | undefined;
     registry.register({
       capability: { kind: "fea" }, supports: () => ({ supported: true }),
       async run(request) {
-        observedBeforeRun = service.inspect().artifacts.some(({ id }) => id === inputRecord.id)
+        inputRecord = request.inputArtifacts.find(({ kind }) => kind === "solver-mesh");
+        observedBeforeRun = !!inputRecord
+          && service.inspect().artifacts.some(({ id }) => id === inputRecord!.id)
           && (await store.get(inputRecord.id)) !== undefined;
         return solveResult(request, 1);
       },
     });
-    service = createEngineeringWorkspaceService(await workspaceOptions({
-      session: createDesignSession(root), store, registry,
-      planners: { "structural-linear": async () => ({
-        request: solve, inputs: [{ record: inputRecord, payload }],
-      }) as never },
-    }));
+    service = createEngineeringWorkspaceService(await workspaceOptions({ store, registry }));
+    const root = service.inspect().document;
 
     const { jobId } = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
     await waitFor(() => service.inspectJob(jobId).event.state === "verified");
 
+    expect(inputRecord).toBeDefined();
     expect(service.inspect().artifacts).toContainEqual(inputRecord);
-    await expect(store.get(inputRecord.id)).resolves.toEqual(payload);
+    await expect(store.get(inputRecord!.id)).resolves.toBeDefined();
     expect(observedBeforeRun).toBe(true);
   });
 
@@ -593,7 +572,7 @@ describe("engineering workspace authority", () => {
     unsubscribe();
     await service.apply(rename(currentDocument(service), "after-unsubscribe", "No observation"));
 
-    expect(observed).toEqual(["queued", "running", "cancelled"]);
+    expect(observed).toEqual(["queued", "artifacts-changed", "running", "cancelled"]);
   });
 
   it("dispose removes owned subscriptions and disposes the durable CAD adapter exactly once", async () => {

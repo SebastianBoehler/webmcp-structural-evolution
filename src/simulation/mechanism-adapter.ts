@@ -84,6 +84,9 @@ async function packReplay(
       ...request.document.bodies.map(({ id }) => ({
         kind: "entity" as const, reference: `body:${id}` as const,
       })),
+      ...request.document.components.map(({ id }) => ({
+        kind: "entity" as const, reference: `component:${id}` as const,
+      })),
       ...request.document.instances.map(({ id }) => ({
         kind: "entity" as const, reference: `instance:${id}` as const,
       })),

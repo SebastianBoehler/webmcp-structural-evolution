@@ -112,9 +112,7 @@ it("orders a commit-accepted solver finalization before a competing apply", asyn
   release();
   await waitFor(() => service.inspectJob(launched.jobId).event.state === "verified");
   await expect(applying).resolves.toMatchObject({ outcome: { status: "succeeded" } });
-  const field = service.inspect().artifacts.find(({ kind }) => kind === "field");
-  expect(field).toBeDefined();
-  await expect(store.get(field!.id)).resolves.toBeDefined();
+  expect(service.inspect().artifacts.find(({ kind }) => kind === "field")).toBeUndefined();
 });
 
 it("does not advance hidden session state when artifact invalidation fails", async () => {

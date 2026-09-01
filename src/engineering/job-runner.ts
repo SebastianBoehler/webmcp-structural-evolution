@@ -32,9 +32,14 @@ export type EngineeringJobHandle<Output> = Readonly<{
   completion: Promise<EngineeringJobCompletion<Output>>;
 }>;
 
+export type EngineeringJobReservation<Output> = EngineeringJobHandle<Output> & Readonly<{
+  start(): void;
+}>;
+
 export type { EngineeringJobSubscriber } from "./job-notifier";
 
 export interface EngineeringJobRunner {
+  reserve<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobReservation<Output>;
   launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output>;
   cancel(jobId: string): boolean;
   subscribe(subscriber: EngineeringJobSubscriber): () => void;
@@ -206,8 +211,9 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
     }
   };
 
-  return {
-    launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output> {
+  const reserve = <Input, Output>(
+    request: EngineeringSolveRequest<Input>,
+  ): EngineeringJobReservation<Output> => {
       let snapshot: EngineeringSolveRequest<unknown>;
       try {
         snapshot = captureEngineeringSolveRequest(request) as EngineeringSolveRequest<unknown>;
@@ -230,14 +236,26 @@ export function createEngineeringJobRunner(options: EngineeringJobRunnerOptions)
       };
       controls.set(jobId, control as JobControl<unknown>);
       notifier.publish(queued);
-      queueMicrotask(() => {
-        void dispatch(control as JobControl<unknown>).catch((error: unknown) => {
-          if (active(control as JobControl<unknown>) && !invalidOrStale(control as JobControl<unknown>)) {
-            fail(control as JobControl<unknown>, toEngineeringJobError(error));
-          }
+      let started = false;
+      return { jobId, completion, start() {
+        if (started) return;
+        started = true;
+        queueMicrotask(() => {
+          void dispatch(control as JobControl<unknown>).catch((error: unknown) => {
+            if (active(control as JobControl<unknown>) && !invalidOrStale(control as JobControl<unknown>)) {
+              fail(control as JobControl<unknown>, toEngineeringJobError(error));
+            }
+          });
         });
-      });
-      return { jobId, completion };
+      } };
+  };
+
+  return {
+    reserve,
+    launch<Input, Output>(request: EngineeringSolveRequest<Input>): EngineeringJobHandle<Output> {
+      const reservation = reserve<Input, Output>(request);
+      reservation.start();
+      return reservation;
     },
     cancel(jobId): boolean {
       const control = controls.get(jobId);

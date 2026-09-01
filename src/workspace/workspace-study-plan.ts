@@ -3,9 +3,11 @@ import { defineEngineeringSolveRequest, type EngineeringJobKind } from "../cad/e
 import type { DesignDocument } from "../cad/document-schema";
 import { artifactPayloadInternals } from "../engineering/artifact-payload";
 import type { ArtifactStoreBatchEntry } from "../engineering/artifact-store";
+import { digestArtifactPayload } from "../engineering/artifact-store";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
 import type { Study } from "../engineering/study-schema";
 import { WorkspaceError } from "./workspace-cad";
+import { validateStudyInputAuthority } from "./workspace-study-authority";
 
 type StudyKind = Study["kind"];
 type StudyOfKind<Kind extends StudyKind> = Extract<Study, { kind: Kind }>;
@@ -40,7 +42,7 @@ function own<Value>(value: Value): Value {
 export async function validateStudyCompilation(
   compilation: StudyCompilation,
   document: DesignDocument,
-  study: Readonly<Pick<Study, "id" | "kind">>,
+  study: DesignDocument["studies"][number],
   activeArtifacts: readonly ArtifactRecord[],
 ): Promise<StudyCompilation> {
   const ownedInputs = compilation.inputs.map((entry) => ({
@@ -66,6 +68,9 @@ export async function validateStudyCompilation(
     if (record.sourceRevision !== document.revision || !requestIds.has(record.id)) {
       throw new WorkspaceError("invalid-study-input", "Compiled input record is not current and bound into the solve request");
     }
+    if (await digestArtifactPayload(entry.payload) !== record.contentDigest) {
+      throw new WorkspaceError("invalid-study-input", "Compiled input payload does not match its canonical record");
+    }
     seen.add(record.id);
     availableIds.add(record.id);
     inputs.push({ record, payload: entry.payload });
@@ -75,6 +80,12 @@ export async function validateStudyCompilation(
       "invalid-study-input",
       "Solve request references an artifact outside the active exact model or compiled input batch",
     );
+  }
+  try {
+    await validateStudyInputAuthority(request, study, activeArtifacts);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Study input authority validation failed";
+    throw new WorkspaceError("invalid-study-input", message);
   }
   return { request, inputs };
 }
