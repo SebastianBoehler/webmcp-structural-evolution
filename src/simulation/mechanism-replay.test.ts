@@ -185,7 +185,8 @@ describe("mechanism replay", () => {
     const evidence = {
       replayDigest: replay.replayDigest, mechanismInputDigest: input.mechanismInputDigest,
       engineVersion: "0.20.0", runtimeVersion: "rapier-wasm",
-      runtimeDigest: digest("1"), solverBuildDigest: digest("2"), wasmModuleDigest: digest("3"), settingsDigest: digest("4"),
+      runtimeDigest: digest("1"), solverBuildDigest: digest("2"), wasmModuleDigest: digest("3"),
+      workerArtifactDigest: digest("5"), settingsDigest: digest("4"),
       verification: {
         initialLinearMomentumKgMps: [0, 0, 0], finalLinearMomentumKgMps: [0, 0, 0],
         initialAngularMomentumKgM2ps: [0, 0, 0], finalAngularMomentumKgM2ps: [0, 0, 0],
@@ -195,7 +196,7 @@ describe("mechanism replay", () => {
     };
     expect(MechanismWorkerResultEvidenceCandidateSchema.safeParse(evidence).success).toBe(true);
     expect(MechanismWorkerResultEvidenceCandidateSchema.safeParse({
-      ...evidence, wasmModuleDigest: undefined,
+      ...evidence, workerArtifactDigest: undefined,
     }).success).toBe(false);
   });
 

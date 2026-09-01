@@ -1,9 +1,10 @@
 import type { OcctKernel, ShapeHandle } from "occt-wasm";
 
 import { occtMatrix } from "../cad/rigid-transform";
+import { MAX_EXACT_INITIAL_OVERLAP_BODY_PAIRS } from "./mechanism-limits";
 import type { ExactPlacedInstance, ExactSourceBody } from "./mechanism-overlap-protocol";
 
-export const MAX_EXACT_BODY_PAIR_CHECKS = 32_768;
+export { MAX_EXACT_INITIAL_OVERLAP_BODY_PAIRS } from "./mechanism-limits";
 const abortIfRequested = (signal: AbortSignal) => {
   if (signal.aborted) throw new DOMException("Mechanism compilation was cancelled", "AbortError");
 };
@@ -12,7 +13,9 @@ export function preflightExactOverlapPairs(instances: readonly ExactPlacedInstan
   for (let first = 0; first < instances.length; first += 1) {
     for (let second = first + 1; second < instances.length; second += 1) {
       pairCount += instances[first]!.bodyIds.length * instances[second]!.bodyIds.length;
-      if (pairCount > MAX_EXACT_BODY_PAIR_CHECKS) throw new Error("Exact initial-overlap body-pair budget exceeded");
+      if (pairCount > MAX_EXACT_INITIAL_OVERLAP_BODY_PAIRS) {
+        throw new Error("Exact initial-overlap body-pair budget exceeded");
+      }
     }
   }
   return pairCount;

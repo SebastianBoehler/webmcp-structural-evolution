@@ -9,13 +9,14 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/check-mechanism-solver-build.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "wasm:build": "sh scripts/build-reference-wasm.sh",
     "check": "pnpm wasm:build && pnpm test:run && pnpm build && cargo test --manifest-path crates/reference/Cargo.toml"
   },
   "dependencies": {
+    "@dimforge/rapier3d-deterministic-compat": "0.18.1",
     "fflate": "0.8.3",
     "occt-import-js": "0.0.23",
     "occt-wasm": "4.3.2",

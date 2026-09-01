@@ -262,7 +262,8 @@ export const MechanismReplayEvidenceSchema = z.object({
 export const MechanismWorkerResultEvidenceCandidateSchema = z.object({
   replayDigest: RevisionSchema, mechanismInputDigest: RevisionSchema,
   engineVersion: z.string().min(1), runtimeVersion: z.string().min(1),
-  runtimeDigest: RevisionSchema, solverBuildDigest: RevisionSchema, wasmModuleDigest: RevisionSchema, settingsDigest: RevisionSchema,
+  runtimeDigest: RevisionSchema, solverBuildDigest: RevisionSchema, wasmModuleDigest: RevisionSchema,
+  workerArtifactDigest: RevisionSchema, settingsDigest: RevisionSchema,
   verification: z.object({
     initialLinearMomentumKgMps: MechanismOutputVector3Schema, finalLinearMomentumKgMps: MechanismOutputVector3Schema,
     initialAngularMomentumKgM2ps: MechanismOutputVector3Schema, finalAngularMomentumKgM2ps: MechanismOutputVector3Schema,

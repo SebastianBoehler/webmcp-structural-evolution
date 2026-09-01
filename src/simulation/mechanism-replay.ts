@@ -132,7 +132,7 @@ export async function createMechanismReplay(
   }
   for (const [pair, start] of activeStarts) {
     const intervals = contactIntervals.get(pair) ?? [];
-    intervals.push([start, input.durationSteps]);
+    intervals.push([start, input.durationSteps + 1]);
     contactIntervals.set(pair, intervals);
   }
 
@@ -156,7 +156,7 @@ export async function createMechanismReplay(
     sampled.add(sampleKey);
     minimumRequestedClearanceM = Math.min(minimumRequestedClearanceM, sample.distanceM);
     const contactActive = (contactIntervals.get(pairKey(sample.firstColliderId, sample.secondColliderId)) ?? [])
-      .some(([start, end]) => sample.stepIndex >= start && sample.stepIndex <= end);
+      .some(([start, end]) => sample.stepIndex >= start && sample.stepIndex < end);
     if (sample.distanceM < 0 && !contactActive) {
       throw new Error("Mechanism penetration has no active matching contact");
     }

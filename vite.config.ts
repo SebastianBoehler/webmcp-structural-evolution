@@ -8,9 +8,11 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
-    rollupOptions: {
+    rolldownOptions: {
+      preserveEntrySignatures: "strict",
       input: {
         app: "index.html",
+        "mechanism-solver": "src/simulation/mechanism-solver.ts",
         "occt-worker": "src/cad/kernel/occt-worker.ts",
       },
       output: {
