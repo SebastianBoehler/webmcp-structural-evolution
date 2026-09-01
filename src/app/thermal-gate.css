@@ -9,7 +9,7 @@
 .thermal-gate__viewer { position: relative; height: clamp(24rem, 42vw, 36rem); max-width: 74rem; margin: 1rem auto; border: 1px solid var(--separator); border-radius: var(--radius-md); overflow: hidden; background: #07121b; }
 .thermal-gate__viewer canvas { width: 100%; height: 100%; display: block; }
 .thermal-gate__layer { position: absolute; inset: .75rem .75rem auto auto; margin: 0; z-index: 2; }
-.thermal-gate__evidence { max-width: 74rem; margin: 1rem auto; padding: 1rem; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--surface-raised); }
+.thermal-gate__evidence, .thermal-gate .showcase-model-evidence { max-width: 74rem; margin: 1rem auto; padding: 1rem; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--surface-raised); }
 .thermal-gate__evidence dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .thermal-gate__evidence dl div { min-width: 0; padding: .65rem; border-radius: var(--radius-sm); background: var(--surface-canvas); }
 .thermal-gate__evidence dt { color: var(--text-secondary); font-size: .75rem; }
@@ -23,4 +23,3 @@
   .thermal-gate__layer button { flex: 1; }
   .thermal-gate__evidence dl { grid-template-columns: 1fr; }
 }
-

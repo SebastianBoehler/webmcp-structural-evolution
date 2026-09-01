@@ -11,6 +11,9 @@ import {
 } from "./browser-gate-runner";
 import type { TopologyMesh } from "../topology/topology-contract";
 import { createTopologyMeshArtifact } from "../topology/topology-artifacts";
+import type { ShowcaseModelEvidence } from "../../workspace/component-showcase-evidence";
+import { componentShowcaseEvidence } from "../../workspace/component-showcase-evidence";
+import { droneMotorSideArmDocument, se6UpperArmDocument } from "../../models/component-documents";
 
 export interface LiveStructuralGateCapability {
   readonly sessionId: string;
@@ -60,10 +63,17 @@ export async function runStructuralTopologyBrowserGateSession(
 ): Promise<Readonly<{
   report: StructuralTopologyGateReport;
   capability?: LiveStructuralGateCapability;
+  models: readonly ShowcaseModelEvidence[];
 }>> {
+  const [droneModel, cobotModel] = await Promise.all([
+    droneMotorSideArmDocument(), se6UpperArmDocument(),
+  ]);
+  const initialModels = [componentShowcaseEvidence(droneModel, "failure"),
+    componentShowcaseEvidence(cobotModel, "failure")];
   let candidates: GateTopologyCandidates | undefined;
   const report = await runAudit(signal, (value) => { candidates = value; });
-  if (report.status !== "passed") return { report };
+  if (report.status !== "passed") return { report, models: candidates
+    ? [candidates.drone.model, candidates.cobot.model] : initialModels };
   if (!candidates) throw new Error("Passed structural topology gate omitted its bound candidates");
   const capability = Object.freeze({ sessionId: report.sessionId });
   const [drone, cobot] = await Promise.all([
@@ -71,7 +81,7 @@ export async function runStructuralTopologyBrowserGateSession(
     bindCandidate(report, "cobot", candidates.cobot),
   ]);
   capabilities.set(capability, Object.freeze({ drone, cobot }));
-  return { report, capability };
+  return { report, capability, models: [candidates.drone.model, candidates.cobot.model] };
 }
 
 export async function runStructuralTopologyBrowserGate(

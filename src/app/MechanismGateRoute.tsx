@@ -6,6 +6,7 @@ import {
 } from "../simulation/browser-mechanism-gate";
 import { FieldViewer } from "../viewer/FieldViewer";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import { ShowcaseModelEvidence } from "./ShowcaseModelEvidence";
 import "./mechanism-gate.css";
 
 const grid = { dimensions: { width: 1, height: 1, depth: 1 }, cellSize: [1, 1, 1] as const,
@@ -19,8 +20,7 @@ function ReplayView({ session }: { readonly session: MechanismBrowserGateSession
   const { benchmark, input, result, report } = session;
   if (!benchmark || !input || !result || report.status !== "passed") return null;
   const frames = useMemo(() => result.replay.frames.map((_frame, frameIndex) =>
-    createMechanismVisualFrame(benchmark.visualParts, benchmark.partBodyIds, { ...input,
-      displayRegistration: benchmark.displayRegistration },
+    createMechanismVisualFrame(benchmark.visualParts, benchmark.partBodyIds, input,
       result.replay, frameIndex)), [benchmark, input, result]);
   const catalog = useMemo(() => {
     const byId = new Map<string, AssemblyVisualPart>();
@@ -115,6 +115,8 @@ export function MechanismGateRoute({ runGate = runMechanismBrowserGate }: Mechan
     </header>
     {state.kind === "running" && <p role="status">Building exact geometry, probing cancellation, then solving the full replay…</p>}
     {state.kind === "cancelled" && <p role="status">Live run cancelled. No result artifact was authorized. Restart when ready.</p>}
+    {state.kind === "complete" && state.session.model
+      && <ShowcaseModelEvidence models={[state.session.model]}/>}
     {report?.status === "blocked" && <p role="alert">Blocked at {report.blocker.stage}: {report.blocker.message}</p>}
     {state.kind === "complete" && report?.status === "passed" && <ReplayView session={state.session}/>}
   </main>;

@@ -22,6 +22,8 @@ const session = { report: { status: "passed", benchmark: { revoluteJointCount: 6
   cancellation: { artifactsCommitted: 0 }, runtime: { runtimeVersion: "Rapier/Wasm" },
   solverPhaseConsole: { statusLines: ["solver passed"], warningCount: 0, errorCount: 0 },
   timingsMs: { total: 10 } },
+  model: { modelId: "se6-mechanism-components", authority: "parametric-specification-model",
+    sourceRevision: "c".repeat(64), componentCount: 52, bodyCount: 52, state: "verified" },
   benchmark: { visualParts: [{ id: "link", selectionId: "link", label: "link", kind: "box",
     size: [10, 10, 10], center: [0, 0, 0], appearance: "component" }],
     partBodyIds: { link: "axis-1" } },
@@ -41,6 +43,8 @@ describe("mechanism gate route", () => {
     render(<MechanismGateRoute runGate={async () => session}/>);
     await act(async () => {});
     expect(screen.getByRole("heading", { name: /six-axis cobot mechanism gate/i })).toBeVisible();
+    expect(screen.getByText("se6-mechanism-components")).toBeVisible();
+    expect(screen.getByText(/52 components · 52 bodies/i)).toBeVisible();
     act(() => vi.advanceTimersByTime(20));
     expect(screen.getByTestId("mechanism-viewport").getAttribute("data-x")).toBe("100");
     const frame = screen.getByTestId("mechanism-frame").textContent;

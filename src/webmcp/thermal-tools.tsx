@@ -12,12 +12,14 @@ const schema = { type: "object", additionalProperties: false, properties: {} } a
 function response(session: ThermalBrowserGateSession): WebMCPToolResponse {
   const report = session.report;
   const facts = report.status === "passed" ? {
+    model: session.model,
     status: report.status, reportDigest: report.reportDigest,
     sourceRevision: report.sourceRevision, sourceArtifactIds: report.sourceArtifactIds,
     studyId: report.studyId, boundaries: report.boundaries,
     device: report.device, solve: report.solve, verification: report.verification,
     artifactIds: report.artifacts.map(({ artifactId }) => artifactId),
-  } : { status: report.status, reportDigest: report.reportDigest, blocker: report.blocker };
+  } : { status: report.status, reportDigest: report.reportDigest,
+    model: session.model, blocker: report.blocker };
   return { content: [{ type: "text", text: JSON.stringify(facts) }],
     ...(report.status === "blocked" ? { isError: true } : {}) };
 }

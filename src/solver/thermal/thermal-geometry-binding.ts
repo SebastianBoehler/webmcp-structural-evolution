@@ -35,7 +35,9 @@ function assertPayload(payload: ThermalVoxelPayload): void {
 
 export async function validateThermalGeometry(request: Request, bodyIds: readonly string[]): Promise<void> {
   const brep = await record(request, request.input.exactBrepArtifactId);
-  if (brep.kind !== "brep" || brep.mediaType !== "application/vnd.opencascade.brep" || brep.units !== "m" || brep.producer.name !== "occt-wasm" || !hasCoverage(brep, request.document.id, bodyIds)) {
+  if (brep.kind !== "brep" || brep.mediaType !== "application/vnd.opencascade.brep" || brep.units !== "m"
+    || !["occt-wasm", "workspace-exact-body-brep"].includes(brep.producer.name)
+    || !hasCoverage(brep, request.document.id, bodyIds)) {
     throw new Error("Thermal study requires a revision-bound exact BREP artifact");
   }
   const semantic = await record(request, request.input.semanticMeshArtifactId);

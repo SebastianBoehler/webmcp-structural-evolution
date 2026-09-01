@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { FakeModelContext, installFakeModelContext } from "../test/fake-model-context";
 import type { ThermalBrowserGateSession } from "../solver/thermal/browser-thermal-gate";
@@ -18,7 +18,10 @@ const passed = { report: {
   cancellation: { outcome: "cancelled", terminalCount: 1, artifactsCommitted: 0,
     recoveryRunPassed: true },
   artifacts: [], timingsMs: { build: 1, solve: 2, total: 3 },
-} } as unknown as ThermalBrowserGateSession;
+}, model: { modelId: "se6-upper-arm-housing", authority: "parametric-specification-model",
+  sourceRevision: "b".repeat(64), componentCount: 1, bodyCount: 1, state: "verified" } } as unknown as ThermalBrowserGateSession;
+
+afterEach(cleanup);
 
 test("UI and WebMCP execute the same live thermal session service", async () => {
   const context = new FakeModelContext();
@@ -26,6 +29,8 @@ test("UI and WebMCP execute the same live thermal session service", async () => 
   const runGate = vi.fn(async () => passed);
   const view = render(<ThermalGateRoute runGate={runGate} />);
   await screen.findByText(/live thermal solve evidence passed/i);
+  expect(screen.getByText("se6-upper-arm-housing")).toBeVisible();
+  expect(screen.getByText(/parametric-specification-model/i)).toBeVisible();
   expect(screen.queryByText(/^live thermal gate passed\.$/i)).toBeNull();
   await waitFor(() => expect(context.active.has("run_cobot_thermal_study")).toBe(true));
 
@@ -38,6 +43,8 @@ test("UI and WebMCP execute the same live thermal session service", async () => 
   expect(response.isError).toBeUndefined();
   expect(runGate).toHaveBeenCalledTimes(3);
   expect(response.content[0]?.text).toContain(passed.report.reportDigest);
+  expect(response.content[0]?.text).toContain("se6-upper-arm-housing");
+  expect(response.content[0]?.text).toContain("parametric-specification-model");
   view.unmount();
   dispose();
 });

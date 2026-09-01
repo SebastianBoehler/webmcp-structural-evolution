@@ -4,6 +4,7 @@ import {
   COBOT_THERMAL_CONDUCTIVITY_W_MK, COBOT_THERMAL_HEAT_FLUX_WM2,
   COBOT_THERMAL_MOUNT_TEMPERATURE_K,
 } from "../samples/cobot/cobot-thermal-contract";
+import { SE6_DISTAL_MASS_KG } from "../samples/cobot/cobot-study";
 
 type FaceAxis = 0 | 1 | 2;
 type FaceSpec = Readonly<{ id: string; axis: FaceAxis; side: -1 | 1 }>;
@@ -188,7 +189,19 @@ export async function withUpperArmThermalStudy(document: DesignDocument): Promis
     materials: document.materials.map((material) => ({
       ...material, thermalConductivityWmK: COBOT_THERMAL_CONDUCTIVITY_W_MK,
     })),
-    studies: [{ id: "se6-upper-arm-thermal", kind: "thermal-steady", bodyIds: [bodyId],
+    studies: [{ id: "se6-upper-arm-structural", kind: "structural-linear",
+      bodyIds: [bodyId], materialId: document.materials[0]!.id,
+      supports: ["mounting-interface"],
+      loads: [{ selectionId: "motor-interface", forceN: [0, 0, -SE6_DISTAL_MASS_KG * 9.80665] }] },
+    { id: "se6-upper-arm-topology", kind: "topology",
+      sourceStudyId: "se6-upper-arm-structural", configurationState: "configured",
+      objective: "minimum-compliance", targetVolumeFraction: .35, moveLimit: .2,
+      filterRadiusM: .0025, minimumFeatureM: .0025, maxIterations: 32,
+      extraction: { isoValue: .5, toleranceM: .0005 }, requiredSelectionIds: [],
+      protectedVoidSelectionIds: [], acceptance: { maximumDisplacementM: .002,
+        maximumVonMisesStressPa: document.materials[0]!.failureStressPa,
+        minimumSafetyFactor: 1, maximumMaterialFraction: .35 } },
+    { id: "se6-upper-arm-thermal", kind: "thermal-steady", bodyIds: [bodyId],
       materialId: document.materials[0]!.id, boundaries: {
         temperatures: [{ selectionId: "mounting-interface",
           temperatureK: COBOT_THERMAL_MOUNT_TEMPERATURE_K }],

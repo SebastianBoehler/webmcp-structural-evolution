@@ -5,10 +5,10 @@ import {
 import { createEngineeringJobRunner } from "../../engineering/job-runner";
 import { createSolverRegistry } from "../../engineering/solver-registry";
 import type { SolverAdapter } from "../../engineering/solver-adapter";
-import {
-  buildCobotThermalBenchmark, COBOT_THERMAL_BOUNDARY_AREA_M2,
-  type CobotThermalBenchmark,
-} from "../../samples/cobot/cobot-thermal-study";
+import { se6UpperArmDocument } from "../../models/component-documents";
+import { COBOT_THERMAL_BOUNDARY_AREA_M2 } from "../../samples/cobot/cobot-thermal-study";
+import { componentShowcaseEvidence, type ShowcaseModelEvidence } from "../../workspace/component-showcase-evidence";
+import { runComponentStudy } from "../../workspace/component-showcase-runtime";
 import {
   blockThermalBrowserGateReport, sealThermalBrowserGateReport,
   type ThermalBrowserGateReport,
@@ -20,9 +20,14 @@ import {
 
 type Adapter = SolverAdapter<ThermalSolveInput, VerifiedThermalOutput>;
 type Runtime = ReturnType<typeof runtime>;
+type ComponentThermalBenchmark = Readonly<{
+  request: import("../../engineering/solver-adapter").EngineeringSolveRequest<ThermalSolveInput>;
+  heatInputW: number;
+}>;
 export interface ThermalBrowserGateSession {
   readonly report: ThermalBrowserGateReport;
-  readonly benchmark?: CobotThermalBenchmark;
+  readonly model?: ShowcaseModelEvidence;
+  readonly benchmark?: ComponentThermalBenchmark;
   readonly output?: VerifiedThermalOutput;
   readonly readArtifact?: (id: string) => Promise<ArtifactPayload | undefined>;
 }
@@ -37,7 +42,7 @@ function abort(signal: AbortSignal): void {
 
 const persistedThermalArtifacts = createArtifactStore();
 
-function runtime(document: CobotThermalBenchmark["request"]["document"], adapter: Adapter) {
+function runtime(document: ComponentThermalBenchmark["request"]["document"], adapter: Adapter) {
   const registry = createSolverRegistry();
   registry.register(adapter);
   const base = persistedThermalArtifacts, committedIds = new Set<string>();
@@ -53,13 +58,13 @@ function runtime(document: CobotThermalBenchmark["request"]["document"], adapter
     currentDocument: () => document }), store, committedIds };
 }
 
-async function requestWithId(benchmark: CobotThermalBenchmark, jobId: string) {
+async function requestWithId(benchmark: ComponentThermalBenchmark, jobId: string) {
   const request = benchmark.request;
   return defineEngineeringSolveRequest<ThermalSolveInput>({ ...request, jobId });
 }
 
 async function cancellationAndRecovery(
-  benchmark: CobotThermalBenchmark, adapter: Adapter, signal: AbortSignal,
+  benchmark: ComponentThermalBenchmark, adapter: Adapter, signal: AbortSignal,
 ) {
   const active = runtime(benchmark.request.document, adapter);
   const cancellation = await requestWithId(benchmark, "se6-thermal-cancellation-probe");
@@ -147,15 +152,31 @@ export async function runThermalBrowserGate(
   signal: AbortSignal = new AbortController().signal,
 ): Promise<ThermalBrowserGateSession> {
   const started = now();
-  let stage = "exact-cobot-link";
+  let stage = "component-workspace-planning";
+  let evidence: ShowcaseModelEvidence | undefined;
   try {
     abort(signal);
     const buildStarted = now();
-    const benchmark = await buildCobotThermalBenchmark(signal);
+    const model = await se6UpperArmDocument();
+    evidence = componentShowcaseEvidence(model, "failure");
+    const adapter = createVerifiedThermalAdapter();
+    const planned = await runComponentStudy(
+      model, "se6-upper-arm-thermal", adapter, signal,
+    );
+    const study = model.document.studies.find(({ id }) => id === "se6-upper-arm-thermal");
+    if (!study || study.kind !== "thermal-steady" || !study.boundaries) {
+      throw new Error("Component thermal study is unresolved");
+    }
+    const heat = study.boundaries.heatFluxes[0];
+    const selection = model.document.namedSelections.find(({ id }) => id === heat?.selectionId);
+    if (!heat || !selection) throw new Error("Component thermal heat boundary is unresolved");
+    const heatInputW = heat.heatFluxWm2 * selection.reference.signature.measureSI;
+    if (Math.abs(heatInputW - 80) > 1e-9) throw new Error("Component thermal heat input changed");
+    const benchmark = { request: planned.request, heatInputW: 80 as const };
     const buildMs = now() - buildStarted;
     abort(signal);
     stage = "cancellation-and-recovery";
-    const solved = await cancellationAndRecovery(benchmark, createVerifiedThermalAdapter(), signal);
+    const solved = await cancellationAndRecovery(benchmark, adapter, signal);
     abort(signal);
     stage = "numerical-evidence";
     validate(solved.output);
@@ -182,9 +203,10 @@ export async function runThermalBrowserGate(
       cancellation: solved.cancellation, artifacts: solved.artifacts,
       timingsMs: { build: buildMs, solve: solved.solveMs, total: now() - started },
     });
-    return { report, benchmark, output: solved.output, readArtifact: solved.readArtifact };
+    return { report, model: componentShowcaseEvidence(model, "verified"), benchmark,
+      output: solved.output, readArtifact: solved.readArtifact };
   } catch (error) {
     if (signal.aborted) throw error;
-    return { report: await blockThermalBrowserGateReport(stage, error) };
+    return { report: await blockThermalBrowserGateReport(stage, error), model: evidence };
   }
 }

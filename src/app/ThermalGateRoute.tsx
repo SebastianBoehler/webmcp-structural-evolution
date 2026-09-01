@@ -5,6 +5,7 @@ import {
 } from "../solver/thermal/browser-thermal-gate";
 import { ThermalTools, type ThermalGateService } from "../webmcp/thermal-tools";
 import { ThermalFieldViewport } from "./ThermalFieldViewport";
+import { ShowcaseModelEvidence } from "./ShowcaseModelEvidence";
 import "./thermal-gate.css";
 
 type State = { readonly kind: "running" | "cancelled" }
@@ -44,6 +45,8 @@ export function ThermalGateRoute({ runGate = runThermalBrowserGate }: ThermalGat
     </header>
     {state.kind === "running" && <p role="status">Building exact geometry, probing cancellation, solving on WebGPU, then verifying privately in Wasm…</p>}
     {state.kind === "cancelled" && <p role="status">Live run cancelled. No result artifact was authorized. Restart when ready.</p>}
+    {state.kind === "complete" && state.session.model
+      && <ShowcaseModelEvidence models={[state.session.model]}/>}
     {report?.status === "blocked" && <p role="alert">Blocked at {report.blocker.stage}: {report.blocker.message}</p>}
     {state.kind === "complete" && report?.status === "passed" && <>
       <p className="thermal-gate__passed" role="status">Live thermal solve evidence passed. Viewport verification is reported separately.</p>

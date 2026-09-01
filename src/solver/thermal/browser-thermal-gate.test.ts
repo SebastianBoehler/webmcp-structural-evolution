@@ -14,12 +14,11 @@ import { runThermalBrowserGate } from "./browser-thermal-gate";
 import { verifyThermalBrowserGateReportDigest } from "./browser-thermal-report";
 import type { VerifiedThermalOutput } from "./verified-thermal-adapter";
 
-const gateFakes = vi.hoisted(() => ({ build: vi.fn(), voxel: vi.fn(), adapter: undefined as unknown as
+const gateFakes = vi.hoisted(() => ({ study: vi.fn(), voxel: vi.fn(), adapter: undefined as unknown as
   SolverAdapter<ThermalSolveInput, VerifiedThermalOutput> }));
 vi.mock("./thermal-voxelizer", () => ({ produceThermalVoxelMesh: gateFakes.voxel }));
-vi.mock("../../samples/cobot/cobot-thermal-study", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../samples/cobot/cobot-thermal-study")>(),
-  buildCobotThermalBenchmark: gateFakes.build,
+vi.mock("../../workspace/component-showcase-runtime", () => ({
+  runComponentStudy: gateFakes.study,
 }));
 vi.mock("./verified-thermal-adapter", () => ({
   createVerifiedThermalAdapter: () => gateFakes.adapter,
@@ -118,7 +117,7 @@ test("cancels after solver progress, commits nothing, then persists one verified
       return verifiedRun(request);
     },
   };
-  gateFakes.build.mockResolvedValue(sample);
+  gateFakes.study.mockResolvedValue({ request: sample.request, result: {}, artifactIds: [] });
   gateFakes.adapter = adapter;
 
   const session = await runThermalBrowserGate();
@@ -145,7 +144,7 @@ test("GPU adapter failure blocks without retry or fallback", async () => {
   const adapter: SolverAdapter<ThermalSolveInput, VerifiedThermalOutput> = {
     capability: { kind: "thermal" }, supports: () => ({ supported: true }), run,
   };
-  gateFakes.build.mockResolvedValue(sample);
+  gateFakes.study.mockResolvedValue({ request: sample.request, result: {}, artifactIds: [] });
   gateFakes.adapter = adapter;
   const session = await runThermalBrowserGate();
   expect(session.report).toMatchObject({ status: "blocked",
@@ -177,7 +176,7 @@ test("external abort during recovery cancels the active recovery job", async () 
       return verifiedRun(request);
     },
   };
-  gateFakes.build.mockResolvedValue(sample);
+  gateFakes.study.mockResolvedValue({ request: sample.request, result: {}, artifactIds: [] });
   gateFakes.adapter = adapter;
 
   await expect(runThermalBrowserGate(controller.signal)).rejects.toThrow("stop recovery");

@@ -16,6 +16,12 @@ describe("structural topology report-only route", () => {
   beforeEach(() => {
     history.replaceState({}, "", "/?structural-topology-gate=1");
     vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({
+      models: [
+        { modelId: "drone-motor-side-arm", authority: "parametric-specification-model",
+          sourceRevision: "a".repeat(64), componentCount: 2, bodyCount: 2, state: "failure" },
+        { modelId: "se6-upper-arm-housing", authority: "parametric-specification-model",
+          sourceRevision: "b".repeat(64), componentCount: 1, bodyCount: 1, state: "failure" },
+      ],
       report: {
         status: "blocked", evidenceSource: "live-browser-webgpu",
         blocker: { stage: "test-route", message: "isolated route proof" },
@@ -29,6 +35,8 @@ describe("structural topology report-only route", () => {
     expect(await screen.findByRole("heading", { name: /structural \+ topology live webgpu gate/i }))
       .toBeVisible();
     expect((await screen.findByRole("alert")).textContent).toContain("isolated route proof");
+    expect(screen.getByText("drone-motor-side-arm")).toBeVisible();
+    expect(screen.getAllByText("parametric-specification-model")).toHaveLength(2);
     expect(screen.queryByText(/structural engineering workbench/i)).toBeNull();
   });
 
@@ -47,7 +55,7 @@ describe("structural topology report-only route", () => {
   it("exercises both session-bound serializers after a passed run", async () => {
     const capability = { sessionId: "a".repeat(64) };
     vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({
-      report: { status: "passed" } as never, capability,
+      report: { status: "passed" } as never, capability, models: [],
     });
     vi.mocked(serializeLiveAcceptedTopologyStl)
       .mockReturnValueOnce(new DataView(new ArrayBuffer(134)))

@@ -88,6 +88,13 @@ describe("compileThermalStudy", () => {
     ]);
   });
 
+  it("accepts the workspace revision-bound per-body BREP used by component planners", async () => {
+    await expect(compile(await thermalRequest(
+      {}, 200, {}, undefined, 0.0001, THERMAL_VOXEL_PRODUCER,
+      { name: "workspace-exact-body-brep", version: "1.0.0" },
+    ))).resolves.toEqual(expect.objectContaining({ activeCellCount: 4 }));
+  });
+
   it("rejects foreign, missing, or out-of-range voxel body ownership", async () => {
     const foreign = Uint8Array.from(JSON.stringify(["foreign"]), (value) => value.charCodeAt(0));
     await expect(compile(await thermalRequest({}, 200, { bodyIdsUtf8: foreign } as never)))
@@ -201,6 +208,7 @@ async function thermalRequest(
   sourceRevision = undefined as string | undefined,
   semanticMeasureM2 = 0.0001,
   voxelProducer: { readonly name: string; readonly version: string } = THERMAL_VOXEL_PRODUCER,
+  brepProducer: { readonly name: string; readonly version: string } = { name: "occt-wasm", version: "4.3.2" },
 ) {
   const conductivityWmK = typeof conductivityOrLimits === "number" ? conductivityOrLimits : 200;
   const document = await thermalDocument(boundaries, Number.isFinite(conductivityWmK) ? conductivityWmK : 200);
@@ -213,7 +221,7 @@ async function thermalRequest(
     dependencies: [{ kind: "entity", reference: "document:thermal-test" }, { kind: "entity", reference: "body:bar" }],
   });
   const brep = await defineArtifactRecord({
-    kind: "brep", sourceRevision: document.revision, producer: { name: "occt-wasm", version: "4.3.2" },
+    kind: "brep", sourceRevision: document.revision, producer: brepProducer,
     settingsDigest: digest("b"), contentDigest: digest("c"), units: "m", mediaType: "application/vnd.opencascade.brep",
     dependencies: [{ kind: "entity", reference: "document:thermal-test" }, { kind: "entity", reference: "body:bar" }],
   });

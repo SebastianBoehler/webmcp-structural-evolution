@@ -5,8 +5,9 @@ import { createEngineeringJobRunner } from "../engineering/job-runner";
 import { createSolverRegistry } from "../engineering/solver-registry";
 import type { EngineeringSolveRequest, SolverAdapter } from "../engineering/solver-adapter";
 import {
-  buildSe6MechanismBenchmark, type Se6MechanismBenchmark,
-} from "../samples/cobot/cobot-mechanism-study";
+  buildComponentMechanismShowcase, componentMechanismEvidence, type ComponentMechanismShowcase,
+} from "./component-mechanism-showcase";
+import type { Se6MechanismBenchmark } from "../samples/cobot/cobot-mechanism-study";
 import { SE6_STAGE_IDS } from "../samples/cobot/cobot-mechanism-geometry";
 import { createGateConsoleAudit } from "../solver/structural/browser-gpu-audit";
 import { createMechanismAdapter, type MechanismAdapterInput } from "./mechanism-adapter";
@@ -18,29 +19,27 @@ import {
 import {
   resolveMechanismResult, type MechanismResult,
 } from "./mechanism-solver";
-
 const terminalStates = new Set(["verified", "failed", "cancelled"]);
 const now = () => performance.now();
 const abortIfRequested = (signal: AbortSignal) => {
   if (signal.aborted) throw signal.reason instanceof Error
     ? signal.reason : new DOMException("Mechanism browser gate was cancelled", "AbortError");
 };
-
+type GateBenchmark = ComponentMechanismShowcase | Se6MechanismBenchmark;
 export type MechanismBrowserGateSession = Readonly<{
   report: MechanismBrowserGateReport;
   result?: MechanismResult;
   input?: MechanismInput;
-  benchmark?: Se6MechanismBenchmark;
+  benchmark?: GateBenchmark;
+  model?: import("../workspace/component-showcase-evidence").ShowcaseModelEvidence;
 }>;
-
 type Adapter = SolverAdapter<MechanismAdapterInput, MechanismResult>;
 type GateDependencies = Readonly<{
-  buildBenchmark?: typeof buildSe6MechanismBenchmark;
+  buildBenchmark?: (signal: AbortSignal) => Promise<GateBenchmark>;
   createAdapter?: () => Adapter;
   resolveResult?: typeof resolveMechanismResult;
 }>;
-
-function runtimeFor(document: Se6MechanismBenchmark["document"], adapter: Adapter) {
+function runtimeFor(document: GateBenchmark["document"], adapter: Adapter) {
   const registry = createSolverRegistry();
   registry.register(adapter);
   const base = createArtifactStore(), committedIds = new Set<string>();
@@ -57,17 +56,18 @@ function runtimeFor(document: Se6MechanismBenchmark["document"], adapter: Adapte
     committedIds,
   };
 }
-
-async function requestFor(benchmark: Se6MechanismBenchmark, jobId: string) {
+async function requestFor(benchmark: GateBenchmark, jobId: string) {
+  if ("request" in benchmark) return defineEngineeringSolveRequest<MechanismAdapterInput>({
+    ...benchmark.request, jobId, settings: { gate: "se6-mechanism-browser-v2" },
+  });
   return defineEngineeringSolveRequest<MechanismAdapterInput>({
     jobId, kind: "mechanism", sourceRevision: benchmark.document.revision,
-    inputArtifacts: [], settings: { gate: "se6-mechanism-browser-v1" },
-    studyId: "se6-motion", document: benchmark.document, input: { schemaVersion: 1 },
+    inputArtifacts: [], settings: { gate: "legacy-test-only" }, studyId: "se6-motion",
+    document: benchmark.document, input: { schemaVersion: 1 },
   });
 }
-
 async function cancellationAndRecovery(
-  benchmark: Se6MechanismBenchmark, adapter: Adapter, signal: AbortSignal,
+  benchmark: GateBenchmark, adapter: Adapter, signal: AbortSignal,
 ) {
   abortIfRequested(signal);
   const runtime = runtimeFor(benchmark.document, adapter), started = now();
@@ -107,7 +107,6 @@ async function cancellationAndRecovery(
     if (settledProbeTerminals.length !== 1 || runtime.committedIds.size !== 0) {
       throw new Error("Mechanism cancellation probe changed after its terminal fence");
     }
-
     abortIfRequested(signal);
     const recoveryRequest = await requestFor(benchmark, "se6-live-cancellation-recovery");
     abortIfRequested(signal);
@@ -142,7 +141,6 @@ async function cancellationAndRecovery(
     signal.removeEventListener("abort", abortActive);
   }
 }
-
 function collisionEvidence(input: MechanismInput) {
   const index = new Map<string, number>(SE6_STAGE_IDS.map((id, position) => [id, position]));
   let adjacentPairsDisabled = true, nonAdjacentPairsEnabled = true;
@@ -181,8 +179,7 @@ function motionEvidence(input: MechanismInput, result: MechanismResult) {
     movingJointIds: Object.entries(deltas).filter(([, delta]) => Math.abs(delta) > 1e-4).map(([id]) => id),
     limitsRespected, maximumJointErrorM: result.evidence.verification.maximumJointErrorM };
 }
-
-function assertBenchmark(input: MechanismInput, benchmark: Se6MechanismBenchmark): void {
+function assertBenchmark(input: MechanismInput, benchmark: GateBenchmark): void {
   if (input.bodies.length !== 7 || input.joints.length !== 6
     || input.bodies.filter(({ kind }) => kind === "fixed").map(({ id }) => id).join() !== "base") {
     throw new Error("SE-6 compiled benchmark is not exactly six revolute axes on one fixed base");
@@ -193,14 +190,14 @@ function assertBenchmark(input: MechanismInput, benchmark: Se6MechanismBenchmark
     throw new Error("SE-6 visual ownership is incomplete");
   }
 }
-
 export async function runMechanismBrowserGate(
   signal: AbortSignal = new AbortController().signal, dependencies: GateDependencies = {},
 ): Promise<MechanismBrowserGateSession> {
   const started = now(), lines: string[] = [], consoleAudit = createGateConsoleAudit();
-  const buildBenchmark = dependencies.buildBenchmark ?? buildSe6MechanismBenchmark;
+  const buildBenchmark = dependencies.buildBenchmark ?? buildComponentMechanismShowcase;
   const createAdapter = dependencies.createAdapter ?? createMechanismAdapter;
   const resolveResult = dependencies.resolveResult ?? resolveMechanismResult;
+  let routeModel = dependencies.buildBenchmark ? undefined : await componentMechanismEvidence("failure");
   let stage = "exact-cad-benchmark";
   const status = (line: string) => { lines.push(line); console.info(`[mechanism-gate] ${line}`); };
   try {
@@ -285,14 +282,16 @@ export async function runMechanismBrowserGate(
     abortIfRequested(signal);
     if (!await verifyMechanismBrowserGateReportDigest(report)) throw new Error("Mechanism gate report seal failed");
     abortIfRequested(signal);
-    return { report, result, input, benchmark };
+    return { report, result, input, benchmark,
+      ...("model" in benchmark ? { model: benchmark.model } : {}) };
   } catch (error) {
     if (signal.aborted) throw error;
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[mechanism-gate] ${stage}: ${message}`);
     return { report: parseMechanismBrowserGateReport({ status: "blocked",
       evidenceSource: "live-browser-worker", blocker: { stage, message },
-      solverPhaseConsole: { statusLines: lines, ...consoleAudit.evidence() } }) };
+      solverPhaseConsole: { statusLines: lines, ...consoleAudit.evidence() } }),
+      ...(routeModel ? { model: routeModel } : {}) };
   } finally {
     consoleAudit.restore();
   }

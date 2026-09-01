@@ -162,10 +162,10 @@ describe("authoritative component documents", () => {
 
   it("binds the SE-6 upper arm thermal study to exact named end faces", async () => {
     const model = await se6UpperArmDocument();
-    expect(model.document.studies).toEqual([expect.objectContaining({
+    expect(model.document.studies).toEqual(expect.arrayContaining([expect.objectContaining({
       id: "se6-upper-arm-thermal", kind: "thermal-steady",
       bodyIds: ["upper-arm-housing-body"],
-    })]);
+    })]));
     expect(model.document.namedSelections.map(({ id }) => id)).toEqual([
       "mounting-interface", "motor-interface",
     ]);

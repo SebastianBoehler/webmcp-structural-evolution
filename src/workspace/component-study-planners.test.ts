@@ -120,6 +120,19 @@ describe("exact component study planners", () => {
     workspace.dispose();
   });
 
+  it("launches SE-6 upper-arm structural and topology through one exact component source", async () => {
+    const evaluate = vi.fn(), model = await se6UpperArmDocument();
+    const { workspace, seen } = await service(model, evaluate);
+    for (const studyId of ["se6-upper-arm-structural", "se6-upper-arm-topology"]) {
+      const launched = await workspace.launchStudy({ studyId, expectedRevision: model.document.revision });
+      await waitVerified(workspace, launched.jobId);
+    }
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(seen.map(({ kind }) => kind)).toEqual(["fea", "topology"]);
+    expect(seen.every(({ sourceRevision }) => sourceRevision === model.document.revision)).toBe(true);
+    workspace.dispose();
+  });
+
   it("quarantines a component plan when a mutation invalidates its exact acquisition", async () => {
     let entered!: () => void, release!: () => void;
     const started = new Promise<void>((resolve) => { entered = resolve; });

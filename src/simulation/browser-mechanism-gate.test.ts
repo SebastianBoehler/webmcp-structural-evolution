@@ -56,21 +56,31 @@ async function adapter(): Promise<SolverAdapter<MechanismAdapterInput, Mechanism
   const replayUtf8 = new Uint8Array(new ArrayBuffer(11));
   replayUtf8.set(new TextEncoder().encode("test replay"));
   const payload = { replayUtf8 };
-  const record = await defineArtifactRecord({
-    kind: "mechanism-replay", sourceRevision: result.sourceRevision,
-    producer: { name: "gate-test", version: "1" }, settingsDigest: await revisionId({ test: true }),
-    contentDigest: await digestArtifactPayload(payload), units: "m",
-    mediaType: "application/vnd.test+json",
-    dependencies: [{ kind: "entity", reference: "study:se6-motion" }],
-  });
+  const settingsDigest = await revisionId({ test: true });
+  const contentDigest = await digestArtifactPayload(payload);
   const runtime: SolverAdapter<MechanismAdapterInput, MechanismResult> = {
     capability: { kind: "mechanism" }, supports: () => ({ supported: true }),
-    async run(_request, signal, emit) {
+    async run(request, signal, emit) {
       emit({ progress: .2 });
       if (signal.aborted) prematureCancellation = true;
       emit({ progress: .6, partial: { kind: "mechanism-worker-started",
         requestId: "gate-worker-request", mechanismInputDigest: digest("2") } });
       if (signal.aborted) throw new DOMException("cancelled", "AbortError");
+      const document = request.document;
+      const record = await defineArtifactRecord({
+        kind: "mechanism-replay", sourceRevision: result.sourceRevision,
+        producer: { name: "gate-test", version: "1" }, settingsDigest, contentDigest,
+        units: "m", mediaType: "application/vnd.test+json", dependencies: [
+          { kind: "entity", reference: `document:${document.id}` },
+          { kind: "entity", reference: "study:se6-motion" },
+          ...document.parameters.map(({ id }) => ({ kind: "entity" as const, reference: `parameter:${id}` as const })),
+          ...document.features.map(({ id }) => ({ kind: "entity" as const, reference: `feature:${id}` as const })),
+          ...document.bodies.map(({ id }) => ({ kind: "entity" as const, reference: `body:${id}` as const })),
+          ...document.components.map(({ id }) => ({ kind: "entity" as const, reference: `component:${id}` as const })),
+          ...document.instances.map(({ id }) => ({ kind: "entity" as const, reference: `instance:${id}` as const })),
+          ...document.mates.map(({ id }) => ({ kind: "entity" as const, reference: `mate:${id}` as const })),
+        ],
+      });
       return { output: result, truthLevel: "converged-numerical-solve", artifacts: [{ record, payload }] };
     } };
   return Object.assign(runtime, { prematureCancellation: () => prematureCancellation });
