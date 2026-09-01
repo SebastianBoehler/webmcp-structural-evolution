@@ -14,6 +14,7 @@ const grid = { dimensions: { width: 1, height: 1, depth: 1 }, cellSize: [1, 1, 1
 const selection = { id: "se6", label: "SE-6 cobot", min: [0, 0, 0] as const,
   maxExclusive: [1, 1, 1] as const };
 type RouteState = Readonly<{ kind: "running" | "cancelled"; run: number }>
+  | Readonly<{ kind: "failed"; run: number; message: string }>
   | Readonly<{ kind: "complete"; run: number; session: MechanismBrowserGateSession }>;
 
 function ReplayView({ session }: { readonly session: MechanismBrowserGateSession }) {
@@ -97,7 +98,10 @@ export function MechanismGateRoute({ runGate = runMechanismBrowserGate }: Mechan
     void runGate(controller.signal).then((session) => {
       if (!controller.signal.aborted) setState({ kind: "complete", run, session });
     }).catch((error: unknown) => {
-      if (!controller.signal.aborted) console.error("Mechanism gate runner rejected", error);
+      if (!controller.signal.aborted) {
+        console.error("Mechanism gate runner rejected", error);
+        setState({ kind: "failed", run, message: error instanceof Error ? error.message : String(error) });
+      }
     });
     return () => controller.abort();
   }, [run, runGate]);
@@ -115,6 +119,7 @@ export function MechanismGateRoute({ runGate = runMechanismBrowserGate }: Mechan
     </header>
     {state.kind === "running" && <p role="status">Building exact geometry, probing cancellation, then solving the full replay…</p>}
     {state.kind === "cancelled" && <p role="status">Live run cancelled. No result artifact was authorized. Restart when ready.</p>}
+    {state.kind === "failed" && <p role="alert">Blocked at route-runner: {state.message}</p>}
     {state.kind === "complete" && state.session.model
       && <ShowcaseModelEvidence models={[state.session.model]}/>}
     {report?.status === "blocked" && <p role="alert">Blocked at {report.blocker.stage}: {report.blocker.message}</p>}

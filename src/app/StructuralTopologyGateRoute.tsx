@@ -14,11 +14,13 @@ interface GateView {
 
 export function StructuralTopologyGateRoute(): JSX.Element {
   const [view, setView] = useState<GateView>();
+  const [failure, setFailure] = useState<string>();
   const [run, setRun] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setView(undefined);
+    setFailure(undefined);
     void runStructuralTopologyBrowserGateSession(controller.signal).then((next) => {
       if (controller.signal.aborted) return;
       const serializedBytes = next.capability ? {
@@ -26,7 +28,10 @@ export function StructuralTopologyGateRoute(): JSX.Element {
       } : undefined;
       setView({ report: next.report, models: next.models, serializedBytes });
     }).catch((error: unknown) => {
-      if (!controller.signal.aborted) console.error("Structural topology gate runner rejected", error);
+      if (!controller.signal.aborted) {
+        console.error("Structural topology gate runner rejected", error);
+        setFailure(error instanceof Error ? error.message : String(error));
+      }
     });
     return () => controller.abort();
   }, [run]);
@@ -35,7 +40,8 @@ export function StructuralTopologyGateRoute(): JSX.Element {
     <h1>Structural + topology live WebGPU gate</h1>
     <p>This isolated route runs exact CAD, structural analysis, topology optimization, recovery, and audit checks.</p>
     <button type="button" onClick={() => setRun((value) => value + 1)}>Run gate again</button>
-    {!view ? <p role="status">Running live gate…</p> : <>
+    {failure ? <p role="alert">Blocked at route-runner: {failure}</p>
+      : !view ? <p role="status">Running live gate…</p> : <>
       <ShowcaseModelEvidence models={view.models}/>
       <p role={view.report.status === "blocked" ? "alert" : "status"}>
         {view.report.status === "passed"

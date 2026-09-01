@@ -16,9 +16,7 @@ import {
   parseMechanismBrowserGateReport, sealMechanismBrowserGateReport,
   verifyMechanismBrowserGateReportDigest, type MechanismBrowserGateReport,
 } from "./browser-mechanism-report";
-import {
-  resolveMechanismResult, type MechanismResult,
-} from "./mechanism-solver";
+import { resolveMechanismResult, type MechanismResult } from "./mechanism-solver";
 const terminalStates = new Set(["verified", "failed", "cancelled"]);
 const now = () => performance.now();
 const abortIfRequested = (signal: AbortSignal) => {
@@ -35,6 +33,7 @@ export type MechanismBrowserGateSession = Readonly<{
 }>;
 type Adapter = SolverAdapter<MechanismAdapterInput, MechanismResult>;
 type GateDependencies = Readonly<{
+  componentEvidence?: typeof componentMechanismEvidence;
   buildBenchmark?: (signal: AbortSignal) => Promise<GateBenchmark>;
   createAdapter?: () => Adapter;
   resolveResult?: typeof resolveMechanismResult;
@@ -197,11 +196,14 @@ export async function runMechanismBrowserGate(
   const buildBenchmark = dependencies.buildBenchmark ?? buildComponentMechanismShowcase;
   const createAdapter = dependencies.createAdapter ?? createMechanismAdapter;
   const resolveResult = dependencies.resolveResult ?? resolveMechanismResult;
-  let routeModel = dependencies.buildBenchmark ? undefined : await componentMechanismEvidence("failure");
-  let stage = "exact-cad-benchmark";
+  let routeModel: Awaited<ReturnType<typeof componentMechanismEvidence>> | undefined,
+    stage = "component-model-preflight";
   const status = (line: string) => { lines.push(line); console.info(`[mechanism-gate] ${line}`); };
   try {
     abortIfRequested(signal);
+    routeModel = dependencies.buildBenchmark ? undefined : await (dependencies.componentEvidence
+      ?? componentMechanismEvidence)("failure");
+    abortIfRequested(signal); stage = "exact-cad-benchmark";
     const buildStarted = now();
     const benchmark = await buildBenchmark(signal);
     abortIfRequested(signal);

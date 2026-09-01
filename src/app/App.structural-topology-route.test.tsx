@@ -52,6 +52,18 @@ describe("structural topology report-only route", () => {
     expect(error).not.toHaveBeenCalled();
   });
 
+  it("settles an unexpected runner rejection into terminal blocked UI", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(runStructuralTopologyBrowserGateSession)
+      .mockRejectedValue(new Error("component documents rejected"));
+
+    render(<App />);
+    expect(await screen.findByText("Blocked at route-runner: component documents rejected"))
+      .toBeVisible();
+    expect(screen.queryByText("Running live gate…")).toBeNull();
+    error.mockRestore();
+  });
+
   it("serializes only the assigned SE-6 topology after a passed run", async () => {
     const capability = { sessionId: "a".repeat(64) };
     vi.mocked(runStructuralTopologyBrowserGateSession).mockResolvedValue({

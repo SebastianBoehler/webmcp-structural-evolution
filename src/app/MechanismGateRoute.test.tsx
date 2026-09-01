@@ -74,4 +74,14 @@ describe("mechanism gate route", () => {
     view.unmount();
     expect(signals[1]?.aborted).toBe(true);
   });
+
+  it("settles a rejected runner into terminal blocked UI", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<MechanismGateRoute runGate={async () => { throw new Error("model preflight rejected"); }}/>);
+
+    expect((await screen.findByRole("alert")).textContent)
+      .toContain("Blocked at route-runner: model preflight rejected");
+    expect(screen.queryByText(/Building exact geometry/)).toBeNull();
+    error.mockRestore();
+  });
 });

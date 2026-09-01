@@ -4,7 +4,9 @@ export {
   type StructuralTopologyGateReport,
 } from "./browser-gate-report";
 
-import type { StructuralTopologyGateReport } from "./browser-gate-report";
+import {
+  parseStructuralTopologyGateReport, type StructuralTopologyGateReport,
+} from "./browser-gate-report";
 import {
   runStructuralTopologyBrowserGate as runAudit, type GateTopologyCandidate,
   type GateTopologyCandidates,
@@ -21,6 +23,10 @@ export interface LiveStructuralGateCapability {
 type BenchmarkKey = "cobot";
 type BoundCandidate = Readonly<{ sessionId: string; mesh: TopologyMesh }>;
 const capabilities = new WeakMap<object, BoundCandidate>();
+type GateSessionDependencies = Readonly<{ loadDocuments?: () => Promise<readonly [
+  Awaited<ReturnType<typeof droneMotorSideArmDocument>>,
+  Awaited<ReturnType<typeof se6UpperArmDocument>>,
+]> }>;
 
 function ownMesh(mesh: TopologyMesh): TopologyMesh {
   if (!(mesh.positionsM instanceof Float32Array) || mesh.positionsM.length === 0
@@ -59,17 +65,28 @@ async function bindCandidate(
 }
 
 export async function runStructuralTopologyBrowserGateSession(
-  signal?: AbortSignal,
+  signal?: AbortSignal, dependencies: GateSessionDependencies = {},
 ): Promise<Readonly<{
   report: StructuralTopologyGateReport;
   capability?: LiveStructuralGateCapability;
   models: readonly ShowcaseModelEvidence[];
 }>> {
-  const [droneModel, cobotModel] = await Promise.all([
-    droneMotorSideArmDocument(), se6UpperArmDocument(),
-  ]);
-  const initialModels = [componentShowcaseEvidence(droneModel, "failure"),
-    componentShowcaseEvidence(cobotModel, "failure")];
+  let initialModels: readonly ShowcaseModelEvidence[];
+  try {
+    const [droneModel, cobotModel] = await (dependencies.loadDocuments?.() ?? Promise.all([
+      droneMotorSideArmDocument(), se6UpperArmDocument(),
+    ]));
+    if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason
+      : new DOMException("Structural topology gate was cancelled", "AbortError");
+    initialModels = [componentShowcaseEvidence(droneModel, "failure"),
+      componentShowcaseEvidence(cobotModel, "failure")];
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return { models: [], report: parseStructuralTopologyGateReport({ status: "blocked",
+      evidenceSource: "live-browser-webgpu", blocker: { stage: "component-model-preflight",
+        message: error instanceof Error ? error.message : String(error) },
+      console: { statusLines: [], warningCount: 0, errorCount: 0 } }) };
+  }
   let candidates: GateTopologyCandidates | undefined;
   const report = await runAudit(signal, (value) => { candidates = value; });
   if (report.status !== "passed") return { report, models: candidates

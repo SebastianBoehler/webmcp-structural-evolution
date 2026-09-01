@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   gateReportAuthorizesManufacturing, isLiveStructuralGateCapability,
-  parseStructuralTopologyGateReport, serializeLiveAcceptedTopologyStl,
+  parseStructuralTopologyGateReport, runStructuralTopologyBrowserGateSession,
+  serializeLiveAcceptedTopologyStl,
 } from "./browser-structural-gate";
 
 describe("structural and topology browser gate report", () => {
@@ -31,6 +32,16 @@ describe("structural and topology browser gate report", () => {
       status: "blocked", evidenceSource: "live-browser-webgpu",
       blocker: { stage: "", message: "" }, console: { statusLines: [], warningCount: 0, errorCount: 0 },
     })).toThrow("blocker");
+  });
+
+  it("settles rejected authoritative component documents into blocked evidence", async () => {
+    const session = await runStructuralTopologyBrowserGateSession(undefined, {
+      loadDocuments: async () => { throw new Error("component documents rejected"); },
+    });
+
+    expect(session).toMatchObject({ models: [], report: { status: "blocked", blocker: {
+      stage: "component-model-preflight", message: "component documents rejected",
+    }, console: { statusLines: [], warningCount: 0, errorCount: 0 } } });
   });
 
   it("never treats a serialized audit report or copied capability shape as authority", () => {
