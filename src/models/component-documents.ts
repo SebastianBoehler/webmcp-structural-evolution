@@ -1,6 +1,7 @@
 import { defineDesignDocument, type DesignDocument } from "../cad/document-schema";
 import type { AssemblyDraft } from "../domain/assembly-model";
 import type { ComponentDefinition } from "../domain/component-model";
+import { normalizeDensity, normalizePressure, type DensitySchema, type PressureSchema } from "../domain/engineering-units";
 import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
@@ -13,7 +14,7 @@ import type { ComponentCadAuthority, ComponentCadSource } from "./component-cad-
 
 type Instance = AssemblyDraft["components"][number];
 type InterfaceBinding = Readonly<{ id: string; instanceId: string; interfaceId: string }>;
-type StudyMaterial = Readonly<{ id: string; youngsModulus: { value: number }; failureStress: { value: number }; poissonRatio: number; density: { value: number } }>;
+type StudyMaterial = Readonly<{ id: string; youngsModulus: import("zod").infer<typeof PressureSchema>; failureStress: import("zod").infer<typeof PressureSchema>; poissonRatio: number; density: import("zod").infer<typeof DensitySchema> }>;
 type MechanismJoint = typeof SE6_JOINTS[number];
 export interface AuthoritativeComponentDocument {
   readonly authority: ComponentCadAuthority;
@@ -64,6 +65,14 @@ function interfaceBindings(instance: Instance, definition: ComponentDefinition):
   return compileQualifiedInterfaces(instance, {}, definition);
 }
 
+export function compileMaterial(material: StudyMaterial) {
+  const youngsModulus = normalizePressure(material.youngsModulus);
+  const failureStress = normalizePressure(material.failureStress);
+  const density = normalizeDensity(material.density);
+  return { id: material.id, kind: "isotropic" as const, densityKgM3: density.value,
+    youngsModulusPa: youngsModulus.value, poissonRatio: material.poissonRatio, failureStressPa: failureStress.value };
+}
+
 async function compile(
   id: string, label: string, assembly: AssemblyDraft, catalog: readonly ComponentDefinition[], material?: StudyMaterial,
 ): Promise<Pick<AuthoritativeComponentDocument, "document" | "componentInstances" | "interfaces">> {
@@ -90,7 +99,7 @@ async function compile(
   return { document: await defineDesignDocument({
     id, label, schemaVersion: 6, units: { length: "m", angle: "rad", mass: "kg" }, createdBy: { kind: "agent", id: "component-document-compiler" },
     frames, parameters: [], sketches, features, bodies, components, instances, mates: [], namedSelections: [],
-    materials: material ? [{ id: material.id, kind: "isotropic", densityKgM3: material.density.value, youngsModulusPa: material.youngsModulus.value, poissonRatio: material.poissonRatio, failureStressPa: material.failureStress.value }] : [], studies: [],
+    materials: material ? [compileMaterial(material)] : [], studies: [],
   }), componentInstances: assembly.components.map(({ instanceId }) => instanceId), interfaces };
 }
 

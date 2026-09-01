@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OcctKernel } from "occt-wasm";
 
 import { createOcctBridge } from "../cad/kernel/occt-bridge";
+import { normalizeDensity, normalizePressure } from "../domain/engineering-units";
 import { rebuildDocument } from "../cad/kernel/feature-rebuild";
 import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
@@ -14,12 +15,21 @@ import {
   assertRebuiltBodyCoverage,
   assertStagePartition,
   compileQualifiedInterfaces,
+  compileMaterial,
   droneMotorSideArmDocument,
   se6MechanismDocument,
   se6UpperArmDocument,
 } from "./component-documents";
 
 describe("authoritative component documents", () => {
+  it("normalizes source MPa and g/cm^3 material values to DesignDocument SI fields", () => {
+    expect(compileMaterial({
+      id: "raw-material", youngsModulus: { value: 1700, unit: "MPa" },
+      failureStress: { value: 45, unit: "MPa" }, poissonRatio: .39,
+      density: { value: 1.01, unit: "g/cm^3" },
+    })).toMatchObject({ densityKgM3: 1010, youngsModulusPa: 1.7e9, failureStressPa: 45e6 });
+  });
+
   it("rejects imported STEP authority without owned bytes, digest, and exact import", () => {
     expect(() => ComponentCadSourceSchema.parse({
       authority: "digest-verified-step-import",
@@ -56,7 +66,8 @@ describe("authoritative component documents", () => {
     const live = compileLiveTopologyContext(initialDroneWorkspace);
 
     expect(model.document.materials).toEqual(expect.arrayContaining([expect.objectContaining({
-      id: material.id, densityKgM3: material.density.value, youngsModulusPa: material.youngsModulus.value,
+      id: material.id, densityKgM3: normalizeDensity(material.density).value,
+      youngsModulusPa: normalizePressure(material.youngsModulus).value,
     })]));
     expect(model.supports.map(({ region }) => region)).toEqual(live.input.supports);
     expect(model.loads[0]).toMatchObject({ region: sourceCase.forces[0]!.region,
