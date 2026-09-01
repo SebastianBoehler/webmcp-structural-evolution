@@ -12,4 +12,3 @@ test("selects the thermal gate before capability detection and the workbench", a
   expect(await screen.findByLabelText("SE-6 cobot thermal browser gate")).toBeVisible();
   expect(screen.queryByText(/structural evolution/i)).toBeNull();
 });
-
