@@ -2,7 +2,7 @@ import type { StructuralFieldEvaluation, StructuralIterateEvaluation } from "../
 import type { StructuralGpuSolve } from "./pcg";
 import {
   STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
-  STRUCTURAL_MAX_ITERATIONS,
+  STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET,
   STRUCTURAL_MAX_REFINEMENTS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
   type StructuralRefinementPass,
@@ -25,6 +25,7 @@ export interface MixedPrecisionStructuralSolve extends StructuralGpuSolve {
 interface RefinementOperations {
   readonly initialRhsN: Float32Array;
   readonly forceBalanceToleranceN: number;
+  readonly maxIterations?: number;
   readonly signal: AbortSignal;
   solve(rhsN: Float32Array): Promise<StructuralGpuSolve>;
   evaluateMaster(field: Float64Array): Promise<StructuralIterateEvaluation>;
@@ -42,7 +43,7 @@ function requireFiniteNonnegative(values: readonly number[], label: string): voi
   }
 }
 
-function validatePass(pass: StructuralGpuSolve, expectedLength: number): void {
+function validatePass(pass: StructuralGpuSolve, expectedLength: number, maxIterations: number): void {
   if (pass.displacementM.length !== expectedLength || !pass.displacementM.every(Number.isFinite)) {
     diverged("GPU correction field is invalid");
   }
@@ -51,7 +52,7 @@ function validatePass(pass: StructuralGpuSolve, expectedLength: number): void {
     "GPU correction residual",
   );
   if (!Number.isInteger(pass.iterations) || pass.iterations < 1
-    || pass.iterations > STRUCTURAL_MAX_ITERATIONS) {
+    || pass.iterations > maxIterations) {
     diverged("GPU correction iterations exceed the locked per-pass bound");
   }
   if (pass.relativeResidual > STRUCTURAL_RESIDUAL_TOLERANCE) {
@@ -114,10 +115,11 @@ export async function runMixedPrecisionRefinement(
   operations: RefinementOperations,
 ): Promise<MixedPrecisionStructuralSolve> {
   const { signal } = operations;
+  const maxIterations = operations.maxIterations ?? STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET;
   checkAbort(signal);
   const initial = await operations.solve(new Float32Array(operations.initialRhsN));
   checkAbort(signal);
-  validatePass(initial, operations.initialRhsN.length);
+  validatePass(initial, operations.initialRhsN.length, maxIterations);
   const master = Float64Array.from(initial.displacementM);
   let candidateField = Float32Array.from(master);
   let candidateEvidence = await operations.evaluateCandidate(candidateField);
@@ -137,7 +139,7 @@ export async function runMixedPrecisionRefinement(
     const { rhs, scale } = normalizedResidual(masterEvaluation.freeResidualN);
     const correction = await operations.solve(rhs);
     checkAbort(signal);
-    validatePass(correction, master.length);
+    validatePass(correction, master.length, maxIterations);
     for (let index = 0; index < master.length; index += 1) {
       master[index] += scale * correction.displacementM[index]!;
       if (!Number.isFinite(master[index])) diverged("Float64 master iterate became non-finite");

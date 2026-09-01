@@ -20,6 +20,7 @@ import {
   STRUCTURAL_RESIDUAL_TOLERANCE,
   STRUCTURAL_VERIFICATION_METADATA,
   STRUCTURAL_WASM_L2_TOLERANCE,
+  structuralPcgIterationBudget,
   type CompiledStructuralSystem,
   type StructuralResult,
   type StructuralSolveInput,
@@ -208,17 +209,19 @@ export function createWebGpuStructuralAdapter(
       try {
         emit({ progress: 0.05 });
         const input = referenceInput(system);
+        const maxIterations = structuralPcgIterationBudget(request.settings);
         const balanceToleranceN = structuralAppliedLoadMagnitude(request)
           * STRUCTURAL_FORCE_BALANCE_TOLERANCE;
         let solvePass = 0;
         const gpu = await runMixedPrecisionRefinement({
           initialRhsN: system.loadsN, forceBalanceToleranceN: balanceToleranceN, signal,
+          maxIterations,
           solve: async (rhsN) => {
             const pass = solvePass;
             solvePass += 1;
             return runStructuralPcg(device, system, signal, (progress) => {
               emit({ progress: 0.05 + 0.75 * (pass + progress) / 4 });
-            }, rhsN);
+            }, rhsN, maxIterations);
           },
           evaluateMaster: (field) => evaluateStructuralIterateF64(input, field),
           evaluateCandidate: (field) => evaluateStructuralField(input, field),

@@ -34,7 +34,7 @@ describe("WebGPU structural adapter", () => {
       await structuralRequest(), new AbortController().signal, () => undefined,
     )).rejects.toMatchObject({ code: "diverged" });
     expect(recorded.dispatches).toEqual(expect.arrayContaining([
-      "build_diagonal", "initialize_pcg", "apply_elasticity", "dot_product", "reduce_sum",
+      "build_block_diagonal", "initialize_pcg", "apply_elasticity", "dot_product", "reduce_sum",
     ]));
     expect(recorded.buffers.length).toBeGreaterThan(8);
     expect(recorded.buffers.every(({ destroyed }) => destroyed)).toBe(true);

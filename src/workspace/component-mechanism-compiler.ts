@@ -37,7 +37,10 @@ export async function compileExactComponentMechanism(
   const meshes = indexBodyMeshes(exact.semanticMeshPayload, bodyIds);
   const faces = new Map(bodyIds.map((id) => [id,
     exact.semanticMeshPayload.faces.filter(({ bodyId }) => bodyId === id)]));
-  const bodies = [], colliders = [];
+  const bodies = [], colliders: Array<ReturnType<typeof compileCollisionShape> & Readonly<{
+    id: string; bodyId: string; sourceBodyId: string; sourceArtifactIds: readonly string[];
+    membershipMask: number; filterMask: number;
+  }>> = [];
   for (const [stageIndex, stageId] of stageIds.entries()) {
     const sourceBodyIds = model.stages[stageId]!.map((id) => `${id}-body`).sort();
     const kind = stageIndex === 0 ? "fixed" as const : "dynamic" as const;
@@ -73,8 +76,19 @@ export async function compileExactComponentMechanism(
     secondAnchorLocalM: joint.anchor, firstAxisLocal: joint.axis,
     secondAxisLocal: joint.axis, lowerRad: joint.limits[0], upperRad: joint.limits[1],
   }));
+  const partnerStages = [2, 3, 4, 5, 6, 0, 0] as const;
+  const clearancePairs = stageIds.flatMap((stageId, stageIndex) => {
+    const partnerIndex = partnerStages[stageIndex]!;
+    const partner = colliders.find(({ bodyId }) => bodyId === stageIds[partnerIndex])!;
+    return colliders.filter(({ bodyId }) => bodyId === stageId)
+      .map(({ id }, colliderIndex) => ({
+        id: `clearance-${stageIndex}-${colliderIndex}`,
+        sourceQueryId: `stage-clearance-${stageIndex}-${partnerIndex}`,
+        firstColliderId: id, secondColliderId: partner.id,
+      }));
+  });
   const input = await defineMechanismInput({ sourceRevision: model.document.revision,
     studyId: "se6-motion", bodies, colliders, joints, gravityWorldMps2: [0, 0, -9.80665],
-    pointForces: [], durationSteps: 240, outputStrideSteps: 4, clearancePairs: [] });
+    pointForces: [], durationSteps: 240, outputStrideSteps: 4, clearancePairs });
   return defineCompiledMechanismStudy(input, exact.artifacts);
 }

@@ -18,9 +18,15 @@ import {
 import { createComponentStudyPlanners } from "./component-study-planners";
 import { createEngineeringWorkspaceService } from "./engineering-workspace-service";
 import { compileStructuralStudy } from "../solver/structural/compile-structural-study";
+import type { StructuralSolveInput } from "../solver/structural/structural-contract";
+import { createWebGpuStructuralAdapter } from "../solver/structural/webgpu-structural-adapter";
+import type { ThermalSolveInput } from "../solver/thermal/thermal-contract";
+import { createVerifiedThermalAdapter } from "../solver/thermal/verified-thermal-adapter";
 import { createWebGpuTopologyAdapter } from "../solver/topology/topology-adapter";
 import type { TopologySolveInput } from "../solver/topology/topology-contract";
 import { configuredTopologyStudy, topologyPassiveCells } from "../solver/topology/topology-input";
+import { MECHANISM_MAX_CLEARANCE_SAMPLES } from "../simulation/mechanism-contract";
+import { createMechanismAdapter, type MechanismAdapterInput } from "../simulation/mechanism-adapter";
 
 let bridge: OcctBridge;
 beforeAll(async () => { bridge = createOcctBridge(await OcctKernel.init()); });
@@ -105,9 +111,17 @@ describe("exact component study planners", () => {
     }
     expect(evaluate).toHaveBeenCalledOnce();
     expect(seen.map(({ kind }) => kind)).toEqual(["fea", "topology"]);
+    expect((seen[0]!.settings as { pcgIterationBudget?: number }).pcgIterationBudget).toBe(1_024);
+    vi.stubGlobal("navigator", { gpu: {} });
+    expect(createWebGpuStructuralAdapter().supports(
+      seen[0]! as EngineeringSolveRequest<StructuralSolveInput>,
+    )).toEqual({ supported: true });
+    vi.unstubAllGlobals();
     expect(seen.every(({ inputArtifacts }) => inputArtifacts.some(({ producer }) =>
       producer.name === "workspace-exact-body-brep"))).toBe(true);
     const topology = seen[1] as EngineeringSolveRequest<TopologySolveInput>;
+    expect((topology.input.sourceStructuralRequest.settings as { pcgIterationBudget?: number })
+      .pcgIterationBudget).toBe(1_024);
     await expect(compileStructuralStudy(topology.input.sourceStructuralRequest)).resolves.toBeDefined();
     const passive = topologyPassiveCells(topology, configuredTopologyStudy(topology));
     expect(passive.requiredInterfaces.map(({ id }) => id)).toEqual(expect.arrayContaining(
@@ -171,9 +185,33 @@ describe("exact component study planners", () => {
       expect.objectContaining({ kind: "render-mesh", sourceRevision: model.document.revision }),
     ]));
     if (_kind === "mechanism") {
-      const input = (seen[0]!.input as { mechanismInput: { bodies: unknown[]; colliders: unknown[] } }).mechanismInput;
+      const input = (seen[0]!.input as { mechanismInput: {
+        bodies: { id: string }[]; colliders: { id: string; bodyId: string }[];
+        clearancePairs: { firstColliderId: string; secondColliderId: string }[];
+        durationSteps: number; outputStrideSteps: number;
+      } }).mechanismInput;
       expect(input.bodies).toHaveLength(7);
       expect(input.colliders).toHaveLength(52);
+      expect(input.clearancePairs).toHaveLength(52);
+      const stageIndex = new Map(["base", "axis-1", "axis-2", "axis-3", "axis-4", "axis-5", "axis-6"]
+        .map((id, index) => [id, index] as const));
+      const colliderStage = new Map(input.colliders.map(({ id, bodyId }) => [id, stageIndex.get(bodyId)!]));
+      const covered = new Set(input.clearancePairs.flatMap(({ firstColliderId, secondColliderId }) =>
+        [firstColliderId, secondColliderId]));
+      expect(covered).toEqual(new Set(input.colliders.map(({ id }) => id)));
+      expect(input.clearancePairs.every(({ firstColliderId, secondColliderId }) =>
+        Math.abs(colliderStage.get(firstColliderId)! - colliderStage.get(secondColliderId)!) > 1)).toBe(true);
+      const frames = input.durationSteps / input.outputStrideSteps + 1;
+      expect(frames * input.clearancePairs.length).toBeLessThanOrEqual(MECHANISM_MAX_CLEARANCE_SAMPLES);
+      expect(createMechanismAdapter().supports(
+        seen[0]! as EngineeringSolveRequest<MechanismAdapterInput>,
+      )).toEqual({ supported: true });
+    } else {
+      vi.stubGlobal("navigator", { gpu: {} });
+      expect(createVerifiedThermalAdapter().supports(
+        seen[0]! as EngineeringSolveRequest<ThermalSolveInput>,
+      )).toEqual({ supported: true });
+      vi.unstubAllGlobals();
     }
     workspace.dispose();
   });

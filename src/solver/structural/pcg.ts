@@ -1,5 +1,7 @@
 import type { CompiledStructuralSystem } from "./structural-contract";
-import { STRUCTURAL_MAX_ITERATIONS, STRUCTURAL_RESIDUAL_TOLERANCE } from "./structural-contract";
+import {
+  STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET, STRUCTURAL_RESIDUAL_TOLERANCE,
+} from "./structural-contract";
 import { createStructuralPipelines } from "./gpu-pipelines";
 import { createGpuReducer } from "./gpu-reducer";
 import { createStructuralGpuResources } from "./gpu-resources";
@@ -120,6 +122,7 @@ export async function runStructuralPcg(
   signal: AbortSignal,
   emit: (progress: number) => void,
   rhsN: Float32Array = system.loadsN,
+  maxIterations = STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET,
 ): Promise<StructuralGpuSolve> {
   const guard = createDeviceGuard(device, signal);
   return withStructuralGpuErrorScopes(device, guard, async () => {
@@ -131,10 +134,10 @@ export async function runStructuralPcg(
       writeVectorParams(device, resources.vectorParams, dofCount);
       await dispatchVector(
         device, guard, pipelines.buildDiagonal,
-        elasticityGroup(device, pipelines, resources, resources.p, resources.diagonal),
-        dofCount, "structural-build-diagonal",
+        elasticityGroup(device, pipelines, resources, resources.p, resources.blockDiagonal),
+        dofCount / 3, "structural-build-block-diagonal",
       );
-      await dispatchVector(device, guard, pipelines.initializePcg, vector, dofCount, "structural-initialize-pcg");
+      await dispatchVector(device, guard, pipelines.initializePcg, vector, dofCount / 3, "structural-initialize-pcg");
       await dispatchVector(
         device, guard, pipelines.applyElasticity,
         elasticityGroup(device, pipelines, resources, resources.p, resources.product),
@@ -152,7 +155,7 @@ export async function runStructuralPcg(
       let denominator = initialDenominator;
       let relativeResidual = 1;
       let iterations = 0;
-      for (let iteration = 0; iteration < STRUCTURAL_MAX_ITERATIONS; iteration += 1) {
+      for (let iteration = 0; iteration < maxIterations; iteration += 1) {
         if (iteration > 0) {
           await dispatchVector(
             device, guard, pipelines.applyElasticity,
@@ -176,11 +179,11 @@ export async function runStructuralPcg(
         if (!Number.isFinite(relativeResidual)) {
           throw new StructuralGpuError("diverged", "WebGPU PCG residual became non-finite");
         }
-        emit(Math.min(0.85, 0.1 + 0.75 * iterations / STRUCTURAL_MAX_ITERATIONS));
+        emit(Math.min(0.85, 0.1 + 0.75 * iterations / maxIterations));
         if (relativeResidual <= STRUCTURAL_RESIDUAL_TOLERANCE) break;
         writeVectorParams(device, resources.vectorParams, dofCount);
         await dispatchVector(
-          device, guard, pipelines.applyPreconditioner, vector, dofCount,
+          device, guard, pipelines.applyPreconditioner, vector, dofCount / 3,
           "structural-apply-preconditioner",
         );
         const nextRz = await reducer.dot(resources.r, resources.z, dofCount);
@@ -194,7 +197,7 @@ export async function runStructuralPcg(
       }
       if (relativeResidual > STRUCTURAL_RESIDUAL_TOLERANCE) {
         throw new StructuralGpuError(
-          "diverged", `WebGPU PCG reached ${STRUCTURAL_MAX_ITERATIONS} iterations at residual ${relativeResidual}`,
+          "diverged", `WebGPU PCG reached ${maxIterations} iterations at residual ${relativeResidual}`,
         );
       }
       const post = await postprocessStructuralResources(

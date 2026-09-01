@@ -116,12 +116,21 @@ export const DEFAULT_STRUCTURAL_COMPILE_LIMITS: StructuralCompileLimits = {
 };
 
 export const STRUCTURAL_RESIDUAL_TOLERANCE = 1e-5;
+export const COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET = 1_024;
 export const STRUCTURAL_FORCE_BALANCE_TOLERANCE = 1e-4;
 export const STRUCTURAL_WASM_L2_TOLERANCE = 2e-3;
-export const STRUCTURAL_MAX_ITERATIONS = 512;
+export const STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET = 512;
+export const STRUCTURAL_MAX_ITERATIONS = COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET;
 export const STRUCTURAL_MAX_REFINEMENTS = 3;
 export const STRUCTURAL_MAX_TOTAL_ITERATIONS = STRUCTURAL_MAX_ITERATIONS * (STRUCTURAL_MAX_REFINEMENTS + 1);
 export const STRUCTURAL_ENERGY_RELATIVE_TOLERANCE = 1e-5;
+
+export function structuralPcgIterationBudget(settings: unknown): number {
+  return typeof settings === "object" && settings !== null
+    && "pcgIterationBudget" in settings
+    && settings.pcgIterationBudget === COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET
+    ? COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET : STRUCTURAL_DEFAULT_PCG_ITERATION_BUDGET;
+}
 
 const fixtureCellDimensions = Object.freeze({
   axial: Object.freeze([20, 2, 2] as const),

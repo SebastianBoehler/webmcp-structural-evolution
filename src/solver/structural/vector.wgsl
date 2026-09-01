@@ -13,16 +13,51 @@ struct VectorParams {
 @group(0) @binding(5) var<storage, read_write> preconditioned: array<f32>;
 @group(0) @binding(6) var<storage, read_write> direction: array<f32>;
 @group(0) @binding(7) var<storage, read> product: array<f32>;
-@group(0) @binding(8) var<storage, read> diagonal: array<f32>;
+@group(0) @binding(8) var<storage, read> block_diagonal: array<f32>;
+
+fn block_precondition(node: u32, value: vec3<f32>) -> vec3<f32> {
+  let offset = node * 9u;
+  let first = vec3<f32>(block_diagonal[offset], block_diagonal[offset + 1u], block_diagonal[offset + 2u]);
+  let second = vec3<f32>(block_diagonal[offset + 3u], block_diagonal[offset + 4u], block_diagonal[offset + 5u]);
+  let third = vec3<f32>(block_diagonal[offset + 6u], block_diagonal[offset + 7u], block_diagonal[offset + 8u]);
+  let scale = max(max(max(abs(first.x), abs(first.y)), max(abs(first.z), abs(second.x))),
+    max(max(abs(second.y), abs(second.z)), max(max(abs(third.x), abs(third.y)), abs(third.z))));
+  if (scale <= 1e-20) { return value; }
+  let a = first / scale;
+  let b = second / scale;
+  let c = third / scale;
+  let determinant = dot(a, cross(b, c));
+  let normalized = value / scale;
+  if (abs(determinant) <= 1e-12) {
+    return vec3<f32>(
+      value.x / max(abs(first.x), 1e-20),
+      value.y / max(abs(second.y), 1e-20),
+      value.z / max(abs(third.z), 1e-20),
+    );
+  }
+  return vec3<f32>(
+    dot(normalized, cross(b, c)),
+    dot(normalized, cross(c, a)),
+    dot(normalized, cross(a, b)),
+  ) / determinant;
+}
 
 @compute @workgroup_size(64)
 fn initialize_pcg(@builtin(global_invocation_id) id: vec3<u32>) {
-  if (id.x >= params.count) { return; }
-  solution[id.x] = 0.0;
-  let value = select(rhs[id.x], 0.0, fixed_dofs[id.x] != 0u);
-  residual[id.x] = value;
-  preconditioned[id.x] = value / diagonal[id.x];
-  direction[id.x] = preconditioned[id.x];
+  let offset = id.x * 3u;
+  if (offset >= params.count) { return; }
+  let value = vec3<f32>(
+    select(rhs[offset], 0.0, fixed_dofs[offset] != 0u),
+    select(rhs[offset + 1u], 0.0, fixed_dofs[offset + 1u] != 0u),
+    select(rhs[offset + 2u], 0.0, fixed_dofs[offset + 2u] != 0u),
+  );
+  let conditioned = block_precondition(id.x, value);
+  for (var axis = 0u; axis < 3u; axis += 1u) {
+    solution[offset + axis] = 0.0;
+    residual[offset + axis] = value[axis];
+    preconditioned[offset + axis] = conditioned[axis];
+    direction[offset + axis] = conditioned[axis];
+  }
 }
 
 @compute @workgroup_size(64)
@@ -40,12 +75,14 @@ fn recompute_residual(@builtin(global_invocation_id) id: vec3<u32>) {
 
 @compute @workgroup_size(64)
 fn apply_preconditioner(@builtin(global_invocation_id) id: vec3<u32>) {
-  if (id.x >= params.count) { return; }
-  if (fixed_dofs[id.x] != 0u) {
-    preconditioned[id.x] = 0.0;
-    return;
+  let offset = id.x * 3u;
+  if (offset >= params.count) { return; }
+  let conditioned = block_precondition(id.x, vec3<f32>(
+    residual[offset], residual[offset + 1u], residual[offset + 2u],
+  ));
+  for (var axis = 0u; axis < 3u; axis += 1u) {
+    preconditioned[offset + axis] = select(conditioned[axis], 0.0, fixed_dofs[offset + axis] != 0u);
   }
-  preconditioned[id.x] = residual[id.x] / diagonal[id.x];
 }
 
 @compute @workgroup_size(64)

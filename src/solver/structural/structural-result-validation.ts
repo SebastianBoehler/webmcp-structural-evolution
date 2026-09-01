@@ -2,12 +2,11 @@ import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import {
   STRUCTURAL_ENERGY_RELATIVE_TOLERANCE,
   STRUCTURAL_FORCE_BALANCE_TOLERANCE,
-  STRUCTURAL_MAX_ITERATIONS,
   STRUCTURAL_MAX_REFINEMENTS,
-  STRUCTURAL_MAX_TOTAL_ITERATIONS,
   STRUCTURAL_RESIDUAL_TOLERANCE,
   STRUCTURAL_VERIFICATION_METADATA,
   STRUCTURAL_WASM_L2_TOLERANCE,
+  structuralPcgIterationBudget,
   type CompiledStructuralSystem,
   type StructuralResult,
   type StructuralSolveInput,
@@ -58,8 +57,11 @@ function finiteNonnegative(values: readonly number[]): boolean {
   return values.every((value) => Number.isFinite(value) && value >= 0);
 }
 
-function validateRefinementEvidence(result: StructuralResult): void {
+function validateRefinementEvidence(
+  request: EngineeringSolveRequest<StructuralSolveInput>, result: StructuralResult,
+): void {
   const evidence = result.verification;
+  const maxIterations = structuralPcgIterationBudget(request.settings);
   const passes = evidence.refinementPasses;
   if (!Number.isInteger(evidence.refinementCount) || evidence.refinementCount < 0
     || evidence.refinementCount > STRUCTURAL_MAX_REFINEMENTS
@@ -70,7 +72,7 @@ function validateRefinementEvidence(result: StructuralResult): void {
     const pass = passes[index]!;
     if (pass.kind !== (index === 0 ? "initial" : "correction")
       || !Number.isInteger(pass.iterations) || pass.iterations < 1
-      || pass.iterations > STRUCTURAL_MAX_ITERATIONS
+      || pass.iterations > maxIterations
       || !finiteNonnegative([
         pass.recursiveResidual, pass.recomputedF32Residual, pass.residualScaleN,
         pass.postDirectResidual, pass.postBalance, pass.postEnergy,
@@ -134,7 +136,8 @@ export function validateInteractiveStructuralResult(
     throw new Error("Structural stress field values must be finite and nonnegative");
   }
   if (!Number.isInteger(result.iterations) || result.iterations < 1
-    || result.iterations > STRUCTURAL_MAX_TOTAL_ITERATIONS) {
+    || result.iterations > structuralPcgIterationBudget(request.settings)
+      * (STRUCTURAL_MAX_REFINEMENTS + 1)) {
     throw new Error("Structural result iterations exceed the locked solver bounds");
   }
   const metrics = [
@@ -188,5 +191,5 @@ export function validateInteractiveStructuralResult(
   if (evidence.energyRelativeMismatch > STRUCTURAL_ENERGY_RELATIVE_TOLERANCE) {
     throw new Error("Structural field energy exceeds the locked threshold");
   }
-  validateRefinementEvidence(result);
+  validateRefinementEvidence(request, result);
 }

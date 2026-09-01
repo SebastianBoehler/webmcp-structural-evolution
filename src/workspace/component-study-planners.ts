@@ -5,7 +5,9 @@ import {
   authoritativeComponentIntent, type AuthoritativeComponentDocument,
 } from "../models/component-documents";
 import type { MechanismAdapterInput } from "../simulation/mechanism-adapter";
-import type { StructuralSolveInput } from "../solver/structural/structural-contract";
+import {
+  COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET, type StructuralSolveInput,
+} from "../solver/structural/structural-contract";
 import { produceStructuralVoxelMeshFromExact } from "../solver/structural/structural-voxelizer";
 import type { ThermalSolveInput } from "../solver/thermal/thermal-contract";
 import { produceThermalVoxelMeshFromExact } from "../solver/thermal/thermal-voxelizer";
@@ -76,7 +78,8 @@ async function structuralCompilation(
   const bodyBrep = exact.bodyBreps[input.study.bodyIds[0]!]!.artifact;
   const request = await defineEngineeringSolveRequest<StructuralSolveInput>({
     jobId: jobId("structural"), kind: "fea", sourceRevision: input.document.revision,
-    inputArtifacts: [...exact.artifacts, bodyBrep, voxel.record], settings: {},
+    inputArtifacts: [...exact.artifacts, bodyBrep, voxel.record],
+    settings: { pcgIterationBudget: COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET },
     studyId: input.study.id, document: input.document,
     input: { semanticMeshArtifactId: exact.semanticArtifact.id,
       semanticMeshPayload: exact.semanticMeshPayload,
@@ -107,7 +110,8 @@ async function topologyCompilation(
   const bodyBrep = exact.bodyBreps[study.bodyIds[0]!]!.artifact;
   const source = await defineEngineeringSolveRequest<StructuralSolveInput>({
     jobId: jobId("topology-source"), kind: "fea", sourceRevision: input.document.revision,
-    inputArtifacts: [...exact.artifacts, bodyBrep, voxel.record], settings: {}, studyId: study.id,
+    inputArtifacts: [...exact.artifacts, bodyBrep, voxel.record],
+    settings: { pcgIterationBudget: COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET }, studyId: study.id,
     document: input.document, input: { semanticMeshArtifactId: exact.semanticArtifact.id,
       semanticMeshPayload: exact.semanticMeshPayload,
       voxelArtifactId: voxel.record.id, voxelPayload: voxel.payload },

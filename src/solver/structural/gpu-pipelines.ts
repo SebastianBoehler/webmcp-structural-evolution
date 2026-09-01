@@ -97,7 +97,7 @@ export async function createStructuralPipelines(
   });
   const entries = await Promise.all([
     pipeline(device, guard, elasticityLayout, elasticity, "apply_elasticity"),
-    pipeline(device, guard, elasticityLayout, elasticity, "build_diagonal"),
+    pipeline(device, guard, elasticityLayout, elasticity, "build_block_diagonal"),
     pipeline(device, guard, elasticityLayout, elasticity, "compute_stress"),
     pipeline(device, guard, vectorLayout, vector, "initialize_pcg"),
     pipeline(device, guard, vectorLayout, vector, "update_solution_residual"),

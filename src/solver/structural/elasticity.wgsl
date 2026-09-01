@@ -66,10 +66,45 @@ fn apply_elasticity(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.x < params.nodes.w) { vector_out[id.x] = gather_row(id.x, false); }
 }
 
+fn gather_nodal_block(node: u32, row_axis: u32, column_axis: u32) -> f32 {
+  let nz = node / (params.nodes.x * params.nodes.y);
+  let rest = node - nz * params.nodes.x * params.nodes.y;
+  let ny = rest / params.nodes.x;
+  let nx = rest - ny * params.nodes.x;
+  var sum = 0.0;
+  for (var lz = 0u; lz < 2u; lz += 1u) {
+    if (nz < lz) { continue; }
+    let cz = nz - lz;
+    if (cz >= params.cells.z) { continue; }
+    for (var ly = 0u; ly < 2u; ly += 1u) {
+      if (ny < ly) { continue; }
+      let cy = ny - ly;
+      if (cy >= params.cells.y) { continue; }
+      for (var lx = 0u; lx < 2u; lx += 1u) {
+        if (nx < lx) { continue; }
+        let cx = nx - lx;
+        if (cx >= params.cells.x || active_cells[cell_index(cx, cy, cz)] == 0u) { continue; }
+        let local_node = lx + 2u * ly + 4u * lz;
+        let local_row = local_node * 3u + row_axis;
+        let local_column = local_node * 3u + column_axis;
+        sum += element_stiffness[local_row * 24u + local_column];
+      }
+    }
+  }
+  return sum;
+}
+
 @compute @workgroup_size(64)
-fn build_diagonal(@builtin(global_invocation_id) id: vec3<u32>) {
-  if (id.x >= params.nodes.w) { return; }
-  vector_out[id.x] = select(max(gather_row(id.x, true), 1e-20), 1.0, fixed_dofs[id.x] != 0u);
+fn build_block_diagonal(@builtin(global_invocation_id) id: vec3<u32>) {
+  let node_count = params.nodes.w / 3u;
+  if (id.x >= node_count) { return; }
+  for (var row = 0u; row < 3u; row += 1u) {
+    for (var column = 0u; column < 3u; column += 1u) {
+      let constrained = fixed_dofs[id.x * 3u + row] != 0u || fixed_dofs[id.x * 3u + column] != 0u;
+      let value = select(gather_nodal_block(id.x, row, column), select(0.0, 1.0, row == column), constrained);
+      vector_out[id.x * 9u + row * 3u + column] = value;
+    }
+  }
 }
 
 fn center_gradient(local_node: u32) -> vec3<f32> {

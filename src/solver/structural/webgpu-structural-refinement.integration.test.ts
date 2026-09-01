@@ -73,13 +73,16 @@ describe("WebGPU structural refinement integration", () => {
       iterations: 3, relativeResidual: 1e-7, forceBalanceErrorN: .001, complianceJ: 1,
     }));
 
+    const request = await structuralRequest();
     const run = await createWebGpuStructuralAdapter().run(
-      await structuralRequest(), new AbortController().signal, () => undefined,
+      { ...request, settings: { pcgIterationBudget: 1_024 } },
+      new AbortController().signal, () => undefined,
     );
 
     expect(run.output.verification).toMatchObject({ refinementCount: 1 });
     expect(run.output.verification.refinementPasses).toHaveLength(2);
     expect(seam.pcg).toHaveBeenCalledTimes(2);
+    expect(seam.pcg.mock.calls.every((call) => call[5] === 1_024)).toBe(true);
     expect(new Set(seam.devices).size).toBe(1);
     expect(recorded.device.destroy).toHaveBeenCalledOnce();
   });

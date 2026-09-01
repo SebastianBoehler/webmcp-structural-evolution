@@ -15,7 +15,7 @@ export interface StructuralGpuResources {
   readonly z: GPUBuffer;
   readonly p: GPUBuffer;
   readonly product: GPUBuffer;
-  readonly diagonal: GPUBuffer;
+  readonly blockDiagonal: GPUBuffer;
   readonly stress: GPUBuffer;
   readonly partialA: GPUBuffer;
   readonly partialB: GPUBuffer;
@@ -69,7 +69,7 @@ export function createStructuralGpuResources(
     const z = vector("structural-z");
     const p = vector("structural-p");
     const product = vector("structural-product");
-    const diagonal = vector("structural-diagonal");
+    const blockDiagonal = create("structural-block-diagonal", dofBytes * 3, GPUBufferUsage.STORAGE);
     const stress = create("structural-stress", cellBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const partialA = create("structural-reduction-a", partialBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const partialB = create("structural-reduction-b", partialBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
@@ -93,7 +93,7 @@ export function createStructuralGpuResources(
     device.queue.writeBuffer(rhs, 0, rhsN);
     return {
       gridParams, vectorParams, reductionParams, active, fixed, stiffness, rhs,
-      x, r, z, p, product, diagonal, stress, partialA, partialB,
+      x, r, z, p, product, blockDiagonal, stress, partialA, partialB,
       scalarReadback, fieldReadback,
       destroy: () => {
         for (const mapped of [fieldReadback, scalarReadback]) {

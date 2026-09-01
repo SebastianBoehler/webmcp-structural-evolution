@@ -125,7 +125,9 @@ async function cancellationAndRecovery(
   }
 }
 
-function validate(output: VerifiedThermalOutput): void {
+function validate(
+  output: VerifiedThermalOutput, request: ComponentThermalBenchmark["request"],
+) {
   const { result, verification } = output;
   if (result.device.realGpu !== true || result.relativeResidual > 1e-6
     || result.relativeEnergyImbalance >= 1e-3
@@ -135,6 +137,21 @@ function validate(output: VerifiedThermalOutput): void {
       .every((field) => field.length > 0 && field.every(Number.isFinite))) {
     throw new Error("Thermal live result did not satisfy WebGPU and independent Wasm thresholds");
   }
+  const planned = [...request.input.voxelPayload.dimensions] as [number, number, number];
+  if (planned.some((value, axis) => value !== result.grid.cellDimensions[axis])) {
+    throw new Error("Thermal result grid does not match the planned component voxel grid");
+  }
+  const cellCount = planned.reduce((product, size) => product * size, 1);
+  if ([result.temperatureK.length, result.heatFluxWm2.length / 3,
+    result.faceHeatFluxWm2.length / 6, result.faceAreasM2.length / 6]
+    .some((length) => length !== cellCount)) {
+    throw new Error("Thermal result fields do not cover the planned component voxel grid");
+  }
+  const activeCellCount = request.input.voxelPayload.activeCells.reduce(
+    (count, active) => count + active, 0,
+  );
+  if (activeCellCount < 1) throw new Error("Thermal planned component voxel grid has no active cells");
+  return { cellDimensions: planned, activeCellCount } as const;
 }
 
 function boundaryEvidence(result: VerifiedThermalOutput["result"], selectionId: string) {
@@ -179,7 +196,7 @@ export async function runThermalBrowserGate(
     const solved = await cancellationAndRecovery(benchmark, adapter, signal);
     abort(signal);
     stage = "numerical-evidence";
-    validate(solved.output);
+    const grid = validate(solved.output, benchmark.request);
     const { result, verification } = solved.output;
     const temperatures = [...result.temperatureK];
     const report = await sealThermalBrowserGateReport({
@@ -190,7 +207,7 @@ export async function runThermalBrowserGate(
         benchmark.request.input.thermalVoxelArtifactId],
       studyId: "se6-upper-arm-thermal",
       device: { vendor: result.device.adapterInfo.vendor, architecture: result.device.adapterInfo.architecture },
-      grid: { cellDimensions: [...result.grid.cellDimensions] as [42, 8, 8], activeCellCount: 2_688 },
+      grid,
       boundaries: { mounting: boundaryEvidence(result, "mounting-interface"),
         motor: boundaryEvidence(result, "motor-interface"), heatInputW: benchmark.heatInputW },
       solve: { iterations: result.iterations, relativeResidual: result.relativeResidual,

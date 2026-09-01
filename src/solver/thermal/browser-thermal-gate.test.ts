@@ -65,9 +65,9 @@ async function benchmark() {
   return createCobotThermalBenchmarkFromDocument(document);
 }
 
-function output(): ThermalResult {
+function output(cellDimensions: readonly [number, number, number] = [42, 8, 8]): ThermalResult {
   const cells = 42 * 8 * 8;
-  return { truthLevel: "interactive-estimate", grid: { cellDimensions: [42, 8, 8],
+  return { truthLevel: "interactive-estimate", grid: { cellDimensions,
     originM: [0, 0, 0], cellSizeM: .01 }, iterations: 42,
   temperatureK: Float32Array.from({ length: cells }, (_value, index) => 300 + index % 42 / 2),
   heatFluxWm2: new Float32Array(cells * 3).fill(1),
@@ -150,6 +150,33 @@ test("GPU adapter failure blocks without retry or fallback", async () => {
   expect(session.report).toMatchObject({ status: "blocked",
     blocker: { stage: "cancellation-and-recovery", message: expect.stringContaining("injected GPU failure") } });
   expect(run).toHaveBeenCalledOnce();
+});
+
+test("blocks a solver grid that drifts from the planned component voxel grid", async () => {
+  const sample = await benchmark();
+  let calls = 0;
+  const adapter: SolverAdapter<ThermalSolveInput, VerifiedThermalOutput> = {
+    capability: { kind: "thermal" }, supports: () => ({ supported: true }),
+    async run(request, signal, emit) {
+      calls += 1;
+      if (calls === 1) {
+        emit({ progress: .2 });
+        await new Promise<void>((_resolve, reject) => signal.addEventListener("abort",
+          () => reject(signal.reason), { once: true }));
+      }
+      const result = output([41, 8, 8]);
+      const packed = await packInteractiveThermalResult(request, result);
+      return { ...packed, truthLevel: "converged-numerical-solve",
+        output: { result, verification } };
+    },
+  };
+  gateFakes.study.mockResolvedValue({ request: sample.request, result: {}, artifactIds: [] });
+  gateFakes.adapter = adapter;
+
+  const session = await runThermalBrowserGate();
+
+  expect(session.report).toMatchObject({ status: "blocked",
+    blocker: { stage: "numerical-evidence", message: expect.stringMatching(/grid.*planned/i) } });
 });
 
 test("external abort propagates and never becomes a blocked report", async () => {

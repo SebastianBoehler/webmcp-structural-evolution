@@ -5,14 +5,15 @@ import { revisionId } from "../../domain/revisions";
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
 const finite = z.number().finite();
 const nonnegative = finite.nonnegative();
+const gridDimension = z.number().int().positive().max(262_144);
 const passedContent = z.object({
   status: z.literal("passed"), evidenceSource: z.literal("live-browser-webgpu-wasm"),
   recordedAt: z.string().datetime(), sourceRevision: digest,
   sourceArtifactIds: z.tuple([digest, digest, digest]),
   studyId: z.literal("se6-upper-arm-thermal"),
   device: z.object({ vendor: z.string(), architecture: z.string() }).strict(),
-  grid: z.object({ cellDimensions: z.tuple([z.literal(42), z.literal(8), z.literal(8)]),
-    activeCellCount: z.literal(2_688) }).strict(),
+  grid: z.object({ cellDimensions: z.tuple([gridDimension, gridDimension, gridDimension]),
+    activeCellCount: z.number().int().positive().max(262_144) }).strict(),
   boundaries: z.object({
     mounting: z.object({ selectedAreaM2: z.literal(.0064), representedAreaM2: finite.positive(),
       relativeAreaError: nonnegative.max(.02) }).strict(),
@@ -32,6 +33,9 @@ const passedContent = z.object({
     mediaType: z.string().min(1), persisted: z.literal(true) }).strict()).length(3),
   timingsMs: z.object({ build: nonnegative, solve: nonnegative, total: nonnegative }).strict(),
 }).strict().superRefine((value, context) => {
+  if (value.grid.activeCellCount > value.grid.cellDimensions.reduce((product, size) => product * size, 1)) {
+    context.addIssue({ code: "custom", message: "Thermal active-cell evidence exceeds the reported grid" });
+  }
   if (value.solve.maximumTemperatureK < value.solve.minimumTemperatureK) {
     context.addIssue({ code: "custom", message: "Thermal temperature range is inverted" });
   }

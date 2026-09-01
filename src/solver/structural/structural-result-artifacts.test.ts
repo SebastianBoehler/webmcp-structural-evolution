@@ -39,7 +39,7 @@ describe("structural result artifacts", () => {
         referenceSolver: "rust-wasm-hex8-f64",
         residualMethod: "webgpu-f32-pcg-recurrence",
         fixtureCellDimensions: { axial: [20, 2, 2], cantilever: [24, 4, 2] },
-        maxIterations: 512,
+        maxIterations: 1_024,
         thresholds: {
           relativeResidual: 1e-5, relativeForceBalance: 1e-4, wasmRelativeL2: 2e-3,
           axialRelativeError: 0.02, cantileverRelativeError: 0.05,

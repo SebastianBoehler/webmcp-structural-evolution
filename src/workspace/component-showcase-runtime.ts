@@ -45,8 +45,15 @@ export async function runComponentStudy<Input, Output>(
     clock: { now: () => new Date().toISOString(), elapsedMs: () => 0 },
   });
   let launchedJobId: string | undefined;
+  let rejectCancellation!: (reason?: unknown) => void;
+  const cancellationFailure = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
   const cancel = () => {
-    if (launchedJobId) void workspace.cancelJob(launchedJobId).catch(() => undefined);
+    if (launchedJobId) void workspace.cancelJob(launchedJobId).catch((error) => {
+      workspace.dispose();
+      rejectCancellation(error);
+    });
     else workspace.dispose();
   };
   signal.addEventListener("abort", cancel, { once: true });
@@ -56,7 +63,7 @@ export async function runComponentStudy<Input, Output>(
       studyId, expectedRevision: model.document.revision,
     });
     launchedJobId = launched.jobId;
-    const entry = await new Promise<ReturnType<typeof workspace.inspectJob>>((resolve) => {
+    const terminalEntry = new Promise<ReturnType<typeof workspace.inspectJob>>((resolve) => {
       const current = workspace.inspectJob(launched.jobId);
       if (terminal.has(current.event.state)) { resolve(current); return; }
       const unsubscribe = workspace.subscribe((event) => {
@@ -66,6 +73,8 @@ export async function runComponentStudy<Input, Output>(
         resolve(event.entry);
       });
     });
+    const entry = await Promise.race([terminalEntry, cancellationFailure]);
+    if (entry.event.state === "cancelled" && signal.aborted) throw signal.reason;
     if (entry.event.state !== "verified" || !capturedRequest || !capturedResult) {
       const detail = entry.event.state === "failed"
         ? ` (${entry.event.error.code}): ${entry.event.error.message}` : "";
