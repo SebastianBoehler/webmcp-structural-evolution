@@ -2,6 +2,8 @@ use std::fmt;
 
 use wasm_bindgen::prelude::*;
 
+pub mod thermal;
+mod thermal_wasm;
 pub mod topology;
 
 #[derive(Debug, PartialEq, Eq)]

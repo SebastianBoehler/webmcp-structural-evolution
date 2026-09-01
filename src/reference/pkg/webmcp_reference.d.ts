@@ -33,6 +33,34 @@ export class WasmStructuralReferenceResult {
     readonly von_mises_stress_pa: Float32Array;
 }
 
+export class WasmThermalFieldEvaluation {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly energy_imbalance_w: number;
+    readonly face_areas_m2: Float64Array;
+    readonly face_heat_flux_wm2: Float64Array;
+    readonly heat_flux_wm2: Float64Array;
+    readonly heat_input_w: number;
+    readonly heat_output_w: number;
+    readonly relative_energy_imbalance: number;
+}
+
+export class WasmThermalReferenceResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly face_areas_m2: Float64Array;
+    readonly face_heat_flux_wm2: Float64Array;
+    readonly heat_flux_wm2: Float64Array;
+    readonly heat_input_w: number;
+    readonly heat_output_w: number;
+    readonly iterations: number;
+    readonly relative_energy_imbalance: number;
+    readonly relative_residual: number;
+    readonly temperature_k: Float64Array;
+}
+
 export class WasmTopologyResult {
     private constructor();
     free(): void;
@@ -59,6 +87,8 @@ export function evaluate_structural_field(input: any, displacement_m: Float32Arr
 
 export function evaluate_structural_iterate_f64(input: any, displacement_m: Float64Array): WasmStructuralIterateEvaluation;
 
+export function evaluate_thermal_field_wasm(value: any, temperature_k: Float64Array): WasmThermalFieldEvaluation;
+
 export function optimize_assembly_frame(preset: string, input: any): WasmTopologyResult;
 
 export function optimize_demo_frame(preset: string): WasmTopologyResult;
@@ -67,11 +97,12 @@ export function relative_l2(expected: Float32Array, actual: Float32Array): numbe
 
 export function solve_structural_reference(input: any): WasmStructuralReferenceResult;
 
+export function solve_thermal_reference_wasm(value: any): WasmThermalReferenceResult;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbg_wasmtopologyresult_free: (a: number, b: number) => void;
     readonly optimize_assembly_frame: (a: number, b: number, c: any) => [number, number, number];
     readonly optimize_demo_frame: (a: number, b: number) => [number, number, number];
@@ -111,6 +142,27 @@ export interface InitOutput {
     readonly wasmstructuralreferenceresult_iterations: (a: number) => number;
     readonly wasmstructuralreferenceresult_relative_residual: (a: number) => number;
     readonly wasmstructuralreferenceresult_von_mises_stress_pa: (a: number) => [number, number];
+    readonly __wbg_wasmthermalfieldevaluation_free: (a: number, b: number) => void;
+    readonly __wbg_wasmthermalreferenceresult_free: (a: number, b: number) => void;
+    readonly evaluate_thermal_field_wasm: (a: any, b: number, c: number) => [number, number, number];
+    readonly solve_thermal_reference_wasm: (a: any) => [number, number, number];
+    readonly wasmthermalfieldevaluation_energy_imbalance_w: (a: number) => number;
+    readonly wasmthermalfieldevaluation_face_areas_m2: (a: number) => [number, number];
+    readonly wasmthermalfieldevaluation_face_heat_flux_wm2: (a: number) => [number, number];
+    readonly wasmthermalfieldevaluation_heat_flux_wm2: (a: number) => [number, number];
+    readonly wasmthermalfieldevaluation_heat_input_w: (a: number) => number;
+    readonly wasmthermalfieldevaluation_heat_output_w: (a: number) => number;
+    readonly wasmthermalfieldevaluation_relative_energy_imbalance: (a: number) => number;
+    readonly wasmthermalreferenceresult_face_areas_m2: (a: number) => [number, number];
+    readonly wasmthermalreferenceresult_face_heat_flux_wm2: (a: number) => [number, number];
+    readonly wasmthermalreferenceresult_heat_flux_wm2: (a: number) => [number, number];
+    readonly wasmthermalreferenceresult_iterations: (a: number) => number;
+    readonly wasmthermalreferenceresult_relative_energy_imbalance: (a: number) => number;
+    readonly wasmthermalreferenceresult_temperature_k: (a: number) => [number, number];
+    readonly wasmthermalreferenceresult_heat_input_w: (a: number) => number;
+    readonly wasmthermalreferenceresult_heat_output_w: (a: number) => number;
+    readonly wasmthermalreferenceresult_relative_residual: (a: number) => number;
+    readonly relative_l2: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

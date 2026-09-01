@@ -1,5 +1,6 @@
 type ReferenceModule = typeof import("./pkg/webmcp_reference.js");
 import type { AssemblyTopologyInput } from "../optimization/assembly-topology-input";
+import type { ThermalInput } from "../solver/thermal/thermal-contract";
 
 let referencePromise: Promise<ReferenceModule> | undefined;
 
@@ -218,4 +219,71 @@ export async function evaluateStructuralIterateF64(
     throw new Error("Invalid structural iterate evaluation returned by Wasm.");
   }
   return evaluation;
+}
+
+export interface ThermalReferenceFields {
+  readonly heatFluxWm2: Float64Array;
+  readonly faceHeatFluxWm2: Float64Array;
+  readonly faceAreasM2: Float64Array;
+  readonly heatInputW: number;
+  readonly heatOutputW: number;
+  readonly relativeEnergyImbalance: number;
+}
+
+export interface ThermalReferenceResult extends ThermalReferenceFields {
+  readonly temperatureK: Float64Array;
+  readonly iterations: number;
+  readonly relativeResidual: number;
+}
+
+function thermalFields(result: {
+  readonly heat_flux_wm2: Float64Array; readonly face_heat_flux_wm2: Float64Array;
+  readonly face_areas_m2: Float64Array; readonly heat_input_w: number;
+  readonly heat_output_w: number; readonly relative_energy_imbalance: number;
+}, cells: number): ThermalReferenceFields {
+  const fields = {
+    heatFluxWm2: new Float64Array(result.heat_flux_wm2),
+    faceHeatFluxWm2: new Float64Array(result.face_heat_flux_wm2),
+    faceAreasM2: new Float64Array(result.face_areas_m2),
+    heatInputW: result.heat_input_w, heatOutputW: result.heat_output_w,
+    relativeEnergyImbalance: result.relative_energy_imbalance,
+  };
+  if (fields.heatFluxWm2.length !== cells * 3 || fields.faceHeatFluxWm2.length !== cells * 6
+    || fields.faceAreasM2.length !== cells * 6
+    || !fields.heatFluxWm2.every(finite) || !fields.faceHeatFluxWm2.every(finite)
+    || !fields.faceAreasM2.every(finite)
+    || ![fields.heatInputW, fields.heatOutputW, fields.relativeEnergyImbalance].every(finite)
+    || fields.heatInputW < 0 || fields.heatOutputW < 0 || fields.relativeEnergyImbalance < 0) {
+    throw new Error("Invalid thermal field evaluation returned by Wasm.");
+  }
+  return fields;
+}
+
+export async function solveThermalReference(input: ThermalInput): Promise<ThermalReferenceResult> {
+  const reference = await loadReference(), result = reference.solve_thermal_reference_wasm(input);
+  try {
+    const cells = input.activeCells.length, fields = thermalFields(result, cells);
+    const temperatureK = new Float64Array(result.temperature_k);
+    if (temperatureK.length !== cells || !temperatureK.every(finite)
+      || !Number.isInteger(result.iterations) || result.iterations < 0
+      || !finite(result.relative_residual) || result.relative_residual < 0) {
+      throw new Error("Invalid thermal reference result returned by Wasm.");
+    }
+    return { temperatureK, iterations: result.iterations, relativeResidual: result.relative_residual, ...fields };
+  } finally {
+    result.free();
+  }
+}
+
+export async function evaluateThermalField(
+  input: ThermalInput, temperatureK: Float32Array,
+): Promise<ThermalReferenceFields> {
+  requireFloat32Array(temperatureK, "temperatureK");
+  const reference = await loadReference();
+  const result = reference.evaluate_thermal_field_wasm(input, Float64Array.from(temperatureK));
+  try {
+    return thermalFields(result, input.activeCells.length);
+  } finally {
+    result.free();
+  }
 }

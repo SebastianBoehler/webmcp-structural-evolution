@@ -168,6 +168,172 @@ export class WasmStructuralReferenceResult {
 }
 if (Symbol.dispose) WasmStructuralReferenceResult.prototype[Symbol.dispose] = WasmStructuralReferenceResult.prototype.free;
 
+export class WasmThermalFieldEvaluation {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmThermalFieldEvaluation.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmThermalFieldEvaluationFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmThermalFieldEvaluationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmthermalfieldevaluation_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get energy_imbalance_w() {
+        const ret = wasm.wasmthermalfieldevaluation_energy_imbalance_w(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get face_areas_m2() {
+        const ret = wasm.wasmthermalfieldevaluation_face_areas_m2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get face_heat_flux_wm2() {
+        const ret = wasm.wasmthermalfieldevaluation_face_heat_flux_wm2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get heat_flux_wm2() {
+        const ret = wasm.wasmthermalfieldevaluation_heat_flux_wm2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get heat_input_w() {
+        const ret = wasm.wasmthermalfieldevaluation_heat_input_w(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get heat_output_w() {
+        const ret = wasm.wasmthermalfieldevaluation_heat_output_w(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get relative_energy_imbalance() {
+        const ret = wasm.wasmthermalfieldevaluation_relative_energy_imbalance(this.__wbg_ptr);
+        return ret;
+    }
+}
+if (Symbol.dispose) WasmThermalFieldEvaluation.prototype[Symbol.dispose] = WasmThermalFieldEvaluation.prototype.free;
+
+export class WasmThermalReferenceResult {
+    static __wrap(ptr) {
+        const obj = Object.create(WasmThermalReferenceResult.prototype);
+        obj.__wbg_ptr = ptr;
+        WasmThermalReferenceResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        WasmThermalReferenceResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_wasmthermalreferenceresult_free(ptr, 0);
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get face_areas_m2() {
+        const ret = wasm.wasmthermalreferenceresult_face_areas_m2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get face_heat_flux_wm2() {
+        const ret = wasm.wasmthermalreferenceresult_face_heat_flux_wm2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get heat_flux_wm2() {
+        const ret = wasm.wasmthermalreferenceresult_heat_flux_wm2(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    get heat_input_w() {
+        const ret = wasm.wasmthermalreferenceresult_heat_input_w(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get heat_output_w() {
+        const ret = wasm.wasmthermalreferenceresult_heat_output_w(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get iterations() {
+        const ret = wasm.wasmthermalreferenceresult_iterations(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get relative_energy_imbalance() {
+        const ret = wasm.wasmthermalreferenceresult_relative_energy_imbalance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get relative_residual() {
+        const ret = wasm.wasmthermalreferenceresult_relative_residual(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Float64Array}
+     */
+    get temperature_k() {
+        const ret = wasm.wasmthermalreferenceresult_temperature_k(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+}
+if (Symbol.dispose) WasmThermalReferenceResult.prototype[Symbol.dispose] = WasmThermalReferenceResult.prototype.free;
+
 export class WasmTopologyResult {
     static __wrap(ptr) {
         const obj = Object.create(WasmTopologyResult.prototype);
@@ -343,6 +509,21 @@ export function evaluate_structural_iterate_f64(input, displacement_m) {
 }
 
 /**
+ * @param {any} value
+ * @param {Float64Array} temperature_k
+ * @returns {WasmThermalFieldEvaluation}
+ */
+export function evaluate_thermal_field_wasm(value, temperature_k) {
+    const ptr0 = passArrayF64ToWasm0(temperature_k, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.evaluate_thermal_field_wasm(value, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmThermalFieldEvaluation.__wrap(ret[0]);
+}
+
+/**
  * @param {string} preset
  * @param {any} input
  * @returns {WasmTopologyResult}
@@ -398,6 +579,18 @@ export function solve_structural_reference(input) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return WasmStructuralReferenceResult.__wrap(ret[0]);
+}
+
+/**
+ * @param {any} value
+ * @returns {WasmThermalReferenceResult}
+ */
+export function solve_thermal_reference_wasm(value) {
+    const ret = wasm.solve_thermal_reference_wasm(value);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return WasmThermalReferenceResult.__wrap(ret[0]);
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -629,6 +822,12 @@ const WasmStructuralIterateEvaluationFinalization = (typeof FinalizationRegistry
 const WasmStructuralReferenceResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmstructuralreferenceresult_free(ptr, 1));
+const WasmThermalFieldEvaluationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmthermalfieldevaluation_free(ptr, 1));
+const WasmThermalReferenceResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_wasmthermalreferenceresult_free(ptr, 1));
 const WasmTopologyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wasmtopologyresult_free(ptr, 1));
