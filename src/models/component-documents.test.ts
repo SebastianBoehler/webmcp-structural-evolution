@@ -5,8 +5,6 @@ import { createOcctBridge } from "../cad/kernel/occt-bridge";
 import { normalizeDensity, normalizePressure } from "../domain/engineering-units";
 import { rebuildDocument } from "../cad/kernel/feature-rebuild";
 import { resolveNamedSelections } from "../cad/kernel/named-selection-resolution";
-import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
-import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { referenceAssemblyInstance } from "../samples/reference-drone-assembly";
 import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
 import { SE6_CATALOG } from "../samples/cobot/cobot-catalog";
@@ -65,13 +63,11 @@ describe("authoritative component documents", () => {
     const model = await droneMotorSideArmDocument();
     const sourceCase = DRONE_ARM_FOUNDATION_STUDY.study.loadCases[0]!;
     const material = DRONE_ARM_FOUNDATION_STUDY.study.material;
-    const live = compileLiveTopologyContext(initialDroneWorkspace);
-
     expect(model.document.materials).toEqual(expect.arrayContaining([expect.objectContaining({
       id: material.id, densityKgM3: normalizeDensity(material.density).value,
       youngsModulusPa: normalizePressure(material.youngsModulus).value,
     })]));
-    expect(model.supports.map(({ region }) => region)).toEqual(live.input.supports);
+    expect(model.supports.map(({ region }) => region)).toEqual(sourceCase.fixedRegions);
     expect(model.loads[0]).toMatchObject({ region: sourceCase.forces[0]!.region,
       forceN: [sourceCase.forces[0]!.vector.x.value, sourceCase.forces[0]!.vector.y.value, sourceCase.forces[0]!.vector.z.value] });
     expect(model.protectedInterfaces).toEqual(DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts.map((mount) => ({ id: mount.id, mount })));
@@ -109,25 +105,33 @@ describe("authoritative component documents", () => {
     ]));
   });
 
-  it("resolves an offset retained support by its position rather than opposite the load", async () => {
+  it("keeps the exact retained support stable while the load moves and changes direction", async () => {
     const model = await droneMotorSideArmDocument();
-    const document = await withDroneComponentStudies(model.document, {
-      bodyId: "body-interface-body",
-      supports: [{ id: "offset-support", region: { centerM: [0, 0.08, 0.003] } }],
-      loads: [{ region: { id: "east-load", centerM: [0.1, 0, 0.003] }, forceN: [1, 0, 0] }],
-      protectedInterfaces: model.protectedInterfaces,
-    });
     const bridge = createOcctBridge(await OcctKernel.init());
     try {
-      const rebuilt = await rebuildDocument(
-        bridge, document, ["semantic-mesh"], new AbortController().signal,
-      );
-      const resolved = resolveNamedSelections(document, rebuilt.semanticMesh!.faces)
-        .find(({ selectionId }) => selectionId === "offset-support");
-      const face = rebuilt.semanticMesh!.faces.find(({ id }) => id === resolved?.topologyId);
+      const resolveSupport = async (load: Readonly<{ region: unknown; forceN: readonly number[] }>) => {
+        const document = await withDroneComponentStudies(model.document, {
+          bodyId: "body-interface-body",
+          supports: [{ id: "offset-support", region: { centerM: [0, 0.08, 0.003] } }],
+          loads: [load], protectedInterfaces: model.protectedInterfaces,
+        });
+        const rebuilt = await rebuildDocument(
+          bridge, document, ["semantic-mesh"], new AbortController().signal,
+        );
+        const resolved = resolveNamedSelections(document, rebuilt.semanticMesh!.faces)
+          .find(({ selectionId }) => selectionId === "offset-support");
+        expect(resolved).toBeDefined();
+        return resolved!.topologyId;
+      };
 
-      expect(face?.signature.centroidM[1]).toBeGreaterThan(0.01);
-      expect(Math.abs(face!.signature.centroidM[0])).toBeLessThan(1e-9);
+      const eastLoadSupport = await resolveSupport({
+        region: { id: "moving-load", centerM: [0.1, 0, 0.003] }, forceN: [1, 0, 0],
+      });
+      const northLoadSupport = await resolveSupport({
+        region: { id: "moving-load", centerM: [0, 0.2, 0.003] }, forceN: [0, 1, 0],
+      });
+
+      expect(northLoadSupport).toBe(eastLoadSupport);
     } finally { bridge.dispose(); }
   });
 

@@ -148,8 +148,7 @@ export async function droneMotorSideArmDocument(): Promise<AuthoritativeComponen
   const interfaceId = motor.loadContributions[0]?.id;
   if (!sourceForce || !load || !interfaceId) throw new Error("Drone foundation load is unresolved");
   const compiled = await compile("drone-motor-side-arm", "Reference drone motor-side parametric arm", DRONE_ARM_FOUNDATION_STUDY.assembly, DRONE_ARM_FOUNDATION_STUDY.components, DRONE_ARM_FOUNDATION_STUDY.study.material);
-  const supports = sourceCase.fixedRegions.map((region, index) =>
-    ({ id: region.id, region: live.input.supports[index] }));
+  const supports = sourceCase.fixedRegions.map((region) => ({ id: region.id, region }));
   const protectedInterfaces = DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts
     .map((mount) => ({ id: mount.id, mount }));
   const loads = [{ instanceId: motorInstance.instanceId, interfaceId,

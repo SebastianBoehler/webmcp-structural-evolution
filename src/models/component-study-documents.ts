@@ -71,6 +71,14 @@ function sourceCenter(value: unknown, label: string): Point {
   return point(source.centerM ?? source.center ?? source.position, label);
 }
 
+function sourceSize(value: unknown, label: string): Point {
+  if (!value || typeof value !== "object") throw new Error(`Drone study ${label} is unresolved`);
+  const source = value as Record<string, unknown>;
+  const size = point(source.sizeM ?? source.size, label);
+  if (size.some((entry) => entry <= 0)) throw new Error(`Drone study ${label} is not positive`);
+  return size;
+}
+
 function faceToward(
   document: DesignDocument, bodyId: string, id: string, sourcePosition: Point,
 ): FaceSpec {
@@ -89,6 +97,36 @@ function faceToward(
     score: Math.abs(sourcePosition[axis] - center[axis]) / dimensions[axis] }));
   const axis = ranked.sort((left, right) => right.score - left.score)[0]!.axis;
   return { id, axis, side: sourcePosition[axis] < center[axis] ? -1 : 1 };
+}
+
+function supportFaceFromRegion(
+  document: DesignDocument, bodyId: string, id: string, region: unknown,
+): FaceSpec {
+  const body = document.bodies.find((candidate) => candidate.id === bodyId);
+  const feature = body && document.features.find((candidate) => candidate.id === body.featureId);
+  const sketch = feature?.kind === "extrude"
+    ? document.sketches.find((candidate) => candidate.id === feature.sketchId) : undefined;
+  const rectangle = sketch?.entities.length === 1 ? sketch.entities[0] : undefined;
+  if (!feature || feature.kind !== "extrude" || !sketch || rectangle?.kind !== "rectangle") {
+    throw new Error(`Drone study body is not a box extrusion: ${bodyId}`);
+  }
+  const dimensions = [literal(rectangle.sizeM[0]), literal(rectangle.sizeM[1]), literal(feature.distanceM)] as Point;
+  const localCenter = [literal(rectangle.centerM[0]), literal(rectangle.centerM[1]), dimensions[2] / 2] as Point;
+  const center = applyPoint(resolveDocumentFrame(document, sketch.plane.slice("frame:".length)), localCenter);
+  const position = sourceCenter(region, "support");
+  const offsets = ([0, 1, 2] as const).map((axis) =>
+    Math.abs(position[axis] - center[axis]) / dimensions[axis]);
+  const directional = Math.max(...offsets);
+  const supportSize = directional > 1e-12 ? undefined : sourceSize(region, "support geometry");
+  const scores = supportSize === undefined ? offsets : ([0, 1, 2] as const).map((axis) =>
+    1 - supportSize[axis] / dimensions[axis]);
+  const ranked = ([0, 1, 2] as const).map((axis) => ({ axis, score: scores[axis] }))
+    .sort((left, right) => right.score - left.score);
+  if (Math.abs(ranked[0]!.score - ranked[1]!.score) <= 1e-12) {
+    throw new Error("Drone support region does not identify a unique exact face axis");
+  }
+  const axis = ranked[0]!.axis;
+  return { id, axis, side: position[axis] > center[axis] ? 1 : -1 };
 }
 
 const content = (document: DesignDocument) => {
@@ -111,13 +149,8 @@ export async function withDroneComponentStudies(
   const support = intent.supports[0]!, load = intent.loads[0]!;
   const loadRegion = load.region as { id?: unknown };
   if (typeof loadRegion.id !== "string") throw new Error("Drone load region requires a canonical ID");
-  const supportPosition = sourceCenter(support.region, "support");
   const loadPosition = sourceCenter(load.region, "load region");
-  const projectedSupport = supportPosition.map((value, axis) =>
-    value + value - loadPosition[axis]!) as unknown as Point;
-  const supportFace = faceToward(
-    document, intent.bodyId, support.id, projectedSupport,
-  );
+  const supportFace = supportFaceFromRegion(document, intent.bodyId, support.id, support.region);
   const loadFace = faceToward(
     document, intent.bodyId, loadRegion.id, loadPosition,
   );
