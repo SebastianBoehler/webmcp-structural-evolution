@@ -23,7 +23,7 @@ describe("workspace exact-model lineage authority", () => {
 
     await expect(service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    })).rejects.toThrow(/entity|body|document|lineage/i);
+    })).rejects.toThrow(/workspace-owned production planner/i);
     expect(run).not.toHaveBeenCalled();
     await expect(store.get(record.id)).resolves.toBeUndefined();
   });
@@ -41,7 +41,7 @@ describe("workspace exact-model lineage authority", () => {
 
     await expect(service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    })).rejects.toThrow(/payload|voxel|digest|thermal/i);
+    })).rejects.toThrow(/workspace-owned production planner/i);
     expect(run).not.toHaveBeenCalled();
     await expect(store.get(record.id)).resolves.toBeUndefined();
   });
@@ -68,7 +68,9 @@ describe("workspace exact-model lineage authority", () => {
 
   it("fails a solver result that omits authoritative request-input lineage", async () => {
     const plan = await exactCobotPlan("unlined-result");
-    const { service } = await serviceForPlans([plan], (request) => thermalResult(request, 5, false));
+    const { service } = await serviceForPlans(
+      [plan], (request) => thermalResult(request, 5, false), undefined, true,
+    );
 
     const launched = await service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
@@ -83,7 +85,9 @@ describe("workspace exact-model lineage authority", () => {
 
   it("verifies an exact cobot CAD root to derived voxel to linked result chain", async () => {
     const plan = await exactCobotPlan("exact-cobot-chain");
-    const { service, store } = await serviceForPlans([plan], (request) => thermalResult(request, 7));
+    const { service, store } = await serviceForPlans(
+      [plan], (request) => thermalResult(request, 7), undefined, true,
+    );
 
     const launched = await service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,

@@ -8,6 +8,7 @@ import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
 import type { Study } from "../engineering/study-schema";
 import { WorkspaceError } from "./workspace-cad";
 import { validateStudyInputAuthority } from "./workspace-study-authority";
+import type { ExactComponentSource } from "./exact-component-source";
 
 type StudyKind = Study["kind"];
 type StudyOfKind<Kind extends StudyKind> = Extract<Study, { kind: Kind }>;
@@ -21,6 +22,7 @@ export type StudyRequestPlanner<Kind extends StudyKind> = (input: Readonly<{
   document: DesignDocument;
   study: StudyOfKind<Kind>;
   artifacts: readonly ArtifactRecord[];
+  exactSource(): Promise<ExactComponentSource>;
 }>) => Promise<StudyCompilation>;
 
 export type StudyRequestPlanners = Partial<{
@@ -44,6 +46,7 @@ export async function validateStudyCompilation(
   document: DesignDocument,
   study: DesignDocument["studies"][number],
   activeArtifacts: readonly ArtifactRecord[],
+  trustedProductionPlanner = false,
 ): Promise<StudyCompilation> {
   const ownedInputs = compilation.inputs.map((entry) => ({
     record: own(entry.record),
@@ -60,6 +63,12 @@ export async function validateStudyCompilation(
   const availableIds = new Set(activeArtifacts.map(({ id }) => id));
   const seen = new Set<string>();
   const inputs: ArtifactStoreBatchEntry[] = [];
+  if (ownedInputs.length > 0 && !trustedProductionPlanner) {
+    throw new WorkspaceError(
+      "invalid-study-input",
+      "Derived study inputs require a workspace-owned production planner receipt",
+    );
+  }
   for (const entry of ownedInputs) {
     const record = await defineArtifactRecord(entry.record);
     if (seen.has(record.id)) {

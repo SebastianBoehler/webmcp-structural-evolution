@@ -1,7 +1,7 @@
 import { defineDesignDocument, type DesignDocument } from "../cad/document-schema";
 import type { AssemblyDraft } from "../domain/assembly-model";
 import type { ComponentDefinition } from "../domain/component-model";
-import { normalizeDensity, normalizePressure, type DensitySchema, type PressureSchema } from "../domain/engineering-units";
+import { normalizeDensity, normalizeMass, normalizePressure, type DensitySchema, type PressureSchema } from "../domain/engineering-units";
 import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
@@ -11,6 +11,9 @@ import { SE6_CATALOG } from "../samples/cobot/cobot-catalog";
 import { SE6_JOINTS, SE6_STAGE_IDS } from "../samples/cobot/cobot-mechanism-geometry";
 import { se6Study } from "../samples/cobot/cobot-study";
 import type { ComponentCadAuthority, ComponentCadSource } from "./component-cad-authority";
+import {
+  withDroneComponentStudies, withSe6MechanismStudy, withUpperArmThermalStudy,
+} from "./component-study-documents";
 
 type Instance = AssemblyDraft["components"][number];
 type InterfaceBinding = Readonly<{ id: string; instanceId: string; interfaceId: string }>;
@@ -21,6 +24,7 @@ export interface AuthoritativeComponentDocument {
   readonly source: ComponentCadSource;
   readonly document: DesignDocument;
   readonly componentInstances: readonly string[];
+  readonly bodyMassKg: Readonly<Record<string, number>>;
   readonly interfaces: readonly InterfaceBinding[];
   readonly protectedInterfaces: readonly Readonly<{ id: string; mount: unknown }>[];
   readonly supports: readonly Readonly<{ id: string; region: unknown }>[];
@@ -75,7 +79,7 @@ export function compileMaterial(material: StudyMaterial) {
 
 async function compile(
   id: string, label: string, assembly: AssemblyDraft, catalog: readonly ComponentDefinition[], material?: StudyMaterial,
-): Promise<Pick<AuthoritativeComponentDocument, "document" | "componentInstances" | "interfaces">> {
+): Promise<Pick<AuthoritativeComponentDocument, "document" | "componentInstances" | "interfaces" | "bodyMassKg">> {
   const frames: unknown[] = [{ id: "world", label: "World", transform: zeroTransform }];
   const sketches: unknown[] = [], features: unknown[] = [], bodies: unknown[] = [], components: unknown[] = [], instances: unknown[] = [];
   const interfaces: InterfaceBinding[] = [];
@@ -100,7 +104,10 @@ async function compile(
     id, label, schemaVersion: 6, units: { length: "m", angle: "rad", mass: "kg" }, createdBy: { kind: "agent", id: "component-document-compiler" },
     frames, parameters: [], sketches, features, bodies, components, instances, mates: [], namedSelections: [],
     materials: material ? [compileMaterial(material)] : [], studies: [],
-  }), componentInstances: assembly.components.map(({ instanceId }) => instanceId), interfaces };
+  }), componentInstances: assembly.components.map(({ instanceId }) => instanceId), interfaces,
+  bodyMassKg: Object.freeze(Object.fromEntries(assembly.components.map((instance) => [
+    `${instance.instanceId}-body`, normalizeMass(definitionFor(catalog, instance).mass).value * instance.quantity,
+  ]))) };
 }
 
 export async function droneMotorSideArmDocument(): Promise<AuthoritativeComponentDocument> {
@@ -118,7 +125,8 @@ export async function droneMotorSideArmDocument(): Promise<AuthoritativeComponen
   const interfaceId = motor.loadContributions[0]?.id;
   if (!sourceForce || !load || !interfaceId) throw new Error("Drone foundation load is unresolved");
   const compiled = await compile("drone-motor-side-arm", "Reference drone motor-side parametric arm", DRONE_ARM_FOUNDATION_STUDY.assembly, DRONE_ARM_FOUNDATION_STUDY.components, DRONE_ARM_FOUNDATION_STUDY.study.material);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled,
+  const document = await withDroneComponentStudies(compiled.document, load.loadN);
+  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document,
     supports: sourceCase.fixedRegions.map((region, index) => ({ id: region.id, region: live.input.supports[index] })),
     protectedInterfaces: DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts.map((mount) => ({ id: mount.id, mount })),
     loads: [{ instanceId: motorInstance.instanceId, interfaceId, region: sourceForce.region, forceN: load.loadN }], stages: {}, joints: [] };
@@ -128,7 +136,8 @@ export async function se6UpperArmDocument(): Promise<AuthoritativeComponentDocum
   const instance = se6Assembly.components.find(({ instanceId }) => instanceId === "upper-arm-housing");
   if (!instance) throw new Error("SE-6 upper-arm-housing placement is unresolved");
   const compiled = await compile("se6-upper-arm-housing", "SE-6 parametric upper-arm housing", { ...se6Assembly, components: [instance] }, SE6_CATALOG, se6Study.material);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, supports: [], protectedInterfaces: [], loads: [], stages: {}, joints: [] };
+  const document = await withUpperArmThermalStudy(compiled.document);
+  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages: {}, joints: [] };
 }
 
 export function assertStagePartition(stages: Readonly<Record<string, readonly string[]>>, componentInstances: readonly string[]): void {
@@ -153,6 +162,7 @@ export async function se6MechanismDocument(): Promise<AuthoritativeComponentDocu
   const members: Record<(typeof SE6_STAGE_IDS)[number], readonly string[]> = { base: SE6_INSTANCE_GROUPS.base, "axis-1": [...SE6_INSTANCE_GROUPS.shoulder, "cable-segment-shoulder"], "axis-2": [...SE6_INSTANCE_GROUPS.upperArm, "cable-segment-upper"], "axis-3": [...SE6_INSTANCE_GROUPS.forearm, "cable-segment-elbow"], "axis-4": [...SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j4-")), "cable-segment-wrist"], "axis-5": SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j5-")), "axis-6": [...SE6_INSTANCE_GROUPS.wrist.filter((id) => id.startsWith("j6-")), ...SE6_INSTANCE_GROUPS.tooling, "wrist-strain-relief"] };
   const stages = Object.freeze(Object.fromEntries(SE6_STAGE_IDS.map((id) => [id, members[id]])) as Record<string, readonly string[]>);
   assertStagePartition(stages, compiled.componentInstances);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, supports: [], protectedInterfaces: [], loads: [], stages,
+  const document = await withSe6MechanismStudy(compiled.document);
+  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages,
     joints: SE6_JOINTS };
 }

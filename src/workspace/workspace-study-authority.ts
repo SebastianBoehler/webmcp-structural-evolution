@@ -3,7 +3,9 @@ import type { DesignDocument } from "../cad/document-schema";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
 import { digestArtifactPayload } from "../engineering/artifact-store";
 import { digestCadOutputPayload, SemanticMeshPayloadSchema } from "../cad/rebuild-payload";
+import { resolveNamedSelections } from "../cad/kernel/named-selection-resolution";
 import { MechanismAdapterInputSchema } from "../simulation/mechanism-adapter";
+import { defineMechanismInput } from "../simulation/mechanism-contract";
 import type { StructuralSolveInput } from "../solver/structural/structural-contract";
 import { validateStructuralGeometryBinding } from "../solver/structural/structural-geometry-binding";
 import { validateVoxelPayloadShape } from "../solver/structural/structural-payload-validation";
@@ -64,7 +66,9 @@ function exactRoot(
 ): ArtifactRecord {
   const record = active.get(id);
   if (!record || record.kind !== kind
-    || record.mediaType !== mediaType || record.units !== "m" || record.producer.name !== "occt-wasm") {
+    || record.sourceRevision !== request.sourceRevision
+    || record.mediaType !== mediaType || record.units !== "m"
+    || !["occt-wasm", "workspace-exact-body-brep"].includes(record.producer.name)) {
     throw new Error(`Study requires an active current exact CAD ${kind} root`);
   }
   const entityDependencies = new Set(record.dependencies.flatMap((dependency) =>
@@ -72,7 +76,60 @@ function exactRoot(
   const missing = requiredGeometryReferences(request.document, bodyIds)
     .find((reference) => !entityDependencies.has(reference));
   if (missing) throw new Error(`Exact CAD root omits current model hierarchy: ${missing}`);
+  if (record.producer.name === "workspace-exact-body-brep") {
+    const roots = record.dependencies.flatMap((dependency) =>
+      dependency.kind === "artifact" ? [dependency.artifactId] : []);
+    if (roots.length !== 1) throw new Error("Exact body BREP must descend from one OCCT root");
+    const root = exactRoot(request, active, roots[0]!, "brep",
+      "application/vnd.opencascade.brep", request.document.bodies.map(({ id }) => id));
+    if (root.producer.name !== "occt-wasm") throw new Error("Exact body BREP root is not authoritative OCCT");
+  }
   return record;
+}
+
+async function validateMechanism(
+  request: EngineeringSolveRequest<unknown>, active: ReadonlyMap<string, ArtifactRecord>,
+): Promise<void> {
+  const parsed = MechanismAdapterInputSchema.parse(request.input);
+  if (request.inputArtifacts.length !== 3) {
+    throw new Error("Mechanism study requires exact CAD and body-dynamics roots");
+  }
+  exactRoot(request, active, request.inputArtifacts.find(({ kind }) => kind === "brep")?.id ?? "",
+    "brep", "application/vnd.opencascade.brep", request.document.bodies.map(({ id }) => id));
+  exactRoot(request, active, request.inputArtifacts.find(({ kind }) => kind === "render-mesh")?.id ?? "",
+    "render-mesh", "application/vnd.structural-evolution.semantic-mesh",
+    request.document.bodies.map(({ id }) => id));
+  const dynamics = request.inputArtifacts.find(({ kind }) => kind === "body-dynamics");
+  const rootIds = new Set(request.inputArtifacts
+    .filter(({ kind }) => kind === "brep" || kind === "render-mesh").map(({ id }) => id));
+  const dynamicsRootIds = dynamics?.dependencies.flatMap((dependency) =>
+    dependency.kind === "artifact" ? [dependency.artifactId] : []) ?? [];
+  const dynamicsEntities = new Set(dynamics?.dependencies.flatMap((dependency) =>
+    dependency.kind === "entity" ? [dependency.reference] : []) ?? []);
+  if (!dynamics || dynamics.sourceRevision !== request.sourceRevision
+    || dynamics.producer.name !== "workspace-exact-body-dynamics"
+    || dynamics.mediaType !== "application/vnd.structural-evolution.body-dynamics-v1"
+    || dynamicsRootIds.length !== 2 || dynamicsRootIds.some((id) => !rootIds.has(id))
+    || !requiredGeometryReferences(request.document, request.document.bodies.map(({ id }) => id))
+      .every((reference) => dynamicsEntities.has(reference))) {
+    throw new Error("Mechanism body dynamics do not descend from the active exact CAD roots");
+  }
+  const mechanism = await defineMechanismInput(parsed.mechanismInput);
+  if (mechanism.sourceRevision !== request.sourceRevision || mechanism.studyId !== request.studyId) {
+    throw new Error("Mechanism compilation is not bound to the requested revision and study");
+  }
+  const sourceBodies = mechanism.bodies.flatMap(({ sourceBodyIds }) => sourceBodyIds);
+  const expectedBodies = request.document.bodies.map(({ id }) => id).sort();
+  if (sourceBodies.length !== expectedBodies.length
+    || [...sourceBodies].sort().some((id, index) => id !== expectedBodies[index])) {
+    throw new Error("Mechanism compilation does not cover the active component bodies exactly once");
+  }
+  const roots = new Set(request.inputArtifacts.map(({ id }) => id));
+  if (mechanism.colliders.some(({ sourceBodyId, sourceArtifactIds }) =>
+    !sourceBodies.includes(sourceBodyId) || sourceArtifactIds.length !== roots.size
+    || sourceArtifactIds.some((id) => !roots.has(id)))) {
+    throw new Error("Mechanism colliders do not descend from both active exact CAD roots");
+  }
 }
 
 function typedThermalVoxel(input: ThermalSolveInput["voxelPayload"]): boolean {
@@ -134,10 +191,12 @@ async function validateStructural(
     || await digestArtifactPayload(request.input.voxelPayload) !== voxelInput.contentDigest) {
     throw new Error("Structural study requires a canonical current exact-derived voxel payload");
   }
+  const resolved = new Map(resolveNamedSelections(request.document, request.input.semanticMeshPayload.faces)
+    .map(({ selectionId, topologyId }) => [selectionId, topologyId]));
   const topologyIds = [...study.supports, ...study.loads.map(({ selectionId }) => selectionId)].map((id) => {
-    const selection = request.document.namedSelections.find((candidate) => candidate.id === id);
-    if (!selection?.reference.stableId) throw new Error(`Structural selection is unresolved: ${id}`);
-    return selection.reference.stableId;
+    const topologyId = resolved.get(id);
+    if (!topologyId) throw new Error(`Structural selection is unresolved: ${id}`);
+    return topologyId;
   });
   validateStructuralGeometryBinding(request, study, topologyIds);
   exactRoot(request, active, request.input.semanticMeshArtifactId, "render-mesh",
@@ -185,8 +244,6 @@ export async function validateStudyInputAuthority(
       await validateTopology(request as EngineeringSolveRequest<TopologySolveInput>, active);
       return;
     case "mechanism":
-      if (!MechanismAdapterInputSchema.safeParse(request.input).success || request.inputArtifacts.length !== 0) {
-        throw new Error("Mechanism study input must be canonical and compiled from its bound exact document");
-      }
+      await validateMechanism(request, active);
   }
 }

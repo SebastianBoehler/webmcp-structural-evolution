@@ -8,12 +8,17 @@ import {
 import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import type { ThermalSolveInput } from "../../solver/thermal/thermal-contract";
 import { produceThermalVoxelMesh } from "../../solver/thermal/thermal-voxelizer";
+import {
+  COBOT_THERMAL_BOUNDARY_AREA_M2, COBOT_THERMAL_CELL_SIZE_M,
+  COBOT_THERMAL_CONDUCTIVITY_W_MK, COBOT_THERMAL_DIMENSIONS,
+  COBOT_THERMAL_HEAT_FLUX_WM2, COBOT_THERMAL_HEAT_INPUT_W,
+  COBOT_THERMAL_MOUNT_TEMPERATURE_K,
+} from "./cobot-thermal-contract";
 
-export const COBOT_THERMAL_DIMENSIONS = [42, 8, 8] as const;
-export const COBOT_THERMAL_CELL_SIZE_M = .01;
-export const COBOT_THERMAL_BOUNDARY_AREA_M2 = .0064;
-export const COBOT_THERMAL_HEAT_FLUX_WM2 = 12_500;
-export const COBOT_THERMAL_HEAT_INPUT_W = 80;
+export {
+  COBOT_THERMAL_BOUNDARY_AREA_M2, COBOT_THERMAL_CELL_SIZE_M,
+  COBOT_THERMAL_DIMENSIONS, COBOT_THERMAL_HEAT_FLUX_WM2, COBOT_THERMAL_HEAT_INPUT_W,
+} from "./cobot-thermal-contract";
 
 export interface CobotThermalBenchmark {
   readonly request: EngineeringSolveRequest<ThermalSolveInput>;
@@ -82,11 +87,11 @@ async function thermalDocument(geometry: DesignDocument, mesh: SemanticMeshPaylo
     ],
     materials: [{ id: "aluminum-6061", kind: "isotropic", densityKgM3: 2_700,
       youngsModulusPa: 69e9, poissonRatio: .33, failureStressPa: 276e6,
-      thermalConductivityWmK: 167 }],
+      thermalConductivityWmK: COBOT_THERMAL_CONDUCTIVITY_W_MK }],
     studies: [{ id: "se6-upper-arm-thermal", kind: "thermal-steady",
       bodyIds: ["upper-arm-link"], materialId: "aluminum-6061",
       boundaries: {
-        temperatures: [{ selectionId: "mounting-interface", temperatureK: 300 }],
+        temperatures: [{ selectionId: "mounting-interface", temperatureK: COBOT_THERMAL_MOUNT_TEMPERATURE_K }],
         heatFluxes: [{ selectionId: "motor-interface", heatFluxWm2: COBOT_THERMAL_HEAT_FLUX_WM2 }],
       } }],
   });

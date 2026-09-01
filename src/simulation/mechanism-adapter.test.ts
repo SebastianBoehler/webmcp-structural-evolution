@@ -1,26 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createArtifactIndex } from "../cad/artifact-contract";
+import { createArtifactIndex, defineArtifactRecord } from "../cad/artifact-contract";
 import { invalidateArtifacts } from "../cad/artifact-invalidation";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
 import { applyDesignTransaction } from "../cad/transactions";
 import { createArtifactStore, digestArtifactPayload } from "../engineering/artifact-store";
 import { canonicalJson } from "../domain/canonical-json";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
+import type { MechanismInput } from "./mechanism-contract";
 import { mechanismDocument } from "./compile-mechanism-study.test-support";
 
 const seam = vi.hoisted(() => ({
-  compileMechanismStudy: vi.fn(),
+  defineCompiledMechanismStudy: vi.fn(),
+  defineMechanismInput: vi.fn(),
   solveMechanismStudy: vi.fn(),
 }));
 vi.mock("./compile-mechanism-study", () => ({
-  compileMechanismStudy: seam.compileMechanismStudy,
+  defineCompiledMechanismStudy: seam.defineCompiledMechanismStudy,
+}));
+vi.mock("./mechanism-contract", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./mechanism-contract")>(),
+  defineMechanismInput: seam.defineMechanismInput,
 }));
 vi.mock("./mechanism-solver", () => ({ solveMechanismStudy: seam.solveMechanismStudy }));
 
-import { createMechanismAdapter } from "./mechanism-adapter";
+import { createMechanismAdapter, type MechanismAdapterInput } from "./mechanism-adapter";
 
-async function request(kind: "mechanism" | "fea" = "mechanism", input: unknown = { schemaVersion: 1 }) {
+async function request(
+  kind: "mechanism" | "fea" = "mechanism",
+  input: unknown = { schemaVersion: 1, mechanismInput: {} },
+) {
   const base = await mechanismDocument();
   const added = await applyDesignTransaction(base, {
     id: "add-link-length", expectedRevision: base.revision,
@@ -33,15 +42,31 @@ async function request(kind: "mechanism" | "fea" = "mechanism", input: unknown =
   });
   if (!added.ok) throw new Error("mechanism parameter fixture failed");
   const document = added.document;
+  const dependencies = [
+    { kind: "entity" as const, reference: `document:${document.id}` as const },
+    ...document.features.map(({ id }) => ({ kind: "entity" as const, reference: `feature:${id}` as const })),
+    ...document.bodies.map(({ id }) => ({ kind: "entity" as const, reference: `body:${id}` as const })),
+  ];
+  const roots = await Promise.all([
+    defineArtifactRecord({ kind: "brep", sourceRevision: document.revision,
+      producer: { name: "occt-wasm", version: "fixture" }, settingsDigest: "1".repeat(64),
+      contentDigest: "2".repeat(64), units: "m", mediaType: "application/vnd.opencascade.brep",
+      dependencies }),
+    defineArtifactRecord({ kind: "render-mesh", sourceRevision: document.revision,
+      producer: { name: "occt-wasm", version: "fixture" }, settingsDigest: "3".repeat(64),
+      contentDigest: "4".repeat(64), units: "m",
+      mediaType: "application/vnd.structural-evolution.semantic-mesh", dependencies }),
+  ]);
   return defineEngineeringSolveRequest({
     jobId: "mechanism-job", kind, sourceRevision: document.revision,
-    inputArtifacts: [], settings: {}, studyId: "motion", document, input,
-  }) as Promise<EngineeringSolveRequest<{ schemaVersion: 1 }>>;
+    inputArtifacts: roots, settings: {}, studyId: "motion", document, input,
+  }) as Promise<EngineeringSolveRequest<MechanismAdapterInput>>;
 }
 
 describe("mechanism solver adapter", () => {
   beforeEach(() => {
-    seam.compileMechanismStudy.mockReset();
+    seam.defineCompiledMechanismStudy.mockReset();
+    seam.defineMechanismInput.mockReset();
     seam.solveMechanismStudy.mockReset();
   });
 
@@ -56,12 +81,17 @@ describe("mechanism solver adapter", () => {
       sourceArtifactIds: ["d".repeat(64)], replay: { canonicalBytes, replayDigest: "e".repeat(64) },
       evidence: { engineVersion: "0.18.1", runtimeVersion: "deterministic", settingsDigest: "f".repeat(64) },
     };
-    seam.compileMechanismStudy.mockResolvedValue(compiled);
+    const mechanismInput = { sourceRevision: "bound" } as unknown as MechanismInput;
+    seam.defineMechanismInput.mockImplementation(async () => mechanismInput);
+    seam.defineCompiledMechanismStudy.mockReturnValue(compiled);
     seam.solveMechanismStudy.mockImplementation(async (_compiled, _signal, onStarted) => {
       onStarted({ type: "started", requestId: "worker-request", mechanismInputDigest: "b".repeat(64) });
       return result;
     });
     const solveRequest = await request();
+    seam.defineMechanismInput.mockResolvedValue({
+      ...mechanismInput, sourceRevision: solveRequest.sourceRevision, studyId: solveRequest.studyId,
+    });
     const signal = new AbortController().signal;
     const progress: unknown[] = [];
 
@@ -69,7 +99,11 @@ describe("mechanism solver adapter", () => {
       solveRequest, signal, (event) => progress.push(event),
     );
 
-    expect(seam.compileMechanismStudy).toHaveBeenCalledWith(solveRequest.document, "motion", signal);
+    expect(seam.defineMechanismInput).toHaveBeenCalledWith({});
+    expect(seam.defineCompiledMechanismStudy).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceRevision: solveRequest.sourceRevision, studyId: "motion" }),
+      solveRequest.inputArtifacts,
+    );
     expect(seam.solveMechanismStudy).toHaveBeenCalledWith(compiled, signal, expect.any(Function));
     expect(progress).toEqual([
       { progress: 0.1 },
@@ -96,6 +130,7 @@ describe("mechanism solver adapter", () => {
       { kind: "entity", reference: "instance:base" },
       { kind: "entity", reference: "instance:link" },
       { kind: "entity", reference: "mate:joint" },
+      ...solveRequest.inputArtifacts.map(({ id }) => ({ kind: "artifact", artifactId: id })),
     ]));
     const payload = packed.artifacts[0].payload as unknown;
     expect(payload).toBeInstanceOf(Uint8Array);
@@ -127,7 +162,8 @@ describe("mechanism solver adapter", () => {
     });
     if (!changed.ok) throw new Error("mechanism parameter edit failed");
     const invalidated = invalidateArtifacts(
-      createArtifactIndex(solveRequest.sourceRevision, [packed.artifacts[0].record]),
+      createArtifactIndex(solveRequest.sourceRevision,
+        [...solveRequest.inputArtifacts, packed.artifacts[0].record]),
       changed.changedReferences,
       changed.document.revision,
     );
@@ -145,6 +181,6 @@ describe("mechanism solver adapter", () => {
     controller.abort();
     await expect(createMechanismAdapter().run(await request(), controller.signal, vi.fn()))
       .rejects.toMatchObject({ name: "AbortError" });
-    expect(seam.compileMechanismStudy).not.toHaveBeenCalled();
+    expect(seam.defineMechanismInput).not.toHaveBeenCalled();
   });
 });

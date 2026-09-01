@@ -7,6 +7,7 @@ import { SemanticReferenceSchema } from "./document-schema";
 
 export const ArtifactKindSchema = z.enum([
   "brep",
+  "body-dynamics",
   "render-mesh",
   "collision-mesh",
   "sdf",

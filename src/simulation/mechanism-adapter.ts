@@ -5,11 +5,14 @@ import { canonicalJson } from "../domain/canonical-json";
 import { revisionId } from "../domain/revisions";
 import { digestArtifactPayload } from "../engineering/artifact-store";
 import type { EngineeringSolveRequest, SolverAdapter } from "../engineering/solver-adapter";
-import { compileMechanismStudy } from "./compile-mechanism-study";
+import { defineCompiledMechanismStudy } from "./compile-mechanism-study";
+import { defineMechanismInput } from "./mechanism-contract";
 import type { MechanismResult } from "./mechanism-solver";
 import { solveMechanismStudy } from "./mechanism-solver";
 
-export const MechanismAdapterInputSchema = z.object({ schemaVersion: z.literal(1) }).strict();
+export const MechanismAdapterInputSchema = z.object({
+  schemaVersion: z.literal(1), mechanismInput: z.unknown(),
+}).strict();
 export type MechanismAdapterInput = z.infer<typeof MechanismAdapterInputSchema>;
 
 const unsupported = (message: string, rule: string) => ({
@@ -28,8 +31,8 @@ function capability(request: EngineeringSolveRequest<unknown>) {
     return unsupported("Mechanism adapter input is not canonical", "input must be { schemaVersion: 1 }");
   }
   const study = request.document.studies.find(({ id }) => id === request.studyId);
-  if (!study || study.kind !== "mechanism" || study.configurationState !== "configured") {
-    return unsupported("Mechanism study is not configured", "a configured mechanism study is required");
+  if (!study || study.kind !== "mechanism") {
+    return unsupported("Mechanism study is unresolved", "a mechanism study is required");
   }
   return { supported: true as const };
 }
@@ -93,6 +96,9 @@ async function packReplay(
       ...request.document.mates.map(({ id }) => ({
         kind: "entity" as const, reference: `mate:${id}` as const,
       })),
+      ...request.inputArtifacts.map(({ id }) => ({
+        kind: "artifact" as const, artifactId: id,
+      })),
     ],
   });
   return { record, payload };
@@ -107,7 +113,13 @@ export function createMechanismAdapter(): SolverAdapter<MechanismAdapterInput, M
       if (!decision.supported) throw decision.error;
       abort(signal);
       emit({ progress: 0.1 });
-      const compiled = await compileMechanismStudy(request.document, request.studyId, signal);
+      const input = await defineMechanismInput(request.input.mechanismInput);
+      if (input.sourceRevision !== request.sourceRevision || input.studyId !== request.studyId) {
+        throw new Error("Mechanism input does not match its workspace study binding");
+      }
+      const roots = request.inputArtifacts.filter(({ kind }) => kind === "brep" || kind === "render-mesh");
+      if (roots.length !== 2) throw new Error("Mechanism input requires exact BREP and semantic roots");
+      const compiled = defineCompiledMechanismStudy(input, roots as never);
       abort(signal);
       emit({ progress: 0.55 });
       const result = await solveMechanismStudy(compiled, signal, ({ requestId, mechanismInputDigest }) => {

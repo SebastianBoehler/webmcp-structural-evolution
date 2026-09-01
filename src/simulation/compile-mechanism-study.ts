@@ -40,6 +40,15 @@ export type CompiledMechanismStudy = DeepReadonly<{
 }>;
 const exactCompiledStudies = new WeakSet<object>();
 
+export function defineCompiledMechanismStudy(
+  input: MechanismInput, sourceArtifacts: readonly [ArtifactRecord, ArtifactRecord],
+): CompiledMechanismStudy {
+  const artifacts = [...sourceArtifacts].sort((left, right) => codeUnitCompare(left.id, right.id));
+  const compiled = freezeSnapshot({ input, sourceArtifacts: artifacts as [ArtifactRecord, ArtifactRecord] });
+  exactCompiledStudies.add(compiled);
+  return compiled;
+}
+
 export function assertCompiledMechanismStudy(value: unknown): CompiledMechanismStudy {
   if (!value || typeof value !== "object" || !exactCompiledStudies.has(value)) {
     throw new Error("Mechanism solver requires in-process exact compiler authority");
@@ -181,10 +190,7 @@ export async function compileMechanismStudy(
     bodies, colliders, joints, gravityWorldMps2: study.gravityWorldMps2, pointForces,
     durationSteps: study.durationSteps, outputStrideSteps: study.outputStrideSteps, clearancePairs });
   abort(signal);
-  const artifacts = [exact.brepArtifact, exact.semanticArtifact].sort((left, right) => codeUnitCompare(left.id, right.id));
-  const compiled = freezeSnapshot({ input, sourceArtifacts: artifacts as [ArtifactRecord, ArtifactRecord] });
-  exactCompiledStudies.add(compiled);
-  return compiled;
+  return defineCompiledMechanismStudy(input, [exact.brepArtifact, exact.semanticArtifact]);
 }
 
 function compileJoint(

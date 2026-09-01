@@ -32,6 +32,8 @@ export interface StructuralVoxelProducerInput {
   readonly signal?: AbortSignal;
 }
 
+export type StructuralVoxelExactProducerInput = StructuralVoxelProducerInput & StructuralExactSource;
+
 export interface ProducedStructuralVoxelMesh {
   readonly record: ArtifactRecord;
   readonly payload: StructuralVoxelPayload;
@@ -53,7 +55,8 @@ async function checkedInput(input: ExactInput): Promise<SemanticMeshPayload> {
   if (brepArtifact.kind !== "brep"
     || brepArtifact.mediaType !== "application/vnd.opencascade.brep"
     || brepArtifact.sourceRevision !== document.revision
-    || brepArtifact.units !== "m" || brepArtifact.producer.name !== "occt-wasm") {
+    || brepArtifact.units !== "m"
+    || !["occt-wasm", "workspace-exact-body-brep"].includes(brepArtifact.producer.name)) {
     throw new Error("Structural voxelization requires a revision-bound exact BREP artifact");
   }
   if (semanticArtifact.kind !== "render-mesh"
@@ -184,7 +187,7 @@ const offsets = (groups: readonly number[][]) => {
   return Uint32Array.from(values);
 };
 
-async function produceFromExact(
+export async function produceStructuralVoxelMeshFromExact(
   input: ExactInput,
 ): Promise<ProducedStructuralVoxelMesh> {
   const mesh = await checkedInput(input);
@@ -266,5 +269,5 @@ export async function produceStructuralVoxelMesh(
 ): Promise<ProducedStructuralVoxelMesh> {
   const signal = input.signal ?? new AbortController().signal;
   const exact = await rebuildStructuralExactSource(input.document, signal);
-  return produceFromExact({ ...input, ...exact });
+  return produceStructuralVoxelMeshFromExact({ ...input, ...exact });
 }

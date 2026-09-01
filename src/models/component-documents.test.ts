@@ -80,6 +80,17 @@ describe("authoritative component documents", () => {
 
     const motor = model.document.instances.find(({ id }) => id === "motor-east");
     expect(motor).toBeDefined();
+    expect(model.document.studies.map(({ kind }) => kind).sort()).toEqual([
+      "structural-linear", "topology",
+    ]);
+    const structural = model.document.studies.find(({ kind }) => kind === "structural-linear");
+    expect(structural).toMatchObject({
+      bodyIds: ["body-interface-body"],
+      loads: [{ forceN: model.loads[0]!.forceN }],
+    });
+    expect(model.document.namedSelections.map(({ id }) => id)).toEqual(expect.arrayContaining([
+      "body-fixed-region", "body-mount-north", "body-mount-south", "motor-thrust-load",
+    ]));
   });
 
   it("deduplicates matching qualified interfaces and rejects a conflicting duplicate", () => {
@@ -98,8 +109,25 @@ describe("authoritative component documents", () => {
     expect(Object.keys(model.stages)).toEqual(SE6_STAGE_IDS);
     expect([...Object.values(model.stages).flat()].sort()).toEqual([...model.componentInstances].sort());
     expect(model.joints).toEqual(SE6_JOINTS);
+    expect(model.document.studies).toEqual([expect.objectContaining({
+      id: "se6-motion", kind: "mechanism", instanceIds: model.componentInstances,
+      configurationState: "requires-configuration",
+    })]);
+    expect(Object.keys(model.bodyMassKg)).toHaveLength(52);
     expect(() => assertStagePartition({ base: ["duplicate", "duplicate"] }, ["duplicate", "missing"])).toThrow(/duplicate/i);
     expect(() => assertStagePartition({ base: ["unknown"] }, ["known"])).toThrow(/unknown/i);
+  });
+
+  it("binds the SE-6 upper arm thermal study to exact named end faces", async () => {
+    const model = await se6UpperArmDocument();
+    expect(model.document.studies).toEqual([expect.objectContaining({
+      id: "se6-upper-arm-thermal", kind: "thermal-steady",
+      bodyIds: ["upper-arm-housing-body"],
+    })]);
+    expect(model.document.namedSelections.map(({ id }) => id)).toEqual([
+      "mounting-interface", "motor-interface",
+    ]);
+    expect(model.document.materials[0]).toMatchObject({ thermalConductivityWmK: 167 });
   });
 
   it("rebuilds every compiled component document through OCCT", async () => {

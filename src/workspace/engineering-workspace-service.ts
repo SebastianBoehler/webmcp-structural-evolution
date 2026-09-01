@@ -1,63 +1,25 @@
-import type { ArtifactRecord } from "../cad/artifact-contract";
 import type { DesignTransaction } from "../cad/command-schema";
-import {
-  applyDesignSessionTransaction,
-  attachDesignSessionArtifacts,
-} from "../cad/design-session";
+import { applyDesignSessionTransaction, attachDesignSessionArtifacts } from "../cad/design-session";
 import type { CadKernelAdapter } from "../cad/runtime-contracts";
 import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
 import { revisionId } from "../domain/revisions";
 import { freezeSnapshot } from "../domain/snapshots";
-import {
-  ArtifactStoreError,
-  createArtifactStore,
-  synchronizeArtifactStoreInvalidation,
-} from "../engineering/artifact-store";
+import { ArtifactStoreError, createArtifactStore, synchronizeArtifactStoreInvalidation } from "../engineering/artifact-store";
 import { createEngineeringJobRunner, type EngineeringJobRunner } from "../engineering/job-runner";
-import type { JobLedgerEntry } from "../engineering/job-ledger";
-import {
-  evaluateCad,
-  runDryRun,
-  WorkspaceError,
-} from "./workspace-cad";
+import { evaluateCad, runDryRun, WorkspaceError } from "./workspace-cad";
 import { compareWorkspaceResults, exportWorkspaceArtifact } from "./workspace-authority";
-import {
-  createWorkspaceEventBus,
-  type WorkspaceEventInput,
-} from "./workspace-events";
+import { createWorkspaceEventBus, type WorkspaceEventInput } from "./workspace-events";
 import { createWorkspaceMutationQueue } from "./workspace-mutation-queue";
-import {
-  validateStudyCompilation,
-  type StudyRequestPlanner,
-} from "./workspace-study-plan";
-import type {
-  EngineeringWorkspaceOptions,
-  EngineeringWorkspaceService,
-} from "./workspace-service-contract";
+import { validateStudyCompilation, type StudyRequestPlanner } from "./workspace-study-plan";
+import type { EngineeringWorkspaceOptions, EngineeringWorkspaceService } from "./workspace-service-contract";
 import type { WorkspaceInspection } from "./workspace-inspection";
+import { acquireExactComponentSource } from "./exact-component-source";
+import { isProductionComponentPlanner } from "./component-study-planners";
+import { createExactComponentSourceLease } from "./exact-component-source-lease";
+import { latestJobEntry, ownWorkspaceValue as own, uniqueArtifacts } from "./workspace-service-helpers";
 
 export type { StudyCompilation, StudyRequestPlanner, StudyRequestPlanners } from "./workspace-study-plan";
-export type {
-  EngineeringWorkspaceOptions,
-  EngineeringWorkspaceService,
-  LaunchStudyRequest,
-} from "./workspace-service-contract";
-
-function uniqueArtifacts(records: readonly ArtifactRecord[]): ArtifactRecord[] {
-  return [...new Map(records.map((record) => [record.id, record])).values()];
-}
-
-function own<Value>(value: Value): Value {
-  try { return structuredClone(value); }
-  catch { throw new WorkspaceError("invalid-input", "Workspace request cannot contain shared or uncloneable memory"); }
-}
-function latestEntry(entries: readonly JobLedgerEntry[], jobId: string): JobLedgerEntry {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]!;
-    if (entry.event.jobId === jobId) return entry;
-  }
-  throw new WorkspaceError("unknown-job", `Engineering job is unknown: ${jobId}`);
-}
+export type { EngineeringWorkspaceOptions, EngineeringWorkspaceService, LaunchStudyRequest } from "./workspace-service-contract";
 
 export function createEngineeringWorkspaceService(options: EngineeringWorkspaceOptions): EngineeringWorkspaceService {
   let session = options.session;
@@ -115,6 +77,25 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       jobRevisions.delete(entry.event.jobId);
     }
   });
+  const exactSources = createExactComponentSourceLease(
+    (expected, signal) => {
+      adapter ??= options.createCadAdapter();
+      return acquireExactComponentSource(expected, adapter, signal);
+    },
+    (source, expected) => mutations.run(async () => {
+      if (disposed || document().revision !== expected.revision) {
+        throw new WorkspaceError("stale-revision", "Exact component source completed for a stale revision");
+      }
+      const existing = new Set(active().map(({ id }) => id));
+      const next = source.allArtifacts.filter(({ id }) => !existing.has(id));
+      await options.store.commit(source.entries, () => !disposed && document().revision === expected.revision);
+      if (next.length) {
+        session = attachDesignSessionArtifacts(session, next);
+        publish({ type: "artifacts-changed", headRevision: document().revision,
+          artifactIds: next.map(({ id }) => id) });
+      }
+    }),
+  );
 
   const inspection = (): WorkspaceInspection => {
     inspectionCache ??= freezeSnapshot({
@@ -140,6 +121,7 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       const receipt = result.session.receipts.at(-1)!;
       const changed = result.result.ok && result.result.document.revision !== transaction.expectedRevision;
       if (changed) {
+        exactSources.invalidate();
         await synchronizeArtifactStoreInvalidation(options.store, result.session.artifacts);
       }
       session = result.session;
@@ -223,9 +205,13 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       if (!study) throw new WorkspaceError("unknown-study", `Study is unresolved: ${request.studyId}`);
       const planner = options.planners[study.kind] as StudyRequestPlanner<typeof study.kind> | undefined;
       if (!planner) throw new WorkspaceError("unavailable-study-planner", `No planner is registered for study kind: ${study.kind}`);
-      const planned = await planner({ document: current, study: study as never, artifacts: active() });
+      const productionPlanner = isProductionComponentPlanner(planner);
+      const planned = await planner({ document: current, study: study as never, artifacts: active(),
+        exactSource: () => exactSources.get(current) });
       if (document().revision !== request.expectedRevision) throw new WorkspaceError("stale-revision", "Study launch became stale while planning");
-      const compilation = await validateStudyCompilation(planned, current, study, active());
+      const compilation = await validateStudyCompilation(
+        planned, current, study, active(), productionPlanner,
+      );
       if (document().revision !== request.expectedRevision) {
         throw new WorkspaceError("stale-revision", "Study launch became stale during request validation");
       }
@@ -257,7 +243,7 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       assertActive();
       if (!runner.cancel(jobId)) throw new WorkspaceError("job-not-cancellable", `Engineering job cannot be cancelled: ${jobId}`);
     },
-    inspectJob(jobId) { assertActive(); return latestEntry(runner.entries(), jobId); },
+    inspectJob(jobId) { assertActive(); return latestJobEntry(runner.entries(), jobId); },
     compareResults(left, right) {
       assertActive();
       const head = document().revision;
@@ -287,6 +273,7 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
     dispose() {
       if (disposed) return;
       disposed = true;
+      exactSources.invalidate();
       runnerUnsubscribe();
       for (const entry of runner.entries()) runner.cancel(entry.event.jobId);
       adapter?.dispose?.();

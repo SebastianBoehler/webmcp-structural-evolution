@@ -183,7 +183,7 @@ describe("assembly-to-mechanism compiler", () => {
     const second = await compileMechanismStudy(document, "motion", new AbortController().signal);
     expect(second.input.mechanismInputDigest).toBe(first.input.mechanismInputDigest);
     expect(Object.keys(await import("./compile-mechanism-study"))).toEqual([
-      "assertCompiledMechanismStudy", "compileMechanismStudy",
+      "defineCompiledMechanismStudy", "assertCompiledMechanismStudy", "compileMechanismStudy",
     ]);
   });
 

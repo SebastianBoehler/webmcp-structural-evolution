@@ -226,7 +226,7 @@ describe("engineering workspace authority", () => {
 
     expect(preview).toMatchObject({ sourceRevision: root.revision, changed: true, outputs: ["step"] });
     expect(preview.previewRevision).not.toBe(root.revision);
-    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 2 });
+    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 3 });
     expect(adapters).toBe(1);
     expect(dryPut).toHaveBeenCalledOnce();
     expect(durablePut).not.toHaveBeenCalled();
@@ -256,7 +256,7 @@ describe("engineering workspace authority", () => {
 
     await expect(running).rejects.toThrow(mode === "error" ? /kernel failed/i : /abort/i);
     expect(dispose).toHaveBeenCalledOnce();
-    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 2 });
+    expect(service.inspect()).toMatchObject({ document: { label: root.label }, artifactCount: 3 });
   });
 
   it("invalidates active metadata and payloads and cancels old-revision jobs before quarantining late output", async () => {
@@ -285,6 +285,7 @@ describe("engineering workspace authority", () => {
       document: root,
       study: root.studies[0] as never,
       artifacts: [],
+      exactSource: async () => { throw new Error("unused test exact source"); },
     });
     const late = await solveResult(latePlan.request, 9);
     pending.gate.release(late);
@@ -318,7 +319,7 @@ describe("engineering workspace authority", () => {
     expect(JSON.stringify(seen[0])).not.toMatch(/reference-drone|se6-cobot|fixture/i);
   });
 
-  it("commits planner-produced exact input payloads and attaches their bound records before launch", async () => {
+  it("retains an active exact-derived input payload before launch", async () => {
     const store = createArtifactStore();
     const registry = createSolverRegistry();
     let service!: EngineeringWorkspaceService;
@@ -572,7 +573,7 @@ describe("engineering workspace authority", () => {
     unsubscribe();
     await service.apply(rename(currentDocument(service), "after-unsubscribe", "No observation"));
 
-    expect(observed).toEqual(["queued", "artifacts-changed", "running", "cancelled"]);
+    expect(observed).toEqual(["queued", "running", "cancelled"]);
   });
 
   it("dispose removes owned subscriptions and disposes the durable CAD adapter exactly once", async () => {

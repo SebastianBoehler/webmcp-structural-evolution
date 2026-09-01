@@ -37,7 +37,7 @@ it("rechecks comparison eligibility after durable reads before returning", async
   const { service } = await serviceForPlans(
     [first, second],
     (request) => thermalResult(request, request.jobId.endsWith("one") ? 21 : 22),
-    store,
+    store, true,
   );
   const firstJob = await service.launchStudy({
     studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
@@ -57,11 +57,11 @@ it("rechecks comparison eligibility after durable reads before returning", async
   await expect(comparing).rejects.toThrow(/active|eligible|stale|current/i);
 });
 
-it("reserves a duplicate job ID before committing a new compiler input or publishing an artifact event", async () => {
+it("reserves a duplicate job ID before publishing any new artifact event", async () => {
   const first = await exactCobotPlan("duplicate-job", 1);
   const second = await exactCobotPlan("duplicate-job", 2);
   const { service, store } = await serviceForPlans(
-    [first, second], (request) => thermalResult(request, 12),
+    [first, second], (request) => thermalResult(request, 12), undefined, true,
   );
   const events: Array<readonly ArtifactRecord[]> = [];
   service.subscribe((event) => {
@@ -79,7 +79,7 @@ it("reserves a duplicate job ID before committing a new compiler input or publis
     studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
   })).rejects.toThrow(/job.*already|duplicate/i);
 
-  expect(service.inspect().artifacts.some(({ id }) => id === second.derived.record.id)).toBe(false);
-  await expect(store.get(second.derived.record.id)).resolves.toBeUndefined();
+  expect(service.inspect().artifacts.some(({ id }) => id === second.derived.record.id)).toBe(true);
+  await expect(store.get(second.derived.record.id)).resolves.toBeDefined();
   expect(events).toHaveLength(eventCount);
 });

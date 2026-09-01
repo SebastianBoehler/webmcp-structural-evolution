@@ -5,7 +5,8 @@ import type { SemanticMeshPayload } from "../../cad/rebuild-payload";
 import { revisionId } from "../../domain/revisions";
 import { digestArtifactPayload } from "../../engineering/artifact-store";
 import {
-  produceStructuralVoxelMesh,
+  produceStructuralVoxelMesh, produceStructuralVoxelMeshFromExact,
+  type ProducedStructuralVoxelMesh,
 } from "../structural/structural-voxelizer";
 import type { StructuralExactSource } from "../structural/structural-exact-source";
 import {
@@ -24,7 +25,9 @@ export interface ProducedThermalVoxelMesh {
   readonly record: ArtifactRecord;
   readonly payload: ThermalVoxelPayload;
   readonly exact: StructuralExactSource;
+  readonly structural: ProducedStructuralVoxelMesh;
 }
+export type ThermalVoxelExactProducerInput = ThermalVoxelProducerInput & StructuralExactSource;
 
 type Dims = readonly [number, number, number];
 type Point = readonly [number, number, number];
@@ -77,10 +80,10 @@ function rasterize(
   return cells;
 }
 
-export async function produceThermalVoxelMesh(
+async function thermalFromStructural(
   input: ThermalVoxelProducerInput,
+  structural: Awaited<ReturnType<typeof produceStructuralVoxelMesh>>,
 ): Promise<ProducedThermalVoxelMesh> {
-  const structural = await produceStructuralVoxelMesh(input);
   const mesh = structural.exact.semanticMeshPayload;
   const dims = [...structural.payload.dimensions] as unknown as Dims;
   const origin = [...structural.payload.originM] as unknown as Point;
@@ -126,9 +129,25 @@ export async function produceThermalVoxelMesh(
     mediaType: THERMAL_VOXEL_MEDIA_TYPE, dependencies: [
       { kind: "entity", reference: `document:${input.document.id}` },
       { kind: "entity", reference: `body:${bodyId}` },
+      ...input.document.bodies.filter(({ id }) => id === bodyId).map(({ featureId }) =>
+        ({ kind: "entity" as const, reference: `feature:${featureId}` as const })),
+      ...input.document.components.filter(({ bodyIds }) => bodyIds.includes(bodyId)).map(({ id }) =>
+        ({ kind: "entity" as const, reference: `component:${id}` as const })),
       { kind: "artifact", artifactId: structural.exact.brepArtifact.id },
       { kind: "artifact", artifactId: structural.exact.semanticArtifact.id },
       { kind: "artifact", artifactId: structural.record.id },
     ] });
-  return { record, payload, exact: structural.exact };
+  return { record, payload, exact: structural.exact, structural };
+}
+
+export async function produceThermalVoxelMesh(
+  input: ThermalVoxelProducerInput,
+): Promise<ProducedThermalVoxelMesh> {
+  return thermalFromStructural(input, await produceStructuralVoxelMesh(input));
+}
+
+export async function produceThermalVoxelMeshFromExact(
+  input: ThermalVoxelExactProducerInput,
+): Promise<ProducedThermalVoxelMesh> {
+  return thermalFromStructural(input, await produceStructuralVoxelMeshFromExact(input));
 }

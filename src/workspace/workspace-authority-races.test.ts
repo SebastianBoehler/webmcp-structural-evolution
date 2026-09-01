@@ -144,22 +144,15 @@ it("does not advance hidden session state when artifact invalidation fails", asy
   expect(service.inspect().document.label).toBe("Retry commits");
 });
 
-it("compares retained verified ancestor and current results with matching contracts", async () => {
+it("retains an ancestor result but rejects untrusted rederivation at the new revision", async () => {
   const service: EngineeringWorkspaceService = createEngineeringWorkspaceService(await workspaceOptions());
   const root = service.inspect().document;
   const first = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
   await waitFor(() => service.inspectJob(first.jobId).event.state === "verified");
   await service.apply(defineUnrelatedParameter(root, "comparison-head"));
   const current = service.inspect().document;
-  const second = await service.launchStudy({ studyId: "link-static", expectedRevision: current.revision });
-  await waitFor(() => service.inspectJob(second.jobId).event.state === "verified");
-  const fields = service.inspect().artifacts.filter(({ kind }) => kind === "field");
-  const ancestor = fields.find(({ sourceRevision }) => sourceRevision === root.revision)!;
-  const latest = fields.find(({ sourceRevision }) => sourceRevision === current.revision)!;
-
-  await expect(service.compareResults(ancestor.id, latest.id)).resolves.toMatchObject({
-    leftSourceRevision: root.revision,
-    rightSourceRevision: current.revision,
-    comparable: true,
-  });
+  await expect(service.launchStudy({ studyId: "link-static", expectedRevision: current.revision }))
+    .rejects.toThrow(/workspace-owned production planner/i);
+  expect(service.inspect().artifacts.filter(({ kind }) => kind === "field"))
+    .toEqual([expect.objectContaining({ sourceRevision: root.revision })]);
 });

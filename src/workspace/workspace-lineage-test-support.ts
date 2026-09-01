@@ -130,17 +130,25 @@ export async function serviceForPlans(
   plans: readonly ExactCobotPlan[],
   run: (request: EngineeringSolveRequest<unknown>) => Promise<SolverRunResult<unknown>>,
   store: ArtifactStore = createArtifactStore(),
+  activeDerived = false,
 ): Promise<Readonly<{ service: EngineeringWorkspaceService; store: ArtifactStore }>> {
   const first = plans[0]!;
-  await store.commit(first.roots, () => true);
+  const derived = [...new Map(plans.map((plan) => [plan.derived.record.id, plan.derived])).values()];
+  await store.commit(activeDerived ? [...first.roots, ...derived] : first.roots, () => true);
   const registry = createSolverRegistry();
   registry.register({ capability: { kind: "thermal" }, supports: () => ({ supported: true }), run });
   let index = 0;
   const options: EngineeringWorkspaceOptions = {
-    session: createDesignSession(first.document, first.roots.map(({ record }) => record)),
+    session: createDesignSession(first.document, [
+      ...first.roots.map(({ record }) => record),
+      ...(activeDerived ? derived.map(({ record }) => record) : []),
+    ]),
     store, registry,
     createCadAdapter: () => cadAdapter(async () => { throw new Error("CAD is outside this lineage test"); }),
-    planners: { "thermal-steady": async () => plans[Math.min(index++, plans.length - 1)]!.compilation },
+    planners: { "thermal-steady": async () => {
+      const compilation = plans[Math.min(index++, plans.length - 1)]!.compilation;
+      return activeDerived ? { ...compilation, inputs: [] } : compilation;
+    } },
     clock: { now: () => "2026-09-01T12:00:00.000Z", elapsedMs: () => 1 },
   };
   return { service: createEngineeringWorkspaceService(options), store };

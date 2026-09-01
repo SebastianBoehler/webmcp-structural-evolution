@@ -4,7 +4,9 @@ import type { DesignDocument } from "../cad/document-schema";
 import type {
   CadEvaluationEvent, CadEvaluationRequest, CadKernelAdapter,
 } from "../cad/runtime-contracts";
-import { digestCadOutputPayload, type SemanticMeshPayload } from "../cad/rebuild-payload";
+import {
+  digestCadOutputPayload, encodeCadOutputPayload, type SemanticMeshPayload,
+} from "../cad/rebuild-payload";
 import { createDesignSession } from "../cad/design-session";
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
 import { createArtifactStore, digestArtifactPayload, type ArtifactPayload } from "../engineering/artifact-store";
@@ -228,7 +230,7 @@ export async function exactStructuralInputs(
     dependencies: [{ kind: "entity", reference: `body:${body.id}` },
       { kind: "artifact", artifactId: brep.id }, { kind: "artifact", artifactId: semantic.id }],
   });
-  return { brep, semantic, voxel, semanticPayload, voxelPayload };
+  return { brep, brepPayload, semantic, voxel, semanticPayload, voxelPayload };
 }
 
 export async function workspaceOptions(
@@ -238,9 +240,13 @@ export async function workspaceOptions(
   const exact = await exactStructuralInputs(document);
   const registry = createSolverRegistry();
   registry.register(immediateAdapter());
+  const store = overrides.store ?? createArtifactStore();
+  await store.put(exact.brep, encodeCadOutputPayload(exact.brepPayload));
+  await store.put(exact.semantic, encodeCadOutputPayload(exact.semanticPayload));
+  await store.put(exact.voxel, exact.voxelPayload);
   return {
-    session: createDesignSession(document, [exact.brep, exact.semantic]),
-    store: createArtifactStore(),
+    session: createDesignSession(document, [exact.brep, exact.semantic, exact.voxel]),
+    store,
     registry,
     createCadAdapter: () => cadAdapter(async (request, _signal, emit) => emit(await cadResult(request))),
     planners: { "structural-linear": structuralPlanner() },

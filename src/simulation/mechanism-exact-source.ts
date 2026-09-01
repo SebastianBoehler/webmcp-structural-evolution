@@ -40,7 +40,9 @@ function assertArtifactLineage(artifact: ArtifactRecord, document: DesignDocumen
   const expected = new Set([
     `document:${document.id}`,
     ...document.parameters.map(({ id }) => `parameter:${id}`),
+    ...document.features.map(({ id }) => `feature:${id}`),
     ...document.bodies.map(({ id }) => `body:${id}`),
+    ...document.components.map(({ id }) => `component:${id}`),
   ]);
   const actual = artifact.dependencies.map((dependency) =>
     dependency.kind === "entity" ? dependency.reference : `artifact:${dependency.artifactId}`);

@@ -128,7 +128,9 @@ async function produceStructuralVoxelMesh(
 describe("exact semantic mesh voxel producer", () => {
   afterEach(() => vi.unstubAllGlobals());
   it("exposes only the document-owned producer and ignores caller-supplied exact fields", async () => {
-    expect(Object.keys(producerSurface)).toEqual(["produceStructuralVoxelMesh"]);
+    expect(Object.keys(producerSurface)).toEqual([
+      "produceStructuralVoxelMeshFromExact", "produceStructuralVoxelMesh",
+    ]);
     const input = await inputs();
     vi.mocked(rebuildStructuralExactSource).mockResolvedValueOnce({
       brepArtifact: input.brepArtifact, brepPayload: input.brepPayload,
