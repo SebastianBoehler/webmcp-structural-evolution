@@ -2,7 +2,10 @@ import { SemanticMeshPayloadSchema, digestCadOutputPayload } from "../../cad/reb
 import { ArtifactRecordSchema } from "../../cad/artifact-contract";
 import { digestArtifactPayload } from "../../engineering/artifact-store";
 import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
-import { THERMAL_VOXEL_MEDIA_TYPE, type ThermalSolveInput, type ThermalVoxelPayload } from "./thermal-contract";
+import {
+  THERMAL_VOXEL_MEDIA_TYPE, THERMAL_VOXEL_PRODUCER,
+  type ThermalSolveInput, type ThermalVoxelPayload,
+} from "./thermal-contract";
 
 type Request = EngineeringSolveRequest<ThermalSolveInput>;
 
@@ -23,6 +26,7 @@ function hasCoverage(artifact: Awaited<ReturnType<typeof record>>, documentId: s
 function assertPayload(payload: ThermalVoxelPayload): void {
   const fields: readonly [unknown, string][] = [
     [payload.dimensions, "Uint32Array"], [payload.originM, "Float64Array"], [payload.cellSizeM, "Float64Array"], [payload.activeCells, "Uint32Array"],
+    [payload.bodyIdsUtf8, "Uint8Array"], [payload.cellBodyIndices, "Uint32Array"],
     [payload.selectionTopologyIdsUtf8, "Uint8Array"], [payload.selectionFaceOffsets, "Uint32Array"], [payload.selectionFaceCells, "Uint32Array"],
     [payload.selectionFaceAxes, "Uint8Array"], [payload.selectionFaceDirections, "Int8Array"], [payload.selectionFaceAreasM2, "Float64Array"], [payload.rasterizationToleranceM, "Float64Array"],
   ];
@@ -41,10 +45,13 @@ export async function validateThermalGeometry(request: Request, bodyIds: readonl
   const mesh = SemanticMeshPayloadSchema.parse(request.input.semanticMeshPayload);
   if (await digestCadOutputPayload(mesh) !== semantic.contentDigest) throw new Error("Thermal semantic mesh payload does not match its content digest");
   const voxel = await record(request, request.input.thermalVoxelArtifactId);
-  if (voxel.kind !== "sdf" || voxel.mediaType !== THERMAL_VOXEL_MEDIA_TYPE || voxel.units !== "m" || !hasCoverage(voxel, request.document.id, bodyIds)
+  if (voxel.kind !== "sdf" || voxel.mediaType !== THERMAL_VOXEL_MEDIA_TYPE || voxel.units !== "m"
+    || voxel.producer.name !== THERMAL_VOXEL_PRODUCER.name
+    || voxel.producer.version !== THERMAL_VOXEL_PRODUCER.version
+    || !hasCoverage(voxel, request.document.id, bodyIds)
     || !voxel.dependencies.some((item) => item.kind === "artifact" && item.artifactId === brep.id)
     || !voxel.dependencies.some((item) => item.kind === "artifact" && item.artifactId === semantic.id)) {
-    throw new Error("Thermal study requires a derived exact thermal voxel artifact");
+    throw new Error("Thermal study requires a derived exact artifact from the authoritative thermal voxelizer");
   }
   assertPayload(request.input.voxelPayload);
   if (await digestArtifactPayload(request.input.voxelPayload) !== voxel.contentDigest) throw new Error("Thermal voxel payload does not match its content digest");

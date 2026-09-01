@@ -182,6 +182,24 @@ it("defines study intent, propagates its references, and prevents consumed remov
   });
   if (!spareMaterial.ok) return;
 
+  const assignedDocument = {
+    ...spareMaterial.document,
+    studies: [...spareMaterial.document.studies, {
+      id: "assigned-thermal", kind: "thermal-steady" as const, bodyIds: ["link-body"],
+      materialAssignments: [{ bodyId: "link-body", materialId: "steel" }],
+      boundaries: { temperatures: [{ selectionId: "fixed-end", temperatureK: 300 }], heatFluxes: [] },
+    }],
+  };
+  const assignmentChanges = new Set(["material:steel" as const]);
+  addDependentReferences(assignedDocument, assignmentChanges);
+  expect(assignmentChanges).toContain("study:assigned-thermal");
+
+  const assignedRemoval = await applyDesignTransaction(assignedDocument, {
+    id: "remove-assigned-material", expectedRevision: assignedDocument.revision, actor, preconditions: [],
+    commands: [{ id: "remove-assigned-steel", type: "remove-material", materialId: "steel" }],
+  });
+  expect(assignedRemoval).toMatchObject({ ok: false, code: "command-failed" });
+
   const spareRemoval = await applyDesignTransaction(spareMaterial.document, {
     id: "remove-spare-material",
     expectedRevision: spareMaterial.document.revision,

@@ -1,12 +1,16 @@
 import type { SemanticMeshPayload } from "../../cad/rebuild-payload";
 
 export const THERMAL_VOXEL_MEDIA_TYPE = "application/vnd.structural-evolution.thermal-voxel-domain-v1";
+export const THERMAL_VOXEL_PRODUCER = Object.freeze({ name: "thermal-voxelizer", version: "1" });
+export const THERMAL_INACTIVE_BODY_INDEX = 0xffff_ffff;
 
 export interface ThermalVoxelPayload extends Readonly<Record<string, ArrayBufferView>> {
   readonly dimensions: Uint32Array;
   readonly originM: Float64Array;
   readonly cellSizeM: Float64Array;
   readonly activeCells: Uint32Array;
+  readonly bodyIdsUtf8: Uint8Array;
+  readonly cellBodyIndices: Uint32Array;
   readonly selectionTopologyIdsUtf8: Uint8Array;
   readonly selectionFaceOffsets: Uint32Array;
   readonly selectionFaceCells: Uint32Array;
@@ -46,6 +50,7 @@ export interface ThermalNeumannFace {
   readonly axis: 0 | 1 | 2;
   readonly direction: -1 | 1;
   readonly areaM2: number;
+  /** Positive values inject heat into the active domain; negative values remove heat. */
   readonly heatFluxWm2: number;
 }
 
@@ -78,6 +83,42 @@ export interface ThermalInput {
     maxBoundaryFaces: number;
     maxRelativeAreaError: number;
   }>;
+}
+
+export interface ThermalDeviceEvidence {
+  readonly realGpu: true;
+  readonly backend: "webgpu";
+  readonly precision: "f32";
+  readonly adapterInfo: Readonly<{
+    vendor: string;
+    architecture: string;
+    device: string;
+    description: string;
+  }>;
+  readonly limits: Readonly<{
+    maxBufferSize: number;
+    maxStorageBufferBindingSize: number;
+    maxComputeWorkgroupsPerDimension: number;
+  }>;
+}
+
+export interface ThermalResult {
+  readonly truthLevel: "interactive-estimate";
+  readonly grid: ThermalInput["grid"];
+  readonly iterations: number;
+  readonly temperatureK: Float32Array;
+  readonly heatFluxWm2: Float32Array;
+  /** Outward-normal signed flux in slots [-x,+x,-y,+y,-z,+z] for every cell. */
+  readonly faceHeatFluxWm2: Float32Array;
+  /** Represented area for each face-flux slot; zero marks an insulated or unavailable face. */
+  readonly faceAreasM2: Float32Array;
+  readonly relativeResidual: number;
+  readonly heatInputW: number;
+  readonly heatOutputW: number;
+  readonly energyImbalanceW: number;
+  readonly relativeEnergyImbalance: number;
+  readonly device: ThermalDeviceEvidence;
+  readonly rasterization: ThermalInput["rasterization"];
 }
 
 export const DEFAULT_THERMAL_COMPILE_LIMITS: Omit<ThermalCompileLimits, "maxRelativeAreaError"> = Object.freeze({

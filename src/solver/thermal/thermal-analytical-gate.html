@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Thermal WebGPU Analytical Gate</title>
+<pre id="result">running</pre>
+<script type="module">
+  import { runThermalAnalyticalGate } from "./thermal-analytical-gate.ts";
+  const output = document.querySelector("#result");
+  try {
+    output.textContent = JSON.stringify(await runThermalAnalyticalGate(), null, 2);
+  } catch (error) {
+    output.textContent = JSON.stringify({
+      status: "failed",
+      name: error instanceof Error ? error.name : "Error",
+      code: error && typeof error === "object" && "code" in error ? error.code : undefined,
+      message: error instanceof Error ? error.message : String(error),
+    }, null, 2);
+  }
+</script>

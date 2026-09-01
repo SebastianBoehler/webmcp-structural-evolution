@@ -27,6 +27,93 @@ export interface StructuralGpuSolve {
   readonly complianceJ: number;
 }
 
+export interface BufferPcgVectors {
+  readonly rhs: GPUBuffer;
+  readonly solution: GPUBuffer;
+  readonly residual: GPUBuffer;
+  readonly preconditioned: GPUBuffer;
+  readonly direction: GPUBuffer;
+  readonly product: GPUBuffer;
+}
+
+export interface BufferPcgCallbacks {
+  readonly initialize: (vectors: BufferPcgVectors) => Promise<void>;
+  readonly applyOperator: (input: GPUBuffer, output: GPUBuffer) => Promise<void>;
+  readonly precondition: (residual: GPUBuffer, output: GPUBuffer) => Promise<void>;
+  readonly dot: (left: GPUBuffer, right: GPUBuffer) => Promise<number>;
+  readonly axpy: (
+    target: GPUBuffer, source: GPUBuffer, sourceScale: number, targetScale: number,
+  ) => Promise<void>;
+  readonly residualNorm: (residual: GPUBuffer, rhs: GPUBuffer) => Promise<number>;
+  readonly checkIteration: () => void;
+  readonly emit: (iteration: number) => void;
+  readonly diverged: (message: string) => Error;
+}
+
+export interface BufferPcgOptions {
+  readonly maxIterations: number;
+  readonly tolerance: number;
+}
+
+export interface BufferPcgResult {
+  readonly iterations: number;
+  readonly relativeResidual: number;
+}
+
+export async function runBufferPcg(
+  vectors: BufferPcgVectors,
+  callbacks: BufferPcgCallbacks,
+  options: BufferPcgOptions,
+): Promise<BufferPcgResult> {
+  callbacks.checkIteration();
+  await callbacks.initialize(vectors);
+  await callbacks.applyOperator(vectors.direction, vectors.product);
+  const rhsNormSquared = await callbacks.dot(vectors.rhs, vectors.rhs);
+  let rz = await callbacks.dot(vectors.residual, vectors.preconditioned);
+  let denominator = await callbacks.dot(vectors.direction, vectors.product);
+  if (![rhsNormSquared, rz, denominator].every(Number.isFinite)) {
+    throw callbacks.diverged("PCG initialization did not produce positive finite reductions");
+  }
+  if (rhsNormSquared === 0 && rz === 0 && denominator === 0) {
+    return { iterations: 0, relativeResidual: 0 };
+  }
+  if (rhsNormSquared <= 0 || rz <= 0 || denominator <= 0) {
+    throw callbacks.diverged("PCG initialization did not produce positive finite reductions");
+  }
+  let relativeResidual = 1;
+  let iterations = 0;
+  for (let iteration = 0; iteration < options.maxIterations; iteration += 1) {
+    callbacks.checkIteration();
+    if (iteration > 0) {
+      await callbacks.applyOperator(vectors.direction, vectors.product);
+      denominator = await callbacks.dot(vectors.direction, vectors.product);
+    }
+    if (!Number.isFinite(denominator) || denominator <= 0) {
+      throw callbacks.diverged("PCG operator is not positive definite");
+    }
+    const alpha = rz / denominator;
+    await callbacks.axpy(vectors.solution, vectors.direction, alpha, 1);
+    await callbacks.axpy(vectors.residual, vectors.product, -alpha, 1);
+    relativeResidual = await callbacks.residualNorm(vectors.residual, vectors.rhs);
+    iterations = iteration + 1;
+    if (!Number.isFinite(relativeResidual)) throw callbacks.diverged("PCG residual became non-finite");
+    callbacks.emit(iterations);
+    callbacks.checkIteration();
+    if (relativeResidual <= options.tolerance) break;
+    await callbacks.precondition(vectors.residual, vectors.preconditioned);
+    const nextRz = await callbacks.dot(vectors.residual, vectors.preconditioned);
+    if (!Number.isFinite(nextRz) || nextRz <= 0) {
+      throw callbacks.diverged("PCG preconditioned residual is not positive finite");
+    }
+    await callbacks.axpy(vectors.direction, vectors.preconditioned, 1, nextRz / rz);
+    rz = nextRz;
+  }
+  if (relativeResidual > options.tolerance) {
+    throw callbacks.diverged(`PCG reached ${options.maxIterations} iterations at residual ${relativeResidual}`);
+  }
+  return { iterations, relativeResidual };
+}
+
 export async function runStructuralPcg(
   device: GPUDevice,
   system: CompiledStructuralSystem,

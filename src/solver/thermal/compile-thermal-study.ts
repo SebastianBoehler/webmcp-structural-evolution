@@ -8,6 +8,7 @@ import {
   type ThermalRasterizedSelection,
   type ThermalSolveInput,
   type ThermalVoxelPayload,
+  THERMAL_INACTIVE_BODY_INDEX,
 } from "./thermal-contract";
 import { validateThermalGeometry } from "./thermal-geometry-binding";
 
@@ -21,7 +22,10 @@ function study(request: EngineeringSolveRequest<ThermalSolveInput>): ThermalStud
 }
 
 function grid(payload: ThermalVoxelPayload, limits: ThermalCompileLimits) {
-  if (payload.dimensions.length !== 3 || payload.dimensions.some((value) => value < 1)) throw new Error("Thermal voxel dimensions must contain three positive integers");
+  if (payload.dimensions.length !== 3
+    || payload.dimensions.some((value) => !Number.isSafeInteger(value) || value < 1)) {
+    throw new Error("Thermal voxel dimensions must contain three positive safe integers");
+  }
   const dimensions = [payload.dimensions[0]!, payload.dimensions[1]!, payload.dimensions[2]!] as const;
   const count = dimensions[0] * dimensions[1] * dimensions[2];
   if (!Number.isSafeInteger(count) || count > limits.maxCells) throw new Error(`Thermal grid cell limit exceeded: ${count} > ${limits.maxCells}`);
@@ -29,6 +33,10 @@ function grid(payload: ThermalVoxelPayload, limits: ThermalCompileLimits) {
     || payload.cellSizeM.some((value) => Math.abs(value - payload.cellSizeM[0]!) > payload.cellSizeM[0]! * 1e-12)) throw new Error("Thermal adapter supports only finite uniform cubic cells");
   const faceAreaM2 = payload.cellSizeM[0]! * payload.cellSizeM[0]!;
   if (!Number.isFinite(faceAreaM2) || faceAreaM2 <= 0) throw new Error("Thermal voxel face area must be positive finite");
+  if (!Number.isFinite(Math.fround(payload.cellSizeM[0]!)) || Math.fround(payload.cellSizeM[0]!) <= 0
+    || !Number.isFinite(Math.fround(faceAreaM2)) || Math.fround(faceAreaM2) <= 0) {
+    throw new Error("Thermal voxel cell size and face area must be positive finite f32");
+  }
   if (payload.originM.length !== 3 || payload.originM.some((value) => !Number.isFinite(value))) throw new Error("Thermal voxel origin must contain three finite SI coordinates");
   if (payload.activeCells.length !== count || payload.activeCells.some((value) => value !== 0 && value !== 1)) throw new Error("Thermal active-cell mask must contain one binary value per grid cell");
   const active = new Uint32Array(payload.activeCells);
@@ -36,6 +44,30 @@ function grid(payload: ThermalVoxelPayload, limits: ThermalCompileLimits) {
   const toleranceM = payload.rasterizationToleranceM[0];
   if (payload.rasterizationToleranceM.length !== 1 || !Number.isFinite(toleranceM) || toleranceM! <= 0 || toleranceM! > payload.cellSizeM[0]! * .5) throw new Error("Thermal rasterization tolerance must be finite, positive, and at most half a cell");
   return { dimensions, count, active, cellSizeM: payload.cellSizeM[0]!, faceAreaM2, originM: [payload.originM[0]!, payload.originM[1]!, payload.originM[2]!] as const, toleranceM: toleranceM! };
+}
+
+function bodyOwnership(payload: ThermalVoxelPayload, studyBodyIds: readonly string[], count: number) {
+  let table: unknown;
+  try { table = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload.bodyIdsUtf8)); }
+  catch { throw new Error("Thermal voxel body ownership table is invalid"); }
+  if (!Array.isArray(table) || table.some((id) => typeof id !== "string" || id.length === 0)
+    || new Set(table).size !== table.length || table.length !== studyBodyIds.length
+    || table.some((id) => !studyBodyIds.includes(id)) || studyBodyIds.some((id) => !table.includes(id))) {
+    throw new Error("Thermal voxel body ownership table must exactly match study bodies");
+  }
+  if (payload.cellBodyIndices.length !== count) throw new Error("Thermal voxel body owner index field length is invalid");
+  const activeOwners = new Set<number>();
+  for (let cell = 0; cell < count; cell += 1) {
+    const owner = payload.cellBodyIndices[cell]!;
+    if ((payload.activeCells[cell] === 1 && owner >= table.length)
+      || (payload.activeCells[cell] === 0 && owner !== THERMAL_INACTIVE_BODY_INDEX)) {
+      throw new Error(`Thermal voxel body owner index is invalid at cell ${cell}`);
+    }
+    if (payload.activeCells[cell] === 1) activeOwners.add(owner);
+  }
+  const missing = table.findIndex((_id, index) => !activeOwners.has(index));
+  if (missing >= 0) throw new Error(`Thermal study body ${table[missing]} owns no active voxel`);
+  return table as readonly string[];
 }
 
 function topologyIds(payload: ThermalVoxelPayload): readonly string[] {
@@ -90,9 +122,22 @@ export async function compileThermalStudy(request: EngineeringSolveRequest<Therm
   const thermal = study(request);
   await validateThermalGeometry(request, thermal.bodyIds);
   const domain = grid(request.input.voxelPayload, limits);
-  const material = request.document.materials.find(({ id }) => id === thermal.materialId);
-  if (!material || !Number.isFinite(material.thermalConductivityWmK) || material.thermalConductivityWmK! <= 0) throw new Error("Thermal material conductivity must be positive and finite");
-  if (!Number.isFinite(Math.fround(material.thermalConductivityWmK!)) || Math.fround(material.thermalConductivityWmK!) <= 0) throw new Error("Thermal material conductivity must be positive finite f32");
+  const bodyTable = bodyOwnership(request.input.voxelPayload, thermal.bodyIds, domain.count);
+  const materialIds = new Map(("materialAssignments" in thermal ? thermal.materialAssignments
+    : thermal.bodyIds.map((bodyId) => ({ bodyId, materialId: thermal.materialId })))
+    .map(({ bodyId, materialId }) => [bodyId, materialId]));
+  const conductivityByBody = new Map<string, number>();
+  for (const bodyId of thermal.bodyIds) {
+    const material = request.document.materials.find(({ id }) => id === materialIds.get(bodyId));
+    const conductivity = material?.kind === "isotropic" ? material.thermalConductivityWmK : undefined;
+    if (!material || material.kind !== "isotropic" || !Number.isFinite(conductivity) || conductivity! <= 0) {
+      throw new Error(`Thermal material conductivity must be positive and finite for body ${bodyId}`);
+    }
+    if (!Number.isFinite(Math.fround(conductivity!)) || Math.fround(conductivity!) <= 0) {
+      throw new Error(`Thermal material conductivity must be positive finite f32 for body ${bodyId}`);
+    }
+    conductivityByBody.set(bodyId, conductivity!);
+  }
   const boundaries = thermal.boundaries ?? { temperatures: [], heatFluxes: [] };
   if (boundaries.temperatures.length === 0) throw new Error("Steady thermal study requires at least one temperature boundary");
   const requested = [...boundaries.temperatures, ...boundaries.heatFluxes];
@@ -137,5 +182,7 @@ export async function compileThermalStudy(request: EngineeringSolveRequest<Therm
   }
   const labels = components(domain.active, domain.dimensions), anchored = new Set([...dirichlet.keys()].map((cell) => labels[cell]!));
   for (let cell = 0; cell < labels.length; cell += 1) if (labels[cell]! >= 0 && !anchored.has(labels[cell]!)) throw new Error(`Thermal active material island ${labels[cell]} has no temperature boundary`);
-  return { sourceRevision: request.sourceRevision, studyId: thermal.id, bodyIds: [...thermal.bodyIds], consumedArtifactIds: [request.input.exactBrepArtifactId, request.input.semanticMeshArtifactId, request.input.thermalVoxelArtifactId], grid: { cellDimensions: domain.dimensions, originM: domain.originM, cellSizeM: domain.cellSizeM }, activeCells: domain.active, activeCellCount: domain.active.filter(Boolean).length, conductivityWmK: Float32Array.from(domain.active, (value) => value ? material.thermalConductivityWmK! : 0), dirichletCells: [...dirichlet].map(([cellIndex, temperatureK]) => ({ cellIndex, temperatureK })), neumannFaces: neumann, rasterization: { toleranceM: domain.toleranceM, selections: rasterization }, capability: limits };
+  const conductivityWmK = Float32Array.from(domain.active, (value, cell) => value
+    ? conductivityByBody.get(bodyTable[request.input.voxelPayload.cellBodyIndices[cell]!]!)! : 0);
+  return { sourceRevision: request.sourceRevision, studyId: thermal.id, bodyIds: [...thermal.bodyIds], consumedArtifactIds: [request.input.exactBrepArtifactId, request.input.semanticMeshArtifactId, request.input.thermalVoxelArtifactId], grid: { cellDimensions: domain.dimensions, originM: domain.originM, cellSizeM: domain.cellSizeM }, activeCells: domain.active, activeCellCount: domain.active.filter(Boolean).length, conductivityWmK, dirichletCells: [...dirichlet].map(([cellIndex, temperatureK]) => ({ cellIndex, temperatureK })), neumannFaces: neumann, rasterization: { toleranceM: domain.toleranceM, selections: rasterization }, capability: limits };
 }

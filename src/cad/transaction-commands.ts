@@ -7,8 +7,10 @@ export type MutableDesignDocument = {
 
 function materialHasConsumers(document: MutableDesignDocument, materialId: string): boolean {
   return document.studies.some((study) => (
-    (study.kind === "structural-linear" || study.kind === "thermal-steady")
-    && study.materialId === materialId
+    (study.kind === "structural-linear" && study.materialId === materialId)
+    || (study.kind === "thermal-steady" && ("materialAssignments" in study
+      ? study.materialAssignments.some((assignment) => assignment.materialId === materialId)
+      : study.materialId === materialId))
   ));
 }
 

@@ -95,11 +95,10 @@ export const TopologyStudySchema = z.union([
     configurationState: z.literal("configured"),
   }).strict(),
 ]);
-export const ThermalSteadyStudySchema = z.object({
+const ThermalStudyBaseSchema = z.object({
   id: EntityIdSchema,
   kind: z.literal("thermal-steady"),
   bodyIds: uniqueIdsSchema(1, "Thermal study body IDs must be unique"),
-  materialId: EntityIdSchema,
   boundaries: z.object({
     temperatures: z.array(z.object({
       selectionId: EntityIdSchema,
@@ -111,7 +110,27 @@ export const ThermalSteadyStudySchema = z.object({
     }).strict()),
   }).strict().optional(),
 }).strict();
-export const LegacyStudySchema = z.discriminatedUnion("kind", [
+const ThermalAssignmentsSchema = z.array(z.object({
+  bodyId: EntityIdSchema, materialId: EntityIdSchema,
+}).strict());
+const AssignedThermalStudySchema = ThermalStudyBaseSchema.extend({
+  materialAssignments: ThermalAssignmentsSchema,
+}).strict().superRefine((study, context) => {
+  const assigned = study.materialAssignments.map(({ bodyId }) => bodyId);
+  if (new Set(assigned).size !== assigned.length) {
+    context.addIssue({ code: "custom", message: "Thermal material assignment body IDs must be unique" });
+  }
+  if (assigned.length !== study.bodyIds.length
+    || assigned.some((bodyId) => !study.bodyIds.includes(bodyId))
+    || study.bodyIds.some((bodyId) => !assigned.includes(bodyId))) {
+    context.addIssue({ code: "custom", message: "Thermal material assignments require exactly one assignment per study body" });
+  }
+});
+export const ThermalSteadyStudySchema = z.union([
+  ThermalStudyBaseSchema.extend({ materialId: EntityIdSchema }).strict(),
+  AssignedThermalStudySchema,
+]);
+export const LegacyStudySchema = z.union([
   StructuralStudySchema,
   LegacyTopologyStudySchema,
   HistoricalMechanismStudySchema,
@@ -204,7 +223,11 @@ function addThermalIntegrityIssues(
   context: z.RefinementCtx,
 ): void {
   addUnresolvedIssues(study.bodyIds, bodyIds, "Body", context);
-  addUnresolvedIssues([study.materialId], materialIds, "Material", context);
+  addUnresolvedIssues(
+    "materialAssignments" in study
+      ? study.materialAssignments.map(({ materialId }) => materialId) : [study.materialId],
+    materialIds, "Material", context,
+  );
   for (const boundary of [...(study.boundaries?.temperatures ?? []), ...(study.boundaries?.heatFluxes ?? [])]) {
     const selection = selections.get(boundary.selectionId);
     if (!selection || selection.expectedKind !== "face") {

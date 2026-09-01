@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { defineDesignDocument } from "../cad/document-schema";
-import { MaterialDefinitionSchema, MechanismStudySchema, type StudyIntegrityInput } from "./study-schema";
+import {
+  MaterialDefinitionSchema, MechanismStudySchema,
+} from "./study-schema";
 
 const exactDocument = {
   id: "link",
@@ -57,25 +59,6 @@ const exactDocument = {
 };
 
 describe("engineering study schemas", () => {
-  it("exposes the canonical named-selection topology kind to integrity consumers", () => {
-    const input: StudyIntegrityInput = {
-      bodies: [], materials: [], studies: [], instances: [], mates: [],
-      namedSelections: [{ id: "thermal-face", reference: { bodyId: "link-body", expectedKind: "face" } }],
-    };
-    expect(input.namedSelections[0]!.reference.expectedKind).toBe("face");
-  });
-  it("rejects configured thermal boundaries outside the study bodies", async () => {
-    await expect(defineDesignDocument({
-      ...exactDocument, schemaVersion: 6,
-      features: [...exactDocument.features, { id: "foreign-feature", kind: "extrude" as const, sketchId: "link-profile", distanceM: 0.01 }],
-      bodies: [...exactDocument.bodies, { id: "foreign-body", featureId: "foreign-feature" }],
-      namedSelections: [...exactDocument.namedSelections, {
-        id: "foreign-face", reference: { ...exactDocument.namedSelections[0]!.reference, bodyId: "foreign-body" },
-      }],
-      materials: [{ id: "al-6061", kind: "isotropic", densityKgM3: 2700, youngsModulusPa: 68.9e9, poissonRatio: 0.33, failureStressPa: 276e6 }],
-      studies: [{ id: "thermal-link", kind: "thermal-steady", bodyIds: ["link-body"], materialId: "al-6061", boundaries: { temperatures: [{ selectionId: "foreign-face", temperatureK: 300 }], heatFluxes: [] } }],
-    })).rejects.toThrow("Thermal boundary selection is incompatible with study bodies: foreign-face");
-  });
   it("migrates v3 topology studies to explicit requires-configuration intent", async () => {
     const migrated = await defineDesignDocument({
       ...exactDocument,

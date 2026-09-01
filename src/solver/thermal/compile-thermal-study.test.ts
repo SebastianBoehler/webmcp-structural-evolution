@@ -7,6 +7,7 @@ import { digestCadOutputPayload, type SemanticMeshPayload } from "../../cad/rebu
 import { digestArtifactPayload } from "../../engineering/artifact-store";
 import {
   THERMAL_VOXEL_MEDIA_TYPE,
+  THERMAL_VOXEL_PRODUCER,
   type ThermalCompileLimits,
   type ThermalSolveInput,
   type ThermalVoxelPayload,
@@ -51,9 +52,19 @@ describe("compileThermalStudy", () => {
       .rejects.toThrow("Thermal input artifact has a stale source revision");
   });
 
+  it.each([
+    { name: "foreign-voxelizer", version: "1" },
+    { name: "thermal-voxelizer", version: "2" },
+  ])("rejects a thermal voxel artifact from non-authoritative producer $name@$version", async (producer) => {
+    await expect(compile(await thermalRequest(
+      {}, 200, {}, undefined, 0.0001, producer,
+    ))).rejects.toThrow(/authoritative thermal voxelizer/);
+  });
+
   it("rejects a disconnected material island without a temperature reference", async () => {
     await expect(compile(await thermalRequest({}, 200, {
       activeCells: new Uint32Array([1, 0, 0, 1]),
+      cellBodyIndices: new Uint32Array([0, 0xffff_ffff, 0xffff_ffff, 0]),
       selectionFaceCells: new Uint32Array([0, 0]),
     }))).rejects.toThrow("Thermal active material island 1 has no temperature boundary");
   });
@@ -75,6 +86,22 @@ describe("compileThermalStudy", () => {
       expect.objectContaining({ selectionId: "fixed-end", selectedAreaM2: 0.0001, representedAreaM2: 0.0001, relativeAreaError: 0 }),
       expect.objectContaining({ selectionId: "hot-end", selectedAreaM2: 0.0001, representedAreaM2: 0.0001, relativeAreaError: 0 }),
     ]);
+  });
+
+  it("rejects foreign, missing, or out-of-range voxel body ownership", async () => {
+    const foreign = Uint8Array.from(JSON.stringify(["foreign"]), (value) => value.charCodeAt(0));
+    await expect(compile(await thermalRequest({}, 200, { bodyIdsUtf8: foreign } as never)))
+      .rejects.toThrow(/body ownership table/);
+    await expect(compile(await thermalRequest({}, 200, {
+      cellBodyIndices: new Uint32Array([0, 1, 0, 0]),
+    } as never))).rejects.toThrow(/body owner index/);
+    await expect(compile(await thermalRequest({}, 200, {
+      bodyIdsUtf8: new Uint8Array(),
+    } as never))).rejects.toThrow(/body ownership table/);
+    await expect(compile(await thermalRequest({}, 200, {
+      activeCells: new Uint32Array([1, 1, 1, 0]),
+      cellBodyIndices: new Uint32Array([0, 0, 0, 0]),
+    } as never))).rejects.toThrow(/body owner index/);
   });
 
   it("derives selected area from the resolved exact semantic face", async () => {
@@ -141,6 +168,12 @@ describe("compileThermalStudy", () => {
     }), { maxCells: 16, maxBoundaryFaces: 16, maxRelativeAreaError: 0.01 })).rejects.toThrow("Thermal voxel face area must be positive finite");
   });
 
+  it("rejects cell size or area that cannot remain positive finite in the f32 operator", async () => {
+    await expect(compile(await thermalRequest({}, 200, {
+      cellSizeM: new Float64Array([1e-30, 1e-30, 1e-30]),
+    }))).rejects.toThrow("Thermal voxel cell size and face area must be positive finite f32");
+  });
+
   it.each([1e-50, 1e100])("rejects conductivity outside the f32 operator envelope %s", async (conductivityWmK) => {
     await expect(compile(await thermalRequest({}, conductivityWmK))).rejects.toThrow("Thermal material conductivity must be positive finite f32");
   });
@@ -167,6 +200,7 @@ async function thermalRequest(
   payloadOverrides: Partial<ThermalVoxelPayload> = {},
   sourceRevision = undefined as string | undefined,
   semanticMeasureM2 = 0.0001,
+  voxelProducer: { readonly name: string; readonly version: string } = THERMAL_VOXEL_PRODUCER,
 ) {
   const conductivityWmK = typeof conductivityOrLimits === "number" ? conductivityOrLimits : 200;
   const document = await thermalDocument(boundaries, Number.isFinite(conductivityWmK) ? conductivityWmK : 200);
@@ -185,7 +219,7 @@ async function thermalRequest(
   });
   const payload = thermalVoxelPayload(payloadOverrides);
   const voxel = await defineArtifactRecord({
-    kind: "sdf", sourceRevision: document.revision, producer: { name: "thermal-voxelizer", version: "1" }, settingsDigest: digest("d"),
+    kind: "sdf", sourceRevision: document.revision, producer: voxelProducer, settingsDigest: digest("d"),
     contentDigest: await digestArtifactPayload(payload), units: "m", mediaType: THERMAL_VOXEL_MEDIA_TYPE,
     dependencies: [{ kind: "entity", reference: "document:thermal-test" }, { kind: "entity", reference: "body:bar" }, { kind: "artifact", artifactId: brep.id }, { kind: "artifact", artifactId: semantic.id }],
   });
@@ -239,6 +273,8 @@ function face(id: string, centroidM: [number, number, number], measureSI: number
 function thermalVoxelPayload(overrides: Partial<ThermalVoxelPayload>): ThermalVoxelPayload {
   return {
     dimensions: new Uint32Array([4, 1, 1]), originM: new Float64Array([0, 0, 0]), cellSizeM: new Float64Array([0.01, 0.01, 0.01]), activeCells: new Uint32Array([1, 1, 1, 1]),
+    bodyIdsUtf8: Uint8Array.from(JSON.stringify(["bar"]), (value) => value.charCodeAt(0)),
+    cellBodyIndices: new Uint32Array([0, 0, 0, 0]),
     selectionTopologyIdsUtf8: Uint8Array.from(JSON.stringify(["face:bar:fixed", "face:bar:hot"]), (value) => value.charCodeAt(0)),
     selectionFaceOffsets: new Uint32Array([0, 1, 2]), selectionFaceCells: new Uint32Array([0, 3]), selectionFaceAxes: new Uint8Array([0, 0]), selectionFaceDirections: new Int8Array([-1, 1]),
     selectionFaceAreasM2: new Float64Array([0.0001, 0.0001]), rasterizationToleranceM: new Float64Array([1e-6]), ...overrides,
