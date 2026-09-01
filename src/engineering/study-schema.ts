@@ -5,6 +5,7 @@ import {
   HistoricalMechanismStudySchema,
   LegacyMechanismStudySchema,
   MechanismStudySchema,
+  VersionFiveMechanismStudySchema,
   type MechanismStudy,
 } from "./mechanism-study-schema";
 
@@ -12,6 +13,7 @@ export {
   HistoricalMechanismStudySchema,
   LegacyMechanismStudySchema,
   MechanismStudySchema,
+  VersionFiveMechanismStudySchema,
   type MechanismStudy,
 } from "./mechanism-study-schema";
 
@@ -107,6 +109,12 @@ export const VersionFourStudySchema = z.union([
   StructuralStudySchema,
   TopologyStudySchema,
   HistoricalMechanismStudySchema,
+  ThermalSteadyStudySchema,
+]);
+export const VersionFiveStudySchema = z.union([
+  StructuralStudySchema,
+  TopologyStudySchema,
+  VersionFiveMechanismStudySchema,
   ThermalSteadyStudySchema,
 ]);
 export const StudySchema = z.union([

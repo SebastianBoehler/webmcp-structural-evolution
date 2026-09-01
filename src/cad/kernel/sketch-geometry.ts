@@ -1,6 +1,9 @@
 import type { OcctKernel, ShapeHandle, Vec3 } from "occt-wasm";
 
 import type { DesignDocument } from "../document-schema";
+import {
+  applyDirection, applyPoint, resolveDocumentFrame, type Matrix3,
+} from "../rigid-transform";
 
 type DocumentSketch = DesignDocument["sketches"][number];
 
@@ -10,8 +13,6 @@ export type ScalarResolver = (
   kind: "length" | "angle",
   label: string,
 ) => number;
-
-type Matrix3 = readonly [number, number, number, number, number, number, number, number, number];
 
 export interface SketchFrame {
   readonly origin: Vec3;
@@ -25,72 +26,28 @@ export interface BuiltSketch {
 
 export const WIRE_CLOSURE_TOLERANCE_M = 1e-9;
 
-const multiplyVector = (matrix: Matrix3, vector: Vec3): Vec3 => ({
-  x: matrix[0] * vector.x + matrix[1] * vector.y + matrix[2] * vector.z,
-  y: matrix[3] * vector.x + matrix[4] * vector.y + matrix[5] * vector.z,
-  z: matrix[6] * vector.x + matrix[7] * vector.y + matrix[8] * vector.z,
-});
-
-const multiplyMatrix = (left: Matrix3, right: Matrix3): Matrix3 => {
-  const result = new Array<number>(9);
-  for (let row = 0; row < 3; row += 1) for (let column = 0; column < 3; column += 1) {
-    result[row * 3 + column] = [0, 1, 2].reduce(
-      (sum, index) => sum + left[row * 3 + index]! * right[index * 3 + column]!,
-      0,
-    );
-  }
-  return result as unknown as Matrix3;
-};
-
-function rotationMatrix(roll: number, pitch: number, yaw: number): Matrix3 {
-  const [cr, sr, cp, sp, cy, sy] = [
-    Math.cos(roll), Math.sin(roll), Math.cos(pitch), Math.sin(pitch), Math.cos(yaw), Math.sin(yaw),
-  ];
-  return [
-    cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
-    sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
-    -sp, cp * sr, cp * cr,
-  ];
-}
-
-function add(left: Vec3, right: Vec3): Vec3 {
-  return { x: left.x + right.x, y: left.y + right.y, z: left.z + right.z };
-}
-
 function frameFor(document: DesignDocument, frameId: string, cache: Map<string, SketchFrame>): SketchFrame {
   const cached = cache.get(frameId);
   if (cached) return cached;
-  const frame = document.frames.find(({ id }) => id === frameId);
-  if (!frame) throw new Error(`Sketch frame is missing: ${frameId}`);
-  const localRotation = rotationMatrix(
-    frame.transform.orientation.roll.value,
-    frame.transform.orientation.pitch.value,
-    frame.transform.orientation.yaw.value,
-  );
-  const localOrigin = {
-    x: frame.transform.position.x.value,
-    y: frame.transform.position.y.value,
-    z: frame.transform.position.z.value,
+  const transform = resolveDocumentFrame(document, frameId);
+  const resolved = {
+    origin: { x: transform.positionM[0], y: transform.positionM[1], z: transform.positionM[2] },
+    rotation: transform.rotation,
   };
-  const resolved = frame.parentId === undefined
-    ? { origin: localOrigin, rotation: localRotation }
-    : (() => {
-      const parent = frameFor(document, frame.parentId!, cache);
-      return {
-        origin: add(parent.origin, multiplyVector(parent.rotation, localOrigin)),
-        rotation: multiplyMatrix(parent.rotation, localRotation),
-      };
-    })();
   cache.set(frameId, resolved);
   return resolved;
 }
 
 export function pointOnSketch(frame: SketchFrame, x: number, y: number): Vec3 {
-  return add(frame.origin, multiplyVector(frame.rotation, { x, y, z: 0 }));
+  const point = applyPoint({
+    positionM: [frame.origin.x, frame.origin.y, frame.origin.z], rotation: frame.rotation,
+  }, [x, y, 0]);
+  return { x: point[0], y: point[1], z: point[2] };
 }
 
 export function directionOnSketch(frame: SketchFrame, x: number, y: number, z = 0): Vec3 {
-  return multiplyVector(frame.rotation, { x, y, z });
+  const direction = applyDirection({ rotation: frame.rotation }, [x, y, z]);
+  return { x: direction[0], y: direction[1], z: direction[2] };
 }
 
 const normalFor = (frame: SketchFrame) => directionOnSketch(frame, 0, 0, 1);

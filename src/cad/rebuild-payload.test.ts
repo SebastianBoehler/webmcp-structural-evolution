@@ -22,6 +22,7 @@ describe("CAD output resource limits", () => {
       indices: new Uint32Array([0, 1, 0]),
       faces: [{
         id: "face-1", bodyId: "body-1",
+        surfaceEvidence: { kind: "plane", normal: [0, 0, 1] },
         signature: {
           ownerFeatureId: "base", kind: "face", geometry: "plane",
           centroidM: [0, 0, 0], measureSI: 1, adjacentKinds: [],
@@ -33,6 +34,12 @@ describe("CAD output resource limits", () => {
     };
 
     expect(() => SemanticMeshPayloadSchema.parse(mesh)).toThrow(/unavailable vertex/i);
+    mesh.indices = new Uint32Array([0, 0, 0]);
+    expect(SemanticMeshPayloadSchema.parse(mesh).faces[0]?.surfaceEvidence)
+      .toEqual({ kind: "plane", normal: [0, 0, 1] });
+    expect(() => SemanticMeshPayloadSchema.parse({ ...mesh,
+      faces: mesh.faces.map(({ surfaceEvidence: _evidence, ...face }) => face),
+    })).toThrow(/exact surface evidence/i);
   });
 
   it("rejects raw over-budget topology before traversing a record", () => {

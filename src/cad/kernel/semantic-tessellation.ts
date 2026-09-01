@@ -87,8 +87,9 @@ function semanticRecords(
   featureTopology: ReadonlyMap<string, CollectedTopology>,
   document: SelectionDocument,
 ): { readonly records: SemanticTopology[]; readonly indexByHash: ReadonlyMap<number, number> } {
-  const owned = topology.map(({ hash, signature }) => ({
+  const owned = topology.map(({ hash, signature, surfaceEvidence }) => ({
     hash,
+    surfaceEvidence,
     signature: {
       ...signature,
       ownerFeatureId: assignOwner(signature, body, featureTopology, document),
@@ -97,7 +98,7 @@ function semanticRecords(
     },
   }));
   const semanticIds = new Set<string>();
-  const records = owned.map(({ signature }) => {
+  const records = owned.map(({ signature, surfaceEvidence }) => {
     const id = `${signature.kind}:${body.id}:${signature.ownerFeatureId}:${topologyGeometryKey(signature)}`;
     if (semanticIds.has(id)) {
       throw new CadRebuildError(
@@ -107,7 +108,7 @@ function semanticRecords(
       );
     }
     semanticIds.add(id);
-    return { id, bodyId: body.id, signature };
+    return { id, bodyId: body.id, signature, ...(surfaceEvidence ? { surfaceEvidence } : {}) };
   });
   const indexByHash = new Map<number, number>();
   owned.forEach(({ hash }, index) => {

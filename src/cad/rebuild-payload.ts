@@ -6,6 +6,10 @@ import {
   CAD_RESOURCE_LIMITS,
   CadResourceLimitError,
 } from "./cad-resource-limits";
+import { SemanticTopologySchema } from "./semantic-topology-payload";
+
+export { TopologySignaturePayloadSchema } from "./semantic-topology-payload";
+export type { SemanticTopology } from "./semantic-topology-payload";
 
 const finite = z.number().finite();
 const nonnegative = finite.nonnegative();
@@ -82,21 +86,6 @@ export function assertSemanticMeshPayloadLimits(value: unknown): void {
 
 export const OpaqueBytesPayloadSchema = z.object({
   bytes: typedArray<Uint8Array>("Uint8Array"),
-}).strict();
-
-export const TopologySignaturePayloadSchema = z.object({
-  ownerFeatureId: id,
-  kind: z.enum(["face", "edge"]),
-  geometry: z.enum(["plane", "cylinder", "cone", "sphere", "curve", "other"]),
-  centroidM: vec3,
-  measureSI: nonnegative,
-  adjacentKinds: z.array(z.string()),
-}).strict();
-
-const SemanticTopologySchema = z.object({
-  id,
-  bodyId: id,
-  signature: TopologySignaturePayloadSchema,
 }).strict();
 
 const SemanticMeshPayloadObjectSchema = z.object({
@@ -291,4 +280,3 @@ export type OpaqueBytesPayload = z.infer<typeof OpaqueBytesPayloadSchema>;
 export type SemanticMeshPayload = z.infer<typeof SemanticMeshPayloadSchema>;
 export type MassPropertiesPayload = z.infer<typeof MassPropertiesPayloadSchema>;
 export type SectionCurvesPayload = z.infer<typeof SectionCurvesPayloadSchema>;
-export type SemanticTopology = z.infer<typeof SemanticTopologySchema>;

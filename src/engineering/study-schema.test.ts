@@ -175,6 +175,7 @@ describe("engineering study schemas", () => {
       gravityWorldMps2: [0, -9.81, 0],
       pointForces: [{ instanceId: "link", pointLocalM: [0.1, 0, 0], forceWorldN: [0, 5, 0] }],
       maximumCollisionApproximationErrorM: 0.0005,
+      initialOverlapPolicy: "reject-any-positive-volume" as const,
       durationSteps: 480, outputStrideSteps: 4,
       collisionGroups: [
         { id: "fixed-parts", instanceIds: ["base"], membershipMask: 1, filterMask: 2 },
@@ -195,6 +196,8 @@ describe("engineering study schemas", () => {
     expect(() => MechanismStudySchema.parse({
       ...configured, maximumCollisionApproximationErrorM: 0,
     })).toThrow();
+    const { initialOverlapPolicy: _policy, ...missingOverlapPolicy } = configured;
+    expect(() => MechanismStudySchema.parse(missingOverlapPolicy)).toThrow();
     expect(() => MechanismStudySchema.parse({
       ...configured, materialAssignments: [configured.materialAssignments[0]],
     })).toThrow("Mechanism instance must have exactly one material assignment: link");
@@ -236,11 +239,12 @@ describe("engineering study schemas", () => {
       materialAssignments: [{ instanceId: "base", materialId: "al-6061" }],
       gravityWorldMps2: [0, -9.81, 0], pointForces: [], durationSteps: 240, outputStrideSteps: 4,
       maximumCollisionApproximationErrorM: 0.0005,
+      initialOverlapPolicy: "reject-any-positive-volume" as const,
       collisionGroups: [{ id: "base-group", instanceIds: ["base"], membershipMask: 1, filterMask: 0 }],
       clearancePairs: [],
     };
     await expect(defineDesignDocument({
-      ...exactDocument, schemaVersion: 5,
+      ...exactDocument, schemaVersion: 6,
       frames: [...exactDocument.frames, { id: "link-frame", label: "Link frame", parentId: "world", transform: exactDocument.frames[0]!.transform }],
       components: [{ id: "link-component", bodyIds: ["link-body"] }],
       instances: [
@@ -255,7 +259,7 @@ describe("engineering study schemas", () => {
       studies: [configuredStudy],
     })).rejects.toThrow("Mechanism mate references an instance outside the study: base-link");
     await expect(defineDesignDocument({
-      ...exactDocument, schemaVersion: 5,
+      ...exactDocument, schemaVersion: 6,
       frames: [...exactDocument.frames, { id: "link-frame", label: "Link frame", parentId: "world", transform: exactDocument.frames[0]!.transform }],
       components: [{ id: "link-component", bodyIds: ["link-body"] }],
       instances: [{ id: "base", componentId: "link-component", frameId: "world" }],
@@ -282,6 +286,7 @@ describe("engineering study schemas", () => {
       materialAssignments: instanceIds.map((instanceId) => ({ instanceId, materialId: "steel" })),
       gravityWorldMps2: [0, -9.81, 0],
       maximumCollisionApproximationErrorM: 0.0005,
+      initialOverlapPolicy: "reject-any-positive-volume",
       pointForces: instanceIds.map((instanceId) => ({ instanceId, pointLocalM: [0, 0, 0], forceWorldN: [1, 0, 0] })),
       durationSteps: 240, outputStrideSteps: 4,
       collisionGroups: instanceIds.map((instanceId, index) => ({

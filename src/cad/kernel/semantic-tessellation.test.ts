@@ -24,6 +24,8 @@ function semanticKernel(baseFaceCount: number, meshIndexCount = 3, vertexCount =
     getSubShapes: (shape: ShapeHandle, kind: string) => kind === "face" ? faces.get(shape) ?? [] : [],
     surfaceType: () => "plane",
     getSurfaceCenterOfMass: () => ({ x: 0, y: 0, z: 0 }),
+    uvFromPoint: () => ({ u: 0, v: 0 }),
+    surfaceNormal: () => ({ x: 0, y: 0, z: 1 }),
     getSurfaceArea: () => 1,
     adjacentFaces: () => [],
     hashCode: (shape: ShapeHandle) => hashes.get(shape) ?? 0,

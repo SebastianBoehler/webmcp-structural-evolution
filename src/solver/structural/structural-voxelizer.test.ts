@@ -33,6 +33,11 @@ function boxMesh(open = false, lengthM = .04): SemanticMeshPayload {
     positionsM, normals: new Float32Array(positionsM.length), indices,
     faces: FACE_IDS.map((id, index) => ({
       id: `face:bar:${id}`, bodyId: "bar",
+      surfaceEvidence: { kind: "plane" as const, normal: [
+        index === 4 ? -1 : index === 5 ? 1 : 0,
+        index === 2 ? -1 : index === 3 ? 1 : 0,
+        index === 0 ? -1 : index === 1 ? 1 : 0,
+      ] as [number, number, number] },
       signature: {
         ownerFeatureId: "extrude", kind: "face", geometry: "plane",
         centroidM: [...centroids[index]!] as [number, number, number],

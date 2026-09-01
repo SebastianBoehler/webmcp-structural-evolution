@@ -18,6 +18,7 @@ const semanticMesh: SemanticMeshPayload = {
   indices: new Uint32Array([0, 1, 2]),
   faces: [{
     id: "face-1", bodyId: "finished-body",
+    surfaceEvidence: { kind: "plane", normal: [0, 0, 1] },
     signature: {
       ownerFeatureId: "through-cut", kind: "face", geometry: "plane",
       centroidM: [0, 0, 0.01], measureSI: 0.001, adjacentKinds: [],

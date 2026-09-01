@@ -24,7 +24,7 @@ export async function structuralDocument(
   materialOverrides: MaterialOverrides = {},
 ): Promise<DesignDocument> {
   return defineDesignDocument({
-    id: "test-bar", label: "Test bar", schemaVersion: 5,
+    id: "test-bar", label: "Test bar", schemaVersion: 6,
     units: { length: "m", angle: "rad", mass: "kg" },
     createdBy: { kind: "human", id: "tester" },
     frames: [{
@@ -107,6 +107,8 @@ export const semanticMesh: SemanticMeshPayload = {
 function semanticFace(id: string, centroidM: [number, number, number]) {
   return {
     id, bodyId: "bar",
+    surfaceEvidence: { kind: "plane" as const,
+      normal: [centroidM[0] === 0 ? -1 : 1, 0, 0] as [number, number, number] },
     signature: {
       ownerFeatureId: "extrude", kind: "face" as const, geometry: "plane" as const,
       centroidM, measureSI: 0.0004, adjacentKinds: [],

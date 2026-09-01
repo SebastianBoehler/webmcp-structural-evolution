@@ -29,7 +29,7 @@ const currentBase = z.object({
   mateIds: uniqueIds(0, "Mechanism study mate IDs must be unique", 256),
 }).strict();
 
-const configured = currentBase.extend({
+const configuredFields = {
   configurationState: z.literal("configured"),
   fixedInstanceIds: uniqueIds(0, "Mechanism fixed instance IDs must be unique", 256),
   materialAssignments: z.array(z.object({
@@ -57,7 +57,12 @@ const configured = currentBase.extend({
     secondInstanceId: EntityIdSchema,
   }).strict().refine(({ firstInstanceId, secondInstanceId }) => firstInstanceId !== secondInstanceId,
     "Mechanism clearance pair must reference distinct instances")).max(512),
-}).strict().superRefine((study, context) => {
+};
+
+const versionFiveConfigured = currentBase.extend(configuredFields).strict();
+type VersionFiveConfiguredMechanismStudy = z.infer<typeof versionFiveConfigured>;
+
+function addConfiguredIntegrityIssues(study: VersionFiveConfiguredMechanismStudy, context: z.RefinementCtx): void {
   const instances = new Set(study.instanceIds);
   const requireInstance = (instanceId: string, label: string) => {
     if (!instances.has(instanceId)) context.addIssue({ code: "custom", message: `${label} is outside the study: ${instanceId}` });
@@ -99,10 +104,22 @@ const configured = currentBase.extend({
   if (study.durationSteps % study.outputStrideSteps !== 0) {
     context.addIssue({ code: "custom", message: "Mechanism duration must be divisible by output stride" });
   }
-});
+}
+
+const requiresConfiguration = currentBase.extend({ configurationState: z.literal("requires-configuration") }).strict();
+
+export const VersionFiveMechanismStudySchema = z.union([
+  requiresConfiguration,
+  versionFiveConfigured.superRefine(addConfiguredIntegrityIssues),
+]);
+
+const configured = currentBase.extend({
+  ...configuredFields,
+  initialOverlapPolicy: z.literal("reject-any-positive-volume"),
+}).strict().superRefine(addConfiguredIntegrityIssues);
 
 export const MechanismStudySchema = z.union([
-  currentBase.extend({ configurationState: z.literal("requires-configuration") }).strict(),
+  requiresConfiguration,
   configured,
 ]);
 

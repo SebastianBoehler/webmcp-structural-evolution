@@ -111,6 +111,7 @@ function semanticMesh(scenario: Scenario): SemanticMeshPayload {
     indices: new Uint32Array(indices),
     faces: selections.map(({ topologyId, centroidM }) => ({
       id: topologyId, bodyId: scenario.bodyId,
+      surfaceEvidence: { kind: "plane" as const, normal: [1, 0, 0] as [number, number, number] },
       signature: {
         ownerFeatureId: scenario.featureId, kind: "face", geometry: "plane",
         centroidM, measureSI: 0.0001, adjacentKinds: [],
@@ -127,7 +128,7 @@ export async function topologyScenarioRequest(kind: "drone" | "cobot") {
   const selections = [scenario.support, ...scenario.loads];
   const mesh = semanticMesh(scenario);
   const document = await defineDesignDocument({
-    id: scenario.id, label: scenario.id, schemaVersion: 5,
+    id: scenario.id, label: scenario.id, schemaVersion: 6,
     units: { length: "m", angle: "rad", mass: "kg" }, createdBy: { kind: "human", id: "fixture" },
     frames: [{
       id: "world", label: "World", transform: {

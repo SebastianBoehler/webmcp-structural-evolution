@@ -13,7 +13,7 @@ export const CreateDesignDocumentInputSchema = z.object({
 export function initialDocumentContent(input: z.infer<typeof CreateDesignDocumentInputSchema>) {
   return {
     ...input,
-    schemaVersion: 5 as const,
+    schemaVersion: 6 as const,
     frames: [{
       id: "world", label: "World",
       transform: {

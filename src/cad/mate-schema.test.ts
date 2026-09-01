@@ -25,7 +25,7 @@ const reference = (bodyId: string, featureId: string) => ({
 const baseDocument = {
   id: "joint-document",
   label: "Joint document",
-  schemaVersion: 5 as const,
+  schemaVersion: 6 as const,
   units: { length: "m" as const, angle: "rad" as const, mass: "kg" as const },
   createdBy: { kind: "human" as const, id: "designer" },
   frames: [{
@@ -85,7 +85,7 @@ describe("assembly mate contract", () => {
     })).toMatchObject({ axisFirstLocal: [0, 3, 0], lowerM: -0.02, upperM: 0.04 });
   });
 
-  it("canonicalizes signed zero only in current v5 joint axes and limits", () => {
+  it("canonicalizes signed zero only in current joint axes and limits", () => {
     const mate = MateSchema.parse({
       id: "canonical-joint", kind: "revolute", ...endpoints,
       axisFirstLocal: [-0, 1, -0], lowerRad: -0, upperRad: 1,
@@ -131,7 +131,7 @@ describe("assembly mate contract", () => {
     expect(LegacyMateSchema.parse(rigid)).toEqual(rigid);
     await expect(defineDesignDocument({
       ...legacyBase, schemaVersion: 2, mates: [rigid],
-    })).resolves.toMatchObject({ schemaVersion: 5, mates: [rigid] });
+    })).resolves.toMatchObject({ schemaVersion: 6, mates: [rigid] });
     await expect(defineDesignDocument({
       ...legacyBase,
       schemaVersion: 2,
@@ -142,7 +142,7 @@ describe("assembly mate contract", () => {
     })).rejects.toThrow();
   });
 
-  it("keeps the historical v4 mate schema rigid-only before migrating to v5", async () => {
+  it("keeps the historical v4 mate schema rigid-only before migrating to v6", async () => {
     const revolute = {
       id: "historical-revolute", kind: "revolute" as const, ...endpoints,
       axisFirstLocal: [1, 0, 0] as const, lowerRad: -1, upperRad: 1,
@@ -155,7 +155,7 @@ describe("assembly mate contract", () => {
       mates: [{ id: "historical-rigid", kind: "rigid", ...endpoints }],
       studies: [{ id: "historical-motion", kind: "mechanism", instanceIds: ["first-instance", "second-instance"], mateIds: ["historical-rigid"] }],
     })).resolves.toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       studies: [{ id: "historical-motion", kind: "mechanism", configurationState: "requires-configuration" }],
     });
   });
