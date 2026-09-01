@@ -12,14 +12,16 @@ vi.mock("occt-wasm/dist/occt-wasm.wasm?url", () => ({ default: occtWasmPath }));
 
 class ControlledWorkerScope {
   readonly messages: unknown[] = [];
+  readonly transfers: Transferable[][] = [];
   private listener: ((event: { readonly data: unknown }) => void) | undefined;
 
   addEventListener(_type: "message", listener: (event: { readonly data: unknown }) => void): void {
     this.listener = listener;
   }
 
-  postMessage(message: unknown): void {
+  postMessage(message: unknown, transfer: readonly Transferable[] = []): void {
     this.messages.push(message);
+    this.transfers.push([...transfer]);
   }
 
   send(message: OcctWorkerRequest): void {
@@ -128,11 +130,11 @@ describe("OCCT worker", () => {
     expect(scope.messages).not.toContainEqual({ type: "cancelled", requestId: "reused" });
   });
 
-  it("publishes digest-bound transferable BREP, semantic mesh, and STEP artifacts", async () => {
+  it("publishes digest-bound transferable BREP, semantic mesh, body dynamics, and STEP artifacts", async () => {
     const scope = new ControlledWorkerScope();
     vi.stubGlobal("self", scope);
     await import("./occt-worker");
-    const request = await evaluation("artifacts", ["brep", "semantic-mesh", "step"]);
+    const request = await evaluation("artifacts", ["brep", "semantic-mesh", "body-dynamics", "step"]);
 
     scope.send({ type: "evaluate", request });
     await vi.waitFor(() => {
@@ -150,6 +152,7 @@ describe("OCCT worker", () => {
     };
     const brep = success.results.find(({ output }) => output === "brep")!;
     const semantic = success.results.find(({ output }) => output === "semantic-mesh")!;
+    const dynamics = success.results.find(({ output }) => output === "body-dynamics")!;
     const step = success.results.find(({ output }) => output === "step")!;
 
     await expect(digestCadOutputPayload(brep.payload)).resolves.toBe(brep.artifact.contentDigest);
@@ -157,12 +160,20 @@ describe("OCCT worker", () => {
     await expect(digestCadOutputPayload(step.payload)).resolves.toBe(step.artifact.contentDigest);
     expect(brep.artifact.units).toBe("m");
     expect(semantic.artifact.units).toBe("m");
+    expect((dynamics.payload as { bodies: Array<{ bodyId: string }> }).bodies.map(({ bodyId }) => bodyId))
+      .toEqual(["plate-body"]);
     expect(step.artifact.units).toBe("mm");
     expect(brep.artifact.dependencies).toContainEqual({
       kind: "entity", reference: "parameter:plate-width",
     });
     expect(new TextDecoder().decode((step.payload as { bytes: Uint8Array }).bytes))
       .toContain("SI_UNIT(.MILLI.,.METRE.)");
+    const successIndex = scope.messages.indexOf(success);
+    const transferred = scope.transfers[successIndex]!;
+    expect(transferred).toContain((brep.payload as { bytes: Uint8Array }).bytes.buffer);
+    expect(transferred).toContain((dynamics.payload as {
+      bodies: Array<{ brep: { bytes: Uint8Array } }>;
+    }).bodies[0]!.brep.bytes.buffer);
 
     const importRequest = await ExactStepImportRequestSchema.parseAsync({
       requestId: "step-round-trip", sourceRevision: request.sourceRevision,

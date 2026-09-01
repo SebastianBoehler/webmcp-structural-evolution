@@ -1,4 +1,8 @@
 export const CAD_RESOURCE_LIMITS = Object.freeze({
+  bodyDynamicsBodies: 256,
+  bodyDynamicsBrepBytes: 128 * 1024 * 1024,
+  // Original terminal payload + private capture + one consumer copy stay at or below 288 MiB.
+  mechanismExactSourceBytes: 96 * 1024 * 1024,
   semanticMeshVertices: 2_000_000,
   semanticMeshTriangles: 4_000_000,
   semanticMeshEdgePoints: 2_000_000,

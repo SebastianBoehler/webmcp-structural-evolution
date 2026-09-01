@@ -1,6 +1,9 @@
 import type { OcctKernel, ShapeHandle } from "occt-wasm";
 
-import { CadResourceLimitError } from "../cad-resource-limits";
+import {
+  assertCadResourceLimit, CAD_RESOURCE_LIMITS, CadResourceLimitError,
+} from "../cad-resource-limits";
+import { BodyDynamicsPayloadSchema, type BodyDynamicsPayload } from "../body-dynamics-payload";
 import type { DesignDocument } from "../document-schema";
 import type { CadOutput } from "../runtime-contracts";
 import type {
@@ -34,6 +37,7 @@ export { CadRebuildError, type CadRebuildFailureCode } from "./rebuild-errors";
 export interface CadRebuildPayload {
   readonly featureIds: readonly string[];
   readonly bodyIds: readonly string[];
+  readonly bodyDynamics?: BodyDynamicsPayload;
   readonly brep?: OpaqueBytesPayload;
   readonly semanticMesh?: SemanticMeshPayload;
   readonly massProperties?: MassPropertiesPayload;
@@ -101,6 +105,8 @@ function featureLineage(document: DesignDocument, terminalFeatureId: string): st
 }
 
 function inertiaTuple(kernel: OcctKernel, shape: ShapeHandle): MassPropertiesPayload["inertiaKgM2"] {
+  // OCCT GProp_GProps::MatrixOfInertia is centroidal in world-parallel axes;
+  // applying a parallel-axis correction here would corrupt offset bodies.
   const inertia = kernel.getInertia(shape);
   if (inertia.length !== 9) throw new CadRebuildError("invalid-solid", "OCCT returned an invalid inertia tensor");
   return inertia as MassPropertiesPayload["inertiaKgM2"];
@@ -119,6 +125,35 @@ function massProperties(kernel: OcctKernel, shape: ShapeHandle): MassPropertiesP
   };
 }
 
+const codeUnitCompare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+
+async function bodyDynamics(
+  kernel: OcctKernel,
+  bodies: readonly RebuiltBodyShape[],
+  signal: AbortSignal,
+): Promise<BodyDynamicsPayload> {
+  const exactBodies = [];
+  let totalBrepBytes = 0;
+  for (const body of [...bodies].sort((left, right) => codeUnitCompare(left.id, right.id))) {
+    await yieldForCancellation();
+    abortIfRequested(signal);
+    const properties = massProperties(kernel, body.shape);
+    const bytes = kernel.toBREPBinary(body.shape);
+    totalBrepBytes += bytes.byteLength;
+    assertCadResourceLimit(
+      "body dynamics BREP bytes", totalBrepBytes, CAD_RESOURCE_LIMITS.bodyDynamicsBrepBytes,
+    );
+    exactBodies.push({
+      bodyId: body.id,
+      brep: { bytes },
+      volumeM3: properties.volumeM3,
+      centerOfMassM: properties.centerOfMassM,
+      centroidalInertiaUnitDensityKgM2: properties.inertiaKgM2,
+    });
+  }
+  return BodyDynamicsPayloadSchema.parse({ bodies: exactBodies });
+}
+
 function abortIfRequested(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException("Exact CAD rebuild was cancelled", "AbortError");
 }
@@ -135,6 +170,11 @@ export async function rebuildDocument(
     const mark = kernel.checkpoint();
     try {
       abortIfRequested(signal);
+      if (outputs.includes("body-dynamics")) {
+        assertCadResourceLimit(
+          "body dynamics bodies", document.bodies.length, CAD_RESOURCE_LIMITS.bodyDynamicsBodies,
+        );
+      }
       for (const output of outputs) {
         if (output === "section-curves") {
           throw new CadRebuildError("feature-failed", `CAD output is not implemented: ${output}`);
@@ -234,6 +274,9 @@ export async function rebuildDocument(
         bodyIds: document.bodies.map(({ id }) => id),
         ...(outputs.includes("brep") ? { brep: { bytes: kernel.toBREPBinary(resultShape) } } : {}),
         ...(outputs.includes("semantic-mesh") ? { semanticMesh: semanticMesh! } : {}),
+        ...(outputs.includes("body-dynamics")
+          ? { bodyDynamics: await bodyDynamics(kernel, rebuiltBodies, signal) }
+          : {}),
         ...(outputs.includes("mass-properties") ? { massProperties: massProperties(kernel, resultShape) } : {}),
         ...(outputs.includes("step") ? { step: { bytes: exportStepBytes(kernel, resultShape) } } : {}),
       };

@@ -68,6 +68,9 @@ export async function buildCadEvaluationResults(
         results.push({ output, artifact: await artifactFor(request, output, mesh), payload: mesh });
         break;
       }
+      case "body-dynamics":
+        results.push({ output, payload: payload.bodyDynamics ?? missingOutput(output) });
+        break;
       case "mass-properties":
         results.push({ output, payload: payload.massProperties ?? missingOutput(output) });
         break;

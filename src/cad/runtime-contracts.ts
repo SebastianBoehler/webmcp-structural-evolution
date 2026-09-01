@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ActionReceiptSchema } from "../domain/receipts";
 import { RevisionSchema } from "../domain/snapshots";
 import { ArtifactRecordSchema, type ArtifactKind } from "./artifact-contract";
+import { BodyDynamicsPayloadSchema } from "./body-dynamics-payload";
 import {
   defineDesignDocument, DesignDocumentSchema, SemanticReferenceSchema,
 } from "./document-schema";
@@ -37,6 +38,7 @@ export {
 export const CadOutputSchema = z.enum([
   "brep",
   "semantic-mesh",
+  "body-dynamics",
   "mass-properties",
   "section-curves",
   "step",
@@ -148,6 +150,10 @@ const CadEvaluationResultSchema = z.discriminatedUnion("output", [
     output: z.literal("semantic-mesh"),
     artifact: artifactForOutput("semantic-mesh", "render-mesh"),
     payload: SemanticMeshPayloadSchema,
+  }).strict(),
+  z.object({
+    output: z.literal("body-dynamics"),
+    payload: BodyDynamicsPayloadSchema,
   }).strict(),
   z.object({
     output: z.literal("mass-properties"),

@@ -5,6 +5,7 @@ import {
   type CadEvaluationRequest,
 } from "../runtime-contracts";
 import { CadResourceLimitError } from "../cad-resource-limits";
+import { assertBodyDynamicsCoverage } from "../body-dynamics-payload";
 import {
   assertOcctWorkerEventPayloadLimits,
   OcctWorkerEventSchema,
@@ -132,6 +133,14 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     try {
       const { type: _type, ...success } = event;
       const validated = await CadEvaluationEventSchema.parseAsync({ ...success, state: "succeeded" });
+      if (validated.state !== "succeeded") throw new Error("Expected a validated CAD success event");
+      const dynamics = validated.results.find(({ output }) => output === "body-dynamics");
+      if (dynamics?.output === "body-dynamics") {
+        assertBodyDynamicsCoverage(
+          dynamics.payload,
+          owner.request.document.bodies.map(({ id }) => id),
+        );
+      }
       if (active !== owner || settling !== owner) return;
       owner.emit(validated);
       finish();
@@ -188,7 +197,10 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
     settling = owner;
     try {
-      assertOcctWorkerEventPayloadLimits(data);
+      assertOcctWorkerEventPayloadLimits(
+        data,
+        owner.kind === "evaluation" ? owner.request.requestedOutputs : undefined,
+      );
     } catch (error) {
       if (error instanceof CadResourceLimitError) {
         resourceLimitFailure(error);

@@ -100,6 +100,34 @@ describe("CAD runtime contracts", () => {
     })).rejects.toThrow(/exactly one/i);
   });
 
+  it("accepts a bounded per-body exact dynamics result as a declared CAD output", async () => {
+    const request = await evaluationRequest();
+    const dynamics = {
+      bodies: [{
+        bodyId: "pump-body",
+        brep: { bytes: new Uint8Array([1, 2, 3]) },
+        volumeM3: 0.000032,
+        centerOfMassM: [0.04, 0.02, 0.005],
+        centroidalInertiaUnitDensityKgM2: [
+          1, 0, 0,
+          0, 2, 0,
+          0, 0, 3,
+        ],
+      }],
+    } as const;
+    const success = {
+      requestId: request.requestId, state: "succeeded",
+      sourceRevision: request.sourceRevision,
+      requestedOutputs: ["body-dynamics"],
+      results: [{ output: "body-dynamics", payload: dynamics }],
+    } as const;
+
+    expect(CadEvaluationRequestSchema.parse({
+      ...request, requestedOutputs: ["body-dynamics"],
+    })).toMatchObject({ requestedOutputs: ["body-dynamics"] });
+    await expect(CadEvaluationEventSchema.parseAsync(success)).resolves.toEqual(success);
+  });
+
   it("requires cancelled evaluations to carry worker-quarantine evidence", () => {
     expect(CadEvaluationEventSchema.parse({
       requestId: "cancelled-1", state: "cancelled", workerDisposition: "quarantined",
