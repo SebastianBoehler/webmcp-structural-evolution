@@ -18,6 +18,10 @@ const MechanismGateRoute = lazy(async () => {
   const module = await import("./MechanismGateRoute");
   return { default: module.MechanismGateRoute };
 });
+const ThermalGateRoute = lazy(async () => {
+  const module = await import("./ThermalGateRoute");
+  return { default: module.ThermalGateRoute };
+});
 
 const FoundationJourney = lazy(async () => {
   const module = await import("./FoundationJourney");
@@ -62,6 +66,12 @@ const exactCadRouteRequested = () => typeof globalThis.location !== "undefined"
   && new URLSearchParams(globalThis.location.search).has("exact-cad-gate");
 
 export function App(): JSX.Element {
+  if (typeof globalThis.location !== "undefined"
+    && new URLSearchParams(globalThis.location.search).has("thermal-gate")) {
+    return <ErrorBoundary><Suspense fallback={<p role="status">Loading thermal gate…</p>}>
+      <ThermalGateRoute />
+    </Suspense></ErrorBoundary>;
+  }
   if (typeof globalThis.location !== "undefined"
     && new URLSearchParams(globalThis.location.search).has("mechanism-gate")) {
     return <ErrorBoundary><Suspense fallback={<p role="status">Loading mechanism gate…</p>}>

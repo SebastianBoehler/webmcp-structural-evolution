@@ -1,8 +1,13 @@
 import { defineArtifactRecord, type ArtifactRecord } from "../../cad/artifact-contract";
 import { revisionId } from "../../domain/revisions";
 import { digestArtifactPayload, type ArtifactPayload } from "../../engineering/artifact-store";
-import type { EngineeringSolveRequest, SolverRunResult } from "../../engineering/solver-adapter";
-import type { ThermalResult, ThermalSolveInput } from "./thermal-contract";
+import type { EngineeringSolveRequest, SolverAdapter, SolverRunResult } from "../../engineering/solver-adapter";
+import { compileThermalStudy } from "./compile-thermal-study";
+import {
+  DEFAULT_THERMAL_COMPILE_LIMITS, type ThermalResult, type ThermalSolveInput,
+} from "./thermal-contract";
+import { verifyThermalResult, type ThermalVerification } from "./verify-thermal-result";
+import { createWebGpuThermalAdapter } from "./webgpu-thermal-adapter";
 
 type Dependency = ArtifactRecord["dependencies"][number];
 
@@ -99,9 +104,10 @@ async function record(
   });
 }
 
-export async function packInteractiveThermalResult(
+async function packThermalResult<Output>(
   request: EngineeringSolveRequest<ThermalSolveInput>, result: ThermalResult,
-): Promise<SolverRunResult<ThermalResult>> {
+  truthLevel: SolverRunResult<Output>["truthLevel"], evidence: unknown, output: Output,
+): Promise<SolverRunResult<Output>> {
   const deps = dependencies(request);
   const settingsDigest = await revisionId({ solver: "webgpu-steady-conduction-1.0.0", grid: result.grid });
   const temperaturePayload = {
@@ -120,15 +126,64 @@ export async function packInteractiveThermalResult(
       result.iterations, result.relativeResidual, result.heatInputW, result.heatOutputW,
       result.energyImbalanceW, result.relativeEnergyImbalance,
     ]),
-    evidenceUtf8: bytes({ truthLevel: result.truthLevel, device: result.device }),
+    evidenceUtf8: bytes({ truthLevel, device: result.device, ...evidence as object }),
     rasterizationUtf8: bytes(result.rasterization),
     metricsSchemaUtf8: bytes(SUMMARY_UNITS),
   };
   const summary = await record(request, "application/vnd.structural-evolution.thermal-result", summaryPayload, settingsDigest, [
     ...deps, { kind: "artifact", artifactId: temperature.id }, { kind: "artifact", artifactId: flux.id },
   ]);
-  return { output: result, truthLevel: result.truthLevel, artifacts: [
+  return { output, truthLevel, artifacts: [
     { record: temperature, payload: temperaturePayload },
     { record: flux, payload: fluxPayload }, { record: summary, payload: summaryPayload },
   ] };
+}
+
+export async function packInteractiveThermalResult(
+  request: EngineeringSolveRequest<ThermalSolveInput>, result: ThermalResult,
+): Promise<SolverRunResult<ThermalResult>> {
+  return packThermalResult(request, result, "interactive-estimate", {}, result);
+}
+
+async function packVerifiedThermalResult(
+  request: EngineeringSolveRequest<ThermalSolveInput>, result: ThermalResult,
+  verification: ThermalVerification,
+): Promise<SolverRunResult<Readonly<{ result: ThermalResult; verification: ThermalVerification }>>> {
+  return packThermalResult(request, result, "converged-numerical-solve",
+    { verification }, { result, verification });
+}
+
+export interface VerifiedThermalOutput {
+  readonly result: ThermalResult;
+  readonly verification: ThermalVerification;
+}
+
+function abort(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason : new DOMException("Thermal verification was cancelled", "AbortError");
+}
+
+/** Task-4-only promotion boundary. Neither verification nor result packing is injectable. */
+export function createVerifiedThermalAdapter(): SolverAdapter<ThermalSolveInput, VerifiedThermalOutput> {
+  const publicAdapter = createWebGpuThermalAdapter();
+  return {
+    capability: { kind: "thermal" },
+    supports: (request) => publicAdapter.supports(request),
+    async run(request, signal, emit) {
+      abort(signal);
+      const publicRun = await publicAdapter.run(request, signal, emit);
+      abort(signal);
+      if (publicRun.truthLevel !== "interactive-estimate") {
+        throw new Error("Thermal public adapter returned an unauthorized truth level");
+      }
+      const input = await compileThermalStudy(request, {
+        ...DEFAULT_THERMAL_COMPILE_LIMITS, maxRelativeAreaError: .02,
+      });
+      abort(signal);
+      const verification = await verifyThermalResult(input, publicRun.output);
+      abort(signal);
+      return packVerifiedThermalResult(request, publicRun.output, verification);
+    },
+  };
 }

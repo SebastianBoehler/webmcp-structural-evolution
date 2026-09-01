@@ -21,9 +21,14 @@ export async function rebuildStructuralExactSource(
     requestedOutputs: ["brep", "semantic-mesh"],
     settings: { consumer: "occt-exact-brep-voxelizer-v1" },
   });
-  await createOcctCadAdapter().evaluate(request, signal, (event) => {
-    if (event.state !== "progress") terminals.push(event);
-  });
+  const adapter = createOcctCadAdapter();
+  try {
+    await adapter.evaluate(request, signal, (event) => {
+      if (event.state !== "progress") terminals.push(event);
+    });
+  } finally {
+    adapter.dispose?.();
+  }
   if (terminals.length !== 1) throw new Error("Exact structural rebuild emitted an invalid terminal sequence");
   const terminal = terminals[0]!;
   if (terminal.state !== "succeeded" || terminal.requestId !== requestId
