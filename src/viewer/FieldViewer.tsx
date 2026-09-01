@@ -15,6 +15,8 @@ import {
   type ViewerRenderModel,
 } from "./field-renderer";
 import { viewerEnvironment, type FieldViewerEnvironment } from "./field-renderer-environment";
+import type { SemanticSessionState } from "./semantic-session-state";
+import { useSemanticSessionMount } from "./use-semantic-session-mount";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
 import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
 import { analysisRenderField } from "./analysis-render-field";
@@ -36,7 +38,7 @@ export interface FieldViewerProps {
   readonly assemblyParts?: readonly AssemblyVisualPart[];
   /** Updates mounted assembly roots without rebuilding their geometry. */
   readonly assemblyPoseParts?: readonly AssemblyVisualPart[];
-  /** Gate-only WebGL capture retention; ordinary viewers keep the fast default buffer. */
+  /** Gate-only WebGPU capture retention; ordinary viewers keep the fast default buffer. */
   readonly preserveDrawingBuffer?: boolean;
   readonly selectedAlternative?: string;
   readonly selectedPart?: string;
@@ -166,6 +168,8 @@ export function FieldViewer({
   const [gridVisible, setGridVisible] = useState(true);
   const [worldCoordinates, setWorldCoordinates] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const semanticState = useRef<SemanticSessionState>({ highlighted: undefined, selected: undefined,
+    poses: undefined, gridVisible: true, frame: undefined, view: "isometric", space: "world", snap: 10 });
   const stableAlternatives = alternatives.length === 0 ? EMPTY_ALTERNATIVES : alternatives;
   const auditionSelection = mode === "audition" ? selectedAlternative : undefined;
   const prepared = useMemo(() => prepareViewer(
@@ -179,10 +183,27 @@ export function FieldViewer({
     assemblyParts,
     analysisLayer,
   ), [current, stableAlternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts, analysisLayer]);
+  semanticState.current = { highlighted: selectedAlternative, selected: selectedPart, poses: assemblyPoseParts,
+    gridVisible: gridVisible && !droneOnly, frame: flightFrame, view,
+    space: worldCoordinates ? "world" : "local", snap: snapEnabled ? 10 : null };
+
+  useSemanticSessionMount({
+    enabled: !environment,
+    canvasRef,
+    sessionRef,
+    model: prepared.model,
+    revision: current?.branchRevision ?? "assembly",
+    stateRef: semanticState,
+    interactions: { onSelect: onPartSelect, onMove: onPartMove, onDragState: onPartDragState },
+    onAttempt: () => setRenderError(undefined),
+    onError: (error) => setRenderError(
+      `The WebGPU renderer failed. ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !prepared.model) return;
+    if (!canvas || !prepared.model || !environment) return;
     setRenderError(undefined);
     try {
       const session = mountFieldRenderer(
@@ -203,10 +224,15 @@ export function FieldViewer({
       setRenderError(`The 3D renderer failed. ${error instanceof Error ? error.message : String(error)}`);
       return failed ? () => failed.dispose() : undefined;
     }
-  }, [environment, onPartDragState, onPartMove, onPartSelect, prepared.model, preserveDrawingBuffer]);
+  }, [current?.branchRevision, environment, onPartDragState, onPartMove, onPartSelect, prepared.model, preserveDrawingBuffer]);
 
   useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [prepared.model, selectedAlternative]);
-  useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [prepared.model, selectedPart]);
+  useEffect(() => {
+    if (!environment) sessionRef.current?.setSelectedPart(selectedPart);
+  }, [environment, selectedPart]);
+  useEffect(() => {
+    if (environment) sessionRef.current?.setSelectedPart(selectedPart);
+  }, [environment, prepared.model, selectedPart]);
   useEffect(() => {
     if (assemblyPoseParts) sessionRef.current?.setAssemblyPartPoses(assemblyPoseParts);
   }, [assemblyPoseParts]);

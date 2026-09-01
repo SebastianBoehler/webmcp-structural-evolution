@@ -189,6 +189,7 @@ function renderMesh(payload: SemanticMeshPayload): CadMesh {
     surfaces: [{ name: "Exact OCCT part", positions, normals: payload.normals.slice(), indices: payload.indices.slice() }],
     sizeMm: maximum.map((value, axis) => value - minimum[axis]!) as [number, number, number],
     triangleCount: payload.indices.length / 3,
+    semanticMesh: payload,
   };
 }
 

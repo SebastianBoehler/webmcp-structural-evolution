@@ -46,7 +46,7 @@ export function ThermalGateRoute({ runGate = runThermalBrowserGate }: ThermalGat
     {state.kind === "cancelled" && <p role="status">Live run cancelled. No result artifact was authorized. Restart when ready.</p>}
     {report?.status === "blocked" && <p role="alert">Blocked at {report.blocker.stage}: {report.blocker.message}</p>}
     {state.kind === "complete" && report?.status === "passed" && <>
-      <p className="thermal-gate__passed" role="status">Live thermal gate passed.</p>
+      <p className="thermal-gate__passed" role="status">Live thermal solve evidence passed. Viewport verification is reported separately.</p>
       <ThermalFieldViewport session={state.session}/>
       <section className="thermal-gate__evidence" aria-labelledby="thermal-evidence-title">
         <h2 id="thermal-evidence-title">Measured live evidence</h2>

@@ -26,11 +26,11 @@ const topology = {
 
 describe("analysisRenderField", () => {
   it("preserves one physical scale across the envelope and every load case", () => {
-    const displacement = analysisRenderField(analysis, topology, "displacement");
     const stress = analysisRenderField(analysis, topology, "stress");
     const safety = analysisRenderField(analysis, topology, "safety");
 
-    expect(displacement.cases?.["roll-differential"]?.maximum).toBe(4);
+    expect(() => analysisRenderField(analysis, topology, "displacement"))
+      .toThrow("signed displacement vectors");
     expect(stress.cases?.["roll-differential"]?.maximum).toBe(40);
     expect(safety.cases?.["roll-differential"]?.maximum).toBe(1);
     expect(safety.cases?.["roll-differential"]?.values[1]).toBe(0.125);

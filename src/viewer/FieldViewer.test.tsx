@@ -11,6 +11,7 @@ import {
   harness,
   region,
   renderedMeshes,
+  verified,
 } from "./field-viewer-test-support";
 import type { AssemblyVisualPart } from "./render-envelope";
 
@@ -257,5 +258,20 @@ describe("FieldViewer", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/gpu lost.*unverified field is hidden/i);
     expect(renderedMeshes(test)).toHaveLength(0);
     expect(renderedScene(test).getObjectByName("assembly-part:motor-envelope")).toBeDefined();
+  });
+
+  it("visibly rejects legacy scalar-only displacement instead of inventing direction", () => {
+    const test = harness();
+    const result = { ...verified([1, 1, 0, 1]),
+      analysis: { displacement: new Float32Array([0, 1, 2, 3]),
+        stress: new Float32Array([1, 2, 3, 4]) },
+      topology: { solver: "sparse-simp-lattice-wasm", initialCompliance: 2,
+        finalCompliance: 1, maxDisplacement: 3, maxStress: 4,
+        minimumSafetyFactor: 2, materialFraction: .5, iterations: 4 } };
+    render(<FieldViewer current={{ ...current, result } as ViewerBranch}
+      alternatives={[]} selectedRegion={region} threshold={.5} mode="overlay"
+      analysisLayer="displacement" environment={test.environment}/>);
+
+    expect(screen.getByRole("alert").textContent).toMatch(/signed displacement vectors.*hidden/i);
   });
 });

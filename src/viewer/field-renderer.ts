@@ -30,6 +30,7 @@ import {
 } from "./field-renderer-environment";
 
 export type { ViewerRenderModel } from "./render-envelope";
+export type { SemanticViewport } from "./webgpu-renderer";
 export { FieldRendererMountError } from "./field-renderer-error";
 
 // A 2x DPR ceiling is a rendering-budget decision: voxel comparisons favor legibility over 3x pixels.

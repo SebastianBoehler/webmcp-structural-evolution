@@ -10,6 +10,8 @@ export interface CadMesh {
   readonly surfaces: readonly CadSurface[];
   readonly sizeMm: readonly [number, number, number];
   readonly triangleCount: number;
+  /** Preserved only when the mesh originated in the authoritative CAD rebuild. */
+  readonly semanticMesh?: SemanticMeshPayload;
 }
 
 interface OcctApi {
@@ -94,3 +96,4 @@ export async function decodeStepBytes(
 export async function decodeStepFile(file: File): Promise<CadMesh> {
   return decodeStepBytes(new Uint8Array(await file.arrayBuffer()));
 }
+import type { SemanticMeshPayload } from "../cad/rebuild-payload";

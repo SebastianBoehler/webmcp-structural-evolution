@@ -25,7 +25,8 @@ test("UI and WebMCP execute the same live thermal session service", async () => 
   const dispose = installFakeModelContext(context);
   const runGate = vi.fn(async () => passed);
   const view = render(<ThermalGateRoute runGate={runGate} />);
-  await screen.findByText(/live thermal gate passed/i);
+  await screen.findByText(/live thermal solve evidence passed/i);
+  expect(screen.queryByText(/^live thermal gate passed\.$/i)).toBeNull();
   await waitFor(() => expect(context.active.has("run_cobot_thermal_study")).toBe(true));
 
   fireEvent.click(screen.getByRole("button", { name: /run gate again/i }));

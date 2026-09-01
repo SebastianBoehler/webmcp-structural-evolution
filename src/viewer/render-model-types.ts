@@ -15,6 +15,10 @@ export interface ScalarAnalysisField {
   readonly kind: "displacement" | "stress" | "safety" | "temperature" | "heat-flux";
   readonly values: Float32Array;
   readonly maximum: number;
+  readonly vectors?: Float32Array;
+  readonly displacementUnit?: "mm";
+  readonly sourceDisplacementUnit?: "m" | "mm";
+  readonly vectorUnit?: "W/m^2";
   readonly cases?: Readonly<Record<string, ScalarAnalysisCaseField | undefined>>;
 }
 

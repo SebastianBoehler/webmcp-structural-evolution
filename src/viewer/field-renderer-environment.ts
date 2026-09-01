@@ -46,14 +46,8 @@ export interface FieldViewerEnvironment {
 
 const defaultEnvironment: FieldViewerEnvironment = {
   createRenderer: (canvas, options) => {
-    const renderer = new THREE.WebGLRenderer({
-      alpha: true, antialias: true, canvas, preserveDrawingBuffer: options?.preserveDrawingBuffer ?? false,
-    });
-    renderer.setClearColor(0x000000, 0);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
-    return renderer;
+    void canvas; void options;
+    throw new Error("The legacy field renderer has no production backend. Use the WebGPU semantic viewport.");
   },
   createControls: (camera, canvas) => new OrbitControls(camera, canvas),
   createResizeObserver: (callback) => new ResizeObserver((entries) => callback(entries)),

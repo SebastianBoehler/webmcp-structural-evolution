@@ -23,12 +23,9 @@ export function analysisRenderField(
   topology: TopologyMetrics,
   layer: AnalysisLayer,
 ): ScalarAnalysisField {
-  if (layer === "displacement") return {
-    kind: layer,
-    values: analysis.displacement,
-    maximum: Math.max(topology.maxDisplacement, Number.EPSILON),
-    cases: cases(analysis, "displacement", Math.max(topology.maxDisplacement, Number.EPSILON)),
-  };
+  if (layer === "displacement") {
+    throw new Error("signed displacement vectors are required; legacy scalar displacement is hidden.");
+  }
   if (layer === "stress") return {
     kind: layer,
     values: analysis.stress,
