@@ -9,13 +9,12 @@ import {
   type EngineeringWorkspaceService,
 } from "./engineering-workspace-service";
 import {
-  cadAdapter,
-  cadResult,
   human,
   immediateAdapter,
+  PRODUCTION_TEST_STUDY_ID,
+  productionWorkspaceOptions,
   rename,
   solveResult,
-  structuralPlanner,
   workspaceOptions,
 } from "./workspace-test-fixtures";
 
@@ -60,12 +59,12 @@ it("does not lose solver metadata finalized while a CAD commit is awaiting stora
   let solveRequest!: EngineeringSolveRequest<unknown>;
   const registry = createSolverRegistry();
   registry.register({
-    capability: { kind: "fea" }, supports: () => ({ supported: true }),
+    capability: { kind: "thermal" }, supports: () => ({ supported: true }),
     async run(request) { solveRequest = request; solverStarted(); return solverGate; },
   });
-  const service = createEngineeringWorkspaceService(await workspaceOptions({ store, registry }));
+  const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
   const root = service.inspect().document;
-  const launched = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+  const launched = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
   await started;
   const rebuilding = service.rebuild({
     requestId: "blocked-cad", expectedRevision: root.revision, outputs: ["step"], settings: {},
@@ -98,10 +97,10 @@ it("orders a commit-accepted solver finalization before a competing apply", asyn
     },
   };
   const registry = createSolverRegistry();
-  registry.register(immediateAdapter());
-  const service = createEngineeringWorkspaceService(await workspaceOptions({ store, registry }));
+  registry.register(immediateAdapter(false, [], undefined, "thermal"));
+  const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
   const root = service.inspect().document;
-  const launched = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+  const launched = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
   await written;
   let applySettled = false;
   const applying = service.apply(rename(root, "post-write-apply", "Post-write apply"))
@@ -145,14 +144,14 @@ it("does not advance hidden session state when artifact invalidation fails", asy
 });
 
 it("retains an ancestor result but rejects untrusted rederivation at the new revision", async () => {
-  const service: EngineeringWorkspaceService = createEngineeringWorkspaceService(await workspaceOptions());
+  const service: EngineeringWorkspaceService = createEngineeringWorkspaceService(await productionWorkspaceOptions());
   const root = service.inspect().document;
-  const first = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+  const first = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
   await waitFor(() => service.inspectJob(first.jobId).event.state === "verified");
   await service.apply(defineUnrelatedParameter(root, "comparison-head"));
   const current = service.inspect().document;
-  await expect(service.launchStudy({ studyId: "link-static", expectedRevision: current.revision }))
-    .rejects.toThrow(/workspace-owned production planner/i);
+  await expect(service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: current.revision }))
+    .rejects.toThrow(/component planner intent/i);
   expect(service.inspect().artifacts.filter(({ kind }) => kind === "field"))
     .toEqual([expect.objectContaining({ sourceRevision: root.revision })]);
 });

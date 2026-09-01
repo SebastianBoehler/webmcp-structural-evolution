@@ -2,6 +2,8 @@ import { defineDesignDocument, type DesignDocument } from "../cad/document-schem
 import type { AssemblyDraft } from "../domain/assembly-model";
 import type { ComponentDefinition } from "../domain/component-model";
 import { normalizeDensity, normalizeMass, normalizePressure, type DensitySchema, type PressureSchema } from "../domain/engineering-units";
+import { revisionId } from "../domain/revisions";
+import { freezeSnapshot } from "../domain/snapshots";
 import { initialDroneWorkspace } from "../assembly/assembly-workspace-model";
 import { compileLiveTopologyContext } from "../optimization/assembly-topology-input";
 import { DRONE_ARM_FOUNDATION_STUDY } from "../samples/drone-arm-foundation";
@@ -31,6 +33,27 @@ export interface AuthoritativeComponentDocument {
   readonly loads: readonly Readonly<{ instanceId: string; interfaceId: string; region: unknown; forceN: readonly number[] }>[];
   readonly stages: Readonly<Record<string, readonly string[]>>;
   readonly joints: readonly MechanismJoint[];
+}
+
+const componentIntents = new WeakMap<AuthoritativeComponentDocument, string>();
+
+async function defineAuthoritativeComponent(
+  value: AuthoritativeComponentDocument,
+): Promise<AuthoritativeComponentDocument> {
+  const model = freezeSnapshot(value) as AuthoritativeComponentDocument;
+  componentIntents.set(model, await revisionId({
+    authority: model.authority, source: model.source, documentRevision: model.document.revision,
+    componentInstances: model.componentInstances, bodyMassKg: model.bodyMassKg,
+    interfaces: model.interfaces, protectedInterfaces: model.protectedInterfaces,
+    supports: model.supports, loads: model.loads, stages: model.stages, joints: model.joints,
+  }));
+  return model;
+}
+
+export function authoritativeComponentIntent(model: AuthoritativeComponentDocument): string {
+  const intent = componentIntents.get(model);
+  if (!intent) throw new Error("Component planners require an authoritative component intent");
+  return intent;
 }
 
 const m = (value: number) => ({ value, unit: "m" as const });
@@ -125,11 +148,20 @@ export async function droneMotorSideArmDocument(): Promise<AuthoritativeComponen
   const interfaceId = motor.loadContributions[0]?.id;
   if (!sourceForce || !load || !interfaceId) throw new Error("Drone foundation load is unresolved");
   const compiled = await compile("drone-motor-side-arm", "Reference drone motor-side parametric arm", DRONE_ARM_FOUNDATION_STUDY.assembly, DRONE_ARM_FOUNDATION_STUDY.components, DRONE_ARM_FOUNDATION_STUDY.study.material);
-  const document = await withDroneComponentStudies(compiled.document, load.loadN);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document,
-    supports: sourceCase.fixedRegions.map((region, index) => ({ id: region.id, region: live.input.supports[index] })),
-    protectedInterfaces: DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts.map((mount) => ({ id: mount.id, mount })),
-    loads: [{ instanceId: motorInstance.instanceId, interfaceId, region: sourceForce.region, forceN: load.loadN }], stages: {}, joints: [] };
+  const supports = sourceCase.fixedRegions.map((region, index) =>
+    ({ id: region.id, region: live.input.supports[index] }));
+  const protectedInterfaces = DRONE_ARM_FOUNDATION_STUDY.assembly.preservedMounts
+    .map((mount) => ({ id: mount.id, mount }));
+  const loads = [{ instanceId: motorInstance.instanceId, interfaceId,
+    region: sourceForce.region, forceN: load.loadN }];
+  const bodyInstance = DRONE_ARM_FOUNDATION_STUDY.assembly.components.find((instance) =>
+    definitionFor(DRONE_ARM_FOUNDATION_STUDY.components, instance).category === "body-interface");
+  if (!bodyInstance) throw new Error("Drone body-interface component is unresolved");
+  const document = await withDroneComponentStudies(compiled.document, {
+    bodyId: `${bodyInstance.instanceId}-body`, supports, loads, protectedInterfaces,
+  });
+  return defineAuthoritativeComponent({ authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document,
+    supports, protectedInterfaces, loads, stages: {}, joints: [] });
 }
 
 export async function se6UpperArmDocument(): Promise<AuthoritativeComponentDocument> {
@@ -137,7 +169,7 @@ export async function se6UpperArmDocument(): Promise<AuthoritativeComponentDocum
   if (!instance) throw new Error("SE-6 upper-arm-housing placement is unresolved");
   const compiled = await compile("se6-upper-arm-housing", "SE-6 parametric upper-arm housing", { ...se6Assembly, components: [instance] }, SE6_CATALOG, se6Study.material);
   const document = await withUpperArmThermalStudy(compiled.document);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages: {}, joints: [] };
+  return defineAuthoritativeComponent({ authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages: {}, joints: [] });
 }
 
 export function assertStagePartition(stages: Readonly<Record<string, readonly string[]>>, componentInstances: readonly string[]): void {
@@ -163,6 +195,6 @@ export async function se6MechanismDocument(): Promise<AuthoritativeComponentDocu
   const stages = Object.freeze(Object.fromEntries(SE6_STAGE_IDS.map((id) => [id, members[id]])) as Record<string, readonly string[]>);
   assertStagePartition(stages, compiled.componentInstances);
   const document = await withSe6MechanismStudy(compiled.document);
-  return { authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages,
-    joints: SE6_JOINTS };
+  return defineAuthoritativeComponent({ authority: "parametric-specification-model", source: { authority: "parametric-specification-model", source: "catalog-dimensions" }, ...compiled, document, supports: [], protectedInterfaces: [], loads: [], stages,
+    joints: SE6_JOINTS });
 }

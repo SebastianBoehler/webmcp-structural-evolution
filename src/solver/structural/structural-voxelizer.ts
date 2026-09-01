@@ -174,9 +174,17 @@ function validateExactMeshCorrespondence(
 function requiredSelectionIds(document: DesignDocument, bodyIds: ReadonlySet<string>): Set<string> {
   const required = new Set<string>();
   for (const study of document.studies) {
-    if (study.kind !== "structural-linear" || !study.bodyIds.some((id) => bodyIds.has(id))) continue;
-    for (const id of study.supports) required.add(id);
-    for (const load of study.loads) required.add(load.selectionId);
+    if (study.kind === "structural-linear" && study.bodyIds.some((id) => bodyIds.has(id))) {
+      for (const id of study.supports) required.add(id);
+      for (const load of study.loads) required.add(load.selectionId);
+    }
+    if (study.kind === "topology" && study.configurationState === "configured") {
+      const source = document.studies.find(({ id }) => id === study.sourceStudyId);
+      if (source?.kind === "structural-linear" && source.bodyIds.some((id) => bodyIds.has(id))) {
+        for (const id of study.requiredSelectionIds ?? []) required.add(id);
+        for (const id of study.protectedVoidSelectionIds) required.add(id);
+      }
+    }
   }
   return required;
 }

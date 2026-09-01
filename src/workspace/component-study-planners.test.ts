@@ -17,6 +17,10 @@ import {
 } from "../models/component-documents";
 import { createComponentStudyPlanners } from "./component-study-planners";
 import { createEngineeringWorkspaceService } from "./engineering-workspace-service";
+import { compileStructuralStudy } from "../solver/structural/compile-structural-study";
+import { createWebGpuTopologyAdapter } from "../solver/topology/topology-adapter";
+import type { TopologySolveInput } from "../solver/topology/topology-contract";
+import { configuredTopologyStudy, topologyPassiveCells } from "../solver/topology/topology-input";
 
 let bridge: OcctBridge;
 beforeAll(async () => { bridge = createOcctBridge(await OcctKernel.init()); });
@@ -82,6 +86,16 @@ async function waitVerified(workspace: ReturnType<typeof createEngineeringWorksp
 }
 
 describe("exact component study planners", () => {
+  it("refuses a caller-substituted mechanism intent sidecar", async () => {
+    const model = await se6MechanismDocument();
+    const substituted = {
+      ...model,
+      bodyMassKg: { ...model.bodyMassKg, "base-body": model.bodyMassKg["base-body"]! * 2 },
+    };
+
+    expect(() => createComponentStudyPlanners(substituted)).toThrow(/authoritative component intent/i);
+  });
+
   it("launches structural and topology from one retained drone exact source", async () => {
     const evaluate = vi.fn(), model = await droneMotorSideArmDocument();
     const { workspace, seen } = await service(model, evaluate);
@@ -93,6 +107,16 @@ describe("exact component study planners", () => {
     expect(seen.map(({ kind }) => kind)).toEqual(["fea", "topology"]);
     expect(seen.every(({ inputArtifacts }) => inputArtifacts.some(({ producer }) =>
       producer.name === "workspace-exact-body-brep"))).toBe(true);
+    const topology = seen[1] as EngineeringSolveRequest<TopologySolveInput>;
+    await expect(compileStructuralStudy(topology.input.sourceStructuralRequest)).resolves.toBeDefined();
+    const passive = topologyPassiveCells(topology, configuredTopologyStudy(topology));
+    expect(passive.requiredInterfaces.map(({ id }) => id)).toEqual(expect.arrayContaining(
+      model.protectedInterfaces.filter(({ id }) => id.startsWith("body-interface-"))
+        .map(({ id }) => id),
+    ));
+    vi.stubGlobal("navigator", { gpu: {} });
+    expect(createWebGpuTopologyAdapter().supports(topology)).toEqual({ supported: true });
+    vi.unstubAllGlobals();
     workspace.dispose();
   });
 

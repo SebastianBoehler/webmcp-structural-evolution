@@ -77,6 +77,20 @@ describe("engineering job runner result and subscriber contracts", () => {
     await expect(store.get(second.id)).resolves.toBeInstanceOf(ArrayBuffer);
   });
 
+  it("rejects generated artifacts that reach only part of the authoritative request inputs", async () => {
+    const document = await sourceDocument();
+    const seed = await request(document, "partial-input-lineage", []);
+    const firstInput = await artifactForResult(seed, bytes(31));
+    const secondInput = await artifactForResult(seed, bytes(32));
+    const solveRequest = await request(document, "partial-input-lineage", [firstInput, secondInput]);
+    const result = await artifactForResult(solveRequest, bytes(33), [
+      ...studyDependency(solveRequest), { kind: "artifact", artifactId: firstInput.id },
+    ]);
+
+    expect(generatedArtifactDependencyError(solveRequest, [result]))
+      .toMatch(/every authoritative request input/i);
+  });
+
   it("rejects generated artifacts without resolved study ownership before a write", async () => {
     const document = await sourceDocument();
     const cases = [

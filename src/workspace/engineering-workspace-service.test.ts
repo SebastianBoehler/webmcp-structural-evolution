@@ -18,6 +18,8 @@ import {
   gatedAdapter,
   human,
   immediateAdapter,
+  PRODUCTION_TEST_STUDY_ID,
+  productionWorkspaceOptions,
   rename,
   solveResult,
   structuralPlanner,
@@ -262,17 +264,15 @@ describe("engineering workspace authority", () => {
   it("invalidates active metadata and payloads and cancels old-revision jobs before quarantining late output", async () => {
     const store = createArtifactStore();
     const registry = createSolverRegistry();
-    const pending = gatedAdapter();
+    const pending = gatedAdapter("thermal");
     registry.register(pending.adapter);
-    const service = createEngineeringWorkspaceService(await workspaceOptions({
-      store, registry, planners: { "structural-linear": structuralPlanner() },
-    }));
+    const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
     const root = currentDocument(service);
     await service.rebuild({
       requestId: "current-step", expectedRevision: root.revision, outputs: ["step"], settings: {},
     });
     const cadArtifact = service.inspect().artifacts[0]!;
-    const { jobId } = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+    const { jobId } = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
     await pending.gate.started;
 
     await service.apply(rename(root, "invalidate", "Changed design"));
@@ -281,13 +281,7 @@ describe("engineering workspace authority", () => {
     expect(service.inspectJob(jobId).event.state).toBe("cancelled");
     expect(service.inspect().artifacts).not.toContainEqual(cadArtifact);
     await expect(store.get(cadArtifact.id)).resolves.toBeUndefined();
-    const latePlan = await structuralPlanner()({
-      document: root,
-      study: root.studies[0] as never,
-      artifacts: [],
-      exactSource: async () => { throw new Error("unused test exact source"); },
-    });
-    const late = await solveResult(latePlan.request, 9);
+    const late = await solveResult(pending.request()!, 9);
     pending.gate.release(late);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -297,23 +291,19 @@ describe("engineering workspace authority", () => {
   });
 
   it("selects study execution by typed kind and passes a complete revision-bound request, never a fixture ID", async () => {
-    const calls: Array<{ readonly kind: string; readonly studyId: string }> = [];
     const seen: Parameters<ReturnType<typeof immediateAdapter>["run"]>[0][] = [];
     const registry = createSolverRegistry();
-    registry.register(immediateAdapter(false, seen));
-    const service = createEngineeringWorkspaceService(await workspaceOptions({
-      registry, planners: { "structural-linear": structuralPlanner(calls) },
-    }));
+    registry.register(immediateAdapter(false, seen, undefined, "thermal"));
+    const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ registry }));
     const root = currentDocument(service);
 
-    const { jobId } = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+    const { jobId } = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
     await waitFor(() => service.inspectJob(jobId).event.state === "verified");
 
-    expect(calls).toEqual([{ kind: "structural-linear", studyId: "link-static" }]);
     expect(seen[0]).toMatchObject({
-      kind: "fea", studyId: "link-static", sourceRevision: root.revision,
+      kind: "thermal", studyId: PRODUCTION_TEST_STUDY_ID, sourceRevision: root.revision,
       document: { revision: root.revision }, input: {
-        semanticMeshArtifactId: expect.any(String), voxelArtifactId: expect.any(String),
+        semanticMeshArtifactId: expect.any(String), thermalVoxelArtifactId: expect.any(String),
       },
     });
     expect(JSON.stringify(seen[0])).not.toMatch(/reference-drone|se6-cobot|fixture/i);
@@ -326,19 +316,19 @@ describe("engineering workspace authority", () => {
     let observedBeforeRun = false;
     let inputRecord: ArtifactRecord | undefined;
     registry.register({
-      capability: { kind: "fea" }, supports: () => ({ supported: true }),
+      capability: { kind: "thermal" }, supports: () => ({ supported: true }),
       async run(request) {
-        inputRecord = request.inputArtifacts.find(({ kind }) => kind === "solver-mesh");
+        inputRecord = request.inputArtifacts.find(({ kind }) => kind === "sdf");
         observedBeforeRun = !!inputRecord
           && service.inspect().artifacts.some(({ id }) => id === inputRecord!.id)
           && (await store.get(inputRecord.id)) !== undefined;
         return solveResult(request, 1);
       },
     });
-    service = createEngineeringWorkspaceService(await workspaceOptions({ store, registry }));
+    service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
     const root = service.inspect().document;
 
-    const { jobId } = await service.launchStudy({ studyId: "link-static", expectedRevision: root.revision });
+    const { jobId } = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: root.revision });
     await waitFor(() => service.inspectJob(jobId).event.state === "verified");
 
     expect(inputRecord).toBeDefined();
@@ -372,7 +362,7 @@ describe("engineering workspace authority", () => {
 
     await expect(service.launchStudy({
       studyId: "link-static", expectedRevision: root.revision,
-    })).rejects.toThrow(/active exact model|compiled input/i);
+    })).rejects.toThrow(/service-issued derivation receipt/i);
   });
 
   it("leaves no planned payload or metadata when compilation becomes stale", async () => {
@@ -443,10 +433,10 @@ describe("engineering workspace authority", () => {
   });
 
   it("compares only distinct current verified comparable results", async () => {
-    const service = createEngineeringWorkspaceService(await workspaceOptions());
+    const service = createEngineeringWorkspaceService(await productionWorkspaceOptions());
     const revision = currentDocument(service).revision;
-    const first = await service.launchStudy({ studyId: "link-static", expectedRevision: revision });
-    const second = await service.launchStudy({ studyId: "link-static", expectedRevision: revision });
+    const first = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision });
+    const second = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision });
     await waitFor(() => service.inspectJob(first.jobId).event.state === "verified"
       && service.inspectJob(second.jobId).event.state === "verified");
     const fields = service.inspect().artifacts.filter(({ kind }) => kind === "field");
@@ -537,12 +527,12 @@ describe("engineering workspace authority", () => {
 
   it("deduplicates repeated verified artifact IDs before attaching metadata", async () => {
     const registry = createSolverRegistry();
-    registry.register(immediateAdapter(false, [], () => 4));
-    const service = createEngineeringWorkspaceService(await workspaceOptions({ registry }));
+    registry.register(immediateAdapter(false, [], () => 4, "thermal"));
+    const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ registry }));
     const revision = currentDocument(service).revision;
 
-    const first = await service.launchStudy({ studyId: "link-static", expectedRevision: revision });
-    const second = await service.launchStudy({ studyId: "link-static", expectedRevision: revision });
+    const first = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision });
+    const second = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision });
     await waitFor(() => service.inspectJob(first.jobId).event.state === "verified"
       && service.inspectJob(second.jobId).event.state === "verified");
 
@@ -551,9 +541,9 @@ describe("engineering workspace authority", () => {
 
   it("publishes immutable reentrant ordered events, isolates listeners, and honors unsubscribe", async () => {
     const registry = createSolverRegistry();
-    const pending = gatedAdapter();
+    const pending = gatedAdapter("thermal");
     registry.register(pending.adapter);
-    const service = createEngineeringWorkspaceService(await workspaceOptions({ registry }));
+    const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ registry }));
     const revision = currentDocument(service).revision;
     const observed: string[] = [];
     let jobId = "";
@@ -564,11 +554,11 @@ describe("engineering workspace authority", () => {
       }
       throw new Error("listener failure must be isolated");
     });
-    const unsubscribe = service.subscribe((event) => observed.push(
-      event.type === "job-changed" ? event.entry.event.state : event.type,
-    ));
+    const unsubscribe = service.subscribe((event) => {
+      if (event.type === "job-changed") observed.push(event.entry.event.state);
+    });
 
-    ({ jobId } = await service.launchStudy({ studyId: "link-static", expectedRevision: revision }));
+    ({ jobId } = await service.launchStudy({ studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision }));
     await waitFor(() => service.inspectJob(jobId).event.state === "cancelled");
     unsubscribe();
     await service.apply(rename(currentDocument(service), "after-unsubscribe", "No observation"));

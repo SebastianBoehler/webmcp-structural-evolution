@@ -9,6 +9,9 @@ import type { Study } from "../engineering/study-schema";
 import { WorkspaceError } from "./workspace-cad";
 import { validateStudyInputAuthority } from "./workspace-study-authority";
 import type { ExactComponentSource } from "./exact-component-source";
+import type {
+  WorkspaceDerivationAuthority, WorkspaceDerivationReceipt,
+} from "./workspace-derivation-receipt";
 
 type StudyKind = Study["kind"];
 type StudyOfKind<Kind extends StudyKind> = Extract<Study, { kind: Kind }>;
@@ -29,6 +32,13 @@ export type StudyRequestPlanners = Partial<{
   [Kind in StudyKind]: StudyRequestPlanner<Kind>;
 }>;
 
+export type StudyDerivationProof = Readonly<{
+  authority: WorkspaceDerivationAuthority;
+  receipt: WorkspaceDerivationReceipt;
+  exact: ExactComponentSource;
+  intentDigest: string;
+}>;
+
 const jobKind: Readonly<Record<StudyKind, EngineeringJobKind>> = {
   "structural-linear": "fea",
   topology: "topology",
@@ -46,7 +56,7 @@ export async function validateStudyCompilation(
   document: DesignDocument,
   study: DesignDocument["studies"][number],
   activeArtifacts: readonly ArtifactRecord[],
-  trustedProductionPlanner = false,
+  proof?: StudyDerivationProof,
 ): Promise<StudyCompilation> {
   const ownedInputs = compilation.inputs.map((entry) => ({
     record: own(entry.record),
@@ -63,10 +73,13 @@ export async function validateStudyCompilation(
   const availableIds = new Set(activeArtifacts.map(({ id }) => id));
   const seen = new Set<string>();
   const inputs: ArtifactStoreBatchEntry[] = [];
-  if (ownedInputs.length > 0 && !trustedProductionPlanner) {
+  const derivedRequest = request.inputArtifacts.some(({ kind, producer }) =>
+    kind === "solver-mesh" || kind === "sdf" || kind === "body-dynamics"
+    || producer.name === "workspace-exact-body-brep");
+  if (derivedRequest && !proof) {
     throw new WorkspaceError(
       "invalid-study-input",
-      "Derived study inputs require a workspace-owned production planner receipt",
+      "Derived study inputs require a service-issued derivation receipt",
     );
   }
   for (const entry of ownedInputs) {
@@ -90,11 +103,19 @@ export async function validateStudyCompilation(
       "Solve request references an artifact outside the active exact model or compiled input batch",
     );
   }
+  const validated = { request, inputs };
+  if (proof && !await proof.authority.verify(proof.receipt, {
+    exact: proof.exact, compilation: validated, intentDigest: proof.intentDigest,
+  })) {
+    throw new WorkspaceError(
+      "invalid-study-input", "Service-issued derivation receipt does not match the exact compilation",
+    );
+  }
   try {
     await validateStudyInputAuthority(request, study, activeArtifacts);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Study input authority validation failed";
     throw new WorkspaceError("invalid-study-input", message);
   }
-  return { request, inputs };
+  return validated;
 }

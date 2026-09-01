@@ -1,12 +1,15 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import type { ArtifactRecord } from "../cad/artifact-contract";
 import type { DesignDocument } from "../cad/document-schema";
 import { createArtifactStore, type ArtifactStore } from "../engineering/artifact-store";
+import { createSolverRegistry } from "../engineering/solver-registry";
 import {
-  exactCobotPlan, serviceForPlans, thermalResult, waitForJob,
-} from "./workspace-lineage-test-support";
-import { human } from "./workspace-test-fixtures";
+  createEngineeringWorkspaceService,
+} from "./engineering-workspace-service";
+import {
+  human, immediateAdapter, PRODUCTION_TEST_STUDY_ID, productionWorkspaceOptions,
+} from "./workspace-test-fixtures";
 
 const rename = (document: DesignDocument) => ({
   id: "invalidate-comparison", expectedRevision: document.revision, actor: human, preconditions: [],
@@ -14,8 +17,6 @@ const rename = (document: DesignDocument) => ({
 });
 
 it("rechecks comparison eligibility after durable reads before returning", async () => {
-  const first = await exactCobotPlan("comparison-one");
-  const second = await exactCobotPlan("comparison-two");
   const backing = createArtifactStore();
   let readCount = 0;
   let entered!: () => void;
@@ -34,19 +35,24 @@ it("rechecks comparison eligibility after durable reads before returning", async
       return payload;
     },
   };
-  const { service } = await serviceForPlans(
-    [first, second],
-    (request) => thermalResult(request, request.jobId.endsWith("one") ? 21 : 22),
-    store, true,
-  );
+  let resultValue = 20;
+  const registry = createSolverRegistry();
+  registry.register(immediateAdapter(false, [], () => ++resultValue, "thermal"));
+  const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
+  const revision = service.inspect().document.revision;
   const firstJob = await service.launchStudy({
-    studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
+    studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision,
   });
   const secondJob = await service.launchStudy({
-    studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
+    studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision,
   });
-  await waitForJob(service, firstJob.jobId, "verified");
-  await waitForJob(service, secondJob.jobId, "verified");
+  await Promise.all([firstJob.jobId, secondJob.jobId].map(async (jobId) => {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      if (service.inspectJob(jobId).event.state === "verified") return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error("Production comparison job did not verify");
+  }));
   const fields = service.inspect().artifacts.filter(({ kind }) => kind === "field");
 
   const comparing = service.compareResults(fields[0]!.id, fields[1]!.id);
@@ -58,11 +64,12 @@ it("rechecks comparison eligibility after durable reads before returning", async
 });
 
 it("reserves a duplicate job ID before publishing any new artifact event", async () => {
-  const first = await exactCobotPlan("duplicate-job", 1);
-  const second = await exactCobotPlan("duplicate-job", 2);
-  const { service, store } = await serviceForPlans(
-    [first, second], (request) => thermalResult(request, 12), undefined, true,
-  );
+  const store = createArtifactStore();
+  const registry = createSolverRegistry();
+  registry.register(immediateAdapter(false, [], () => 12, "thermal"));
+  const service = createEngineeringWorkspaceService(await productionWorkspaceOptions({ store, registry }));
+  const revision = service.inspect().document.revision;
+  const uuid = vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000012");
   const events: Array<readonly ArtifactRecord[]> = [];
   service.subscribe((event) => {
     if (event.type === "artifacts-changed") {
@@ -70,16 +77,20 @@ it("reserves a duplicate job ID before publishing any new artifact event", async
     }
   });
   const launched = await service.launchStudy({
-    studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
+    studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision,
   });
-  await waitForJob(service, launched.jobId, "verified");
+  for (let attempt = 0; attempt < 80 && service.inspectJob(launched.jobId).event.state !== "verified"; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  expect(service.inspectJob(launched.jobId).event.state).toBe("verified");
   const eventCount = events.length;
 
   await expect(service.launchStudy({
-    studyId: "se6-upper-arm-thermal", expectedRevision: first.document.revision,
+    studyId: PRODUCTION_TEST_STUDY_ID, expectedRevision: revision,
   })).rejects.toThrow(/job.*already|duplicate/i);
 
-  expect(service.inspect().artifacts.some(({ id }) => id === second.derived.record.id)).toBe(true);
-  await expect(store.get(second.derived.record.id)).resolves.toBeDefined();
+  const derived = service.inspect().artifacts.find(({ kind }) => kind === "sdf")!;
+  await expect(store.get(derived.id)).resolves.toBeDefined();
   expect(events).toHaveLength(eventCount);
+  uuid.mockRestore();
 });

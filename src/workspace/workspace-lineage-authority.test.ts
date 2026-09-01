@@ -4,7 +4,7 @@ import { defineArtifactRecord } from "../cad/artifact-contract";
 import { digestArtifactPayload } from "../engineering/artifact-store";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
 import {
-  exactCobotPlan, redefineInput, serviceForPlans, thermalResult, waitForJob,
+  exactCobotPlan, redefineInput, serviceForPlans, thermalResult,
 } from "./workspace-lineage-test-support";
 
 describe("workspace exact-model lineage authority", () => {
@@ -23,7 +23,7 @@ describe("workspace exact-model lineage authority", () => {
 
     await expect(service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    })).rejects.toThrow(/workspace-owned production planner/i);
+    })).rejects.toThrow(/service-issued derivation receipt/i);
     expect(run).not.toHaveBeenCalled();
     await expect(store.get(record.id)).resolves.toBeUndefined();
   });
@@ -41,7 +41,7 @@ describe("workspace exact-model lineage authority", () => {
 
     await expect(service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    })).rejects.toThrow(/workspace-owned production planner/i);
+    })).rejects.toThrow(/service-issued derivation receipt/i);
     expect(run).not.toHaveBeenCalled();
     await expect(store.get(record.id)).resolves.toBeUndefined();
   });
@@ -66,41 +66,16 @@ describe("workspace exact-model lineage authority", () => {
     await expect(store.get(record.id)).resolves.toBeUndefined();
   });
 
-  it("fails a solver result that omits authoritative request-input lineage", async () => {
-    const plan = await exactCobotPlan("unlined-result");
-    const { service } = await serviceForPlans(
-      [plan], (request) => thermalResult(request, 5, false), undefined, true,
-    );
-
-    const launched = await service.launchStudy({
-      studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    });
-    await waitForJob(service, launched.jobId, "failed");
-
-    expect(service.inspectJob(launched.jobId).event).toMatchObject({
-      state: "failed", error: { code: "invalid-input" },
-    });
-    expect(service.inspect().artifacts.filter(({ kind }) => kind === "field")).toHaveLength(0);
-  });
-
-  it("verifies an exact cobot CAD root to derived voxel to linked result chain", async () => {
+  it("rejects a preloaded derived input without a service-issued receipt", async () => {
     const plan = await exactCobotPlan("exact-cobot-chain");
     const { service, store } = await serviceForPlans(
       [plan], (request) => thermalResult(request, 7), undefined, true,
     );
 
-    const launched = await service.launchStudy({
+    await expect(service.launchStudy({
       studyId: "se6-upper-arm-thermal", expectedRevision: plan.document.revision,
-    });
-    await waitForJob(service, launched.jobId, "verified");
-
-    expect(service.inspectJob(launched.jobId).event.state).toBe("verified");
-    expect(service.inspect().artifacts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "brep", producer: { name: "occt-wasm", version: "4.3.2" } }),
-      expect.objectContaining({ kind: "render-mesh", producer: { name: "occt-wasm", version: "4.3.2" } }),
-      expect.objectContaining({ id: plan.derived.record.id, kind: "sdf" }),
-      expect.objectContaining({ kind: "field" }),
-    ]));
+    })).rejects.toThrow(/service-issued derivation receipt/i);
+    expect(service.inspect().artifacts.filter(({ kind }) => kind === "field")).toHaveLength(0);
     await expect(store.get(plan.derived.record.id)).resolves.toBeDefined();
   });
 });

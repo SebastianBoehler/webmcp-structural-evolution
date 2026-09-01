@@ -84,12 +84,26 @@ describe("authoritative component documents", () => {
       "structural-linear", "topology",
     ]);
     const structural = model.document.studies.find(({ kind }) => kind === "structural-linear");
+    if (!structural || structural.kind !== "structural-linear") throw new Error("Expected structural study");
     expect(structural).toMatchObject({
       bodyIds: ["body-interface-body"],
+      supports: model.supports.map(({ id }) => id),
       loads: [{ forceN: model.loads[0]!.forceN }],
     });
+    const loadRegionId = (model.loads[0]!.region as { id: string }).id;
+    expect(structural?.loads).toEqual([{ selectionId: loadRegionId, forceN: model.loads[0]!.forceN }]);
+    const topology = model.document.studies.find(({ kind }) => kind === "topology");
+    if (!topology || topology.kind !== "topology" || topology.configurationState !== "configured") {
+      throw new Error("Expected configured topology");
+    }
+    const retainedBodyInterfaces = model.protectedInterfaces
+      .filter(({ id }) => id.startsWith("body-interface-"))
+      .map(({ id }) => id);
+    expect(topology.requiredSelectionIds).toEqual(retainedBodyInterfaces);
+    expect(topology.protectedVoidSelectionIds).toEqual([]);
+    expect(structural?.supports).not.toEqual(expect.arrayContaining(retainedBodyInterfaces));
     expect(model.document.namedSelections.map(({ id }) => id)).toEqual(expect.arrayContaining([
-      "body-fixed-region", "body-mount-north", "body-mount-south", "motor-thrust-load",
+      ...model.supports.map(({ id }) => id), loadRegionId, ...retainedBodyInterfaces,
     ]));
   });
 

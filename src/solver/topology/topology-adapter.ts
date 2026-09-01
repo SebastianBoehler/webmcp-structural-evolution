@@ -37,9 +37,21 @@ function unsupported(message: string) {
   };
 }
 
-function capability(request: Request) {
+function platformCapability(request: Request) {
   if (request.kind !== "topology") return unsupported("Topology adapter accepts only topology jobs");
   if (!globalThis.navigator?.gpu) return unsupported("Topology optimization requires live browser WebGPU");
+  return { supported: true as const };
+}
+
+function capability(request: Request) {
+  const platform = platformCapability(request);
+  if (!platform.supported) return platform;
+  try {
+    const study = configuredTopologyStudy(request);
+    topologyPassiveCells(request, study);
+  } catch (error) {
+    return unsupported(`Topology optimization input is unresolved: ${message(error)}`);
+  }
   return { supported: true as const };
 }
 
@@ -54,7 +66,7 @@ export function createWebGpuTopologyAdapter(
     capability: { kind: "topology" },
     supports: capability,
     async run(request, signal, emit) {
-      const decision = capability(request);
+      const decision = platformCapability(request);
       if (!decision.supported) throw new StructuralGpuError(
         "unsupported-capability", decision.error.message, decision.error.limit,
       );

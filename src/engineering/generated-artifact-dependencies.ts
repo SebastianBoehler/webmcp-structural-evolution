@@ -41,16 +41,20 @@ function cyclicArtifactDependency(
   return [...graph.keys()].some(visit);
 }
 
-function reachesRequestInput(
-  id: string, generated: ReadonlyMap<string, ArtifactRecord>, inputIds: ReadonlySet<string>,
-  visited = new Set<string>(),
-): boolean {
-  if (inputIds.has(id)) return true;
-  if (visited.has(id)) return false;
+function reachedRequestInputs(
+  id: string, graph: ReadonlyMap<string, ArtifactRecord>, inputIds: ReadonlySet<string>,
+  visited = new Set<string>(), reached = new Set<string>(),
+): ReadonlySet<string> {
+  if (visited.has(id)) return reached;
   visited.add(id);
-  const record = generated.get(id);
-  return record?.dependencies.some((dependency) => dependency.kind === "artifact"
-    && reachesRequestInput(dependency.artifactId, generated, inputIds, visited)) ?? false;
+  if (inputIds.has(id)) reached.add(id);
+  const record = graph.get(id);
+  for (const dependency of record?.dependencies ?? []) {
+    if (dependency.kind === "artifact") {
+      reachedRequestInputs(dependency.artifactId, graph, inputIds, visited, reached);
+    }
+  }
+  return reached;
 }
 
 function completeMechanismEntities(request: EngineeringSolveRequest<unknown>, record: ArtifactRecord): boolean {
@@ -95,10 +99,13 @@ export function generatedArtifactDependencyError(
   if (cyclicArtifactDependency(records, request.inputArtifacts)) {
     return "Generated artifact dependencies cannot contain a cycle";
   }
-  const generated = new Map(records.map((record) => [record.id, record]));
+  const graph = new Map([...request.inputArtifacts, ...records].map((record) => [record.id, record]));
   if (inputIds.size > 0) {
-    const unlined = records.find((record) => !reachesRequestInput(record.id, generated, inputIds));
-    return unlined ? `Generated artifact lacks authoritative request-input lineage: ${unlined.id}` : undefined;
+    const unlined = records.find((record) =>
+      reachedRequestInputs(record.id, graph, inputIds).size !== inputIds.size);
+    return unlined
+      ? `Generated artifact must reach every authoritative request input: ${unlined.id}`
+      : undefined;
   }
   if (request.kind !== "mechanism") {
     return "Solver request has no authoritative artifact input lineage";

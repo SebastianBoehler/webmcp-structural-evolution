@@ -1,4 +1,5 @@
 import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
+import { resolveNamedSelections } from "../../cad/kernel/named-selection-resolution";
 import type { StructuralSolveInput, StructuralVoxelPayload } from "../structural/structural-contract";
 import type { RequiredTopologyInterface, TopologySolveInput } from "./topology-contract";
 
@@ -28,10 +29,10 @@ function selectionCells(
   const selection = request.document.namedSelections.find(({ id }) => id === selectionId);
   if (!selection) throw new Error(`Topology named selection is unresolved: ${selectionId}`);
   const ids = decodedTopologyIds(request.input.voxelPayload);
-  if (!selection.reference.stableId) {
-    throw new Error(`Topology named selection lacks a stable solver topology ID: ${selectionId}`);
-  }
-  const topology = ids.indexOf(selection.reference.stableId);
+  const resolved = resolveNamedSelections(request.document, request.input.semanticMeshPayload.faces)
+    .find((candidate) => candidate.selectionId === selectionId);
+  if (!resolved) throw new Error(`Topology named selection cannot be resolved: ${selectionId}`);
+  const topology = ids.indexOf(resolved.topologyId);
   if (topology < 0) throw new Error(`Topology named selection has no solver raster: ${selectionId}`);
   const offsets = request.input.voxelPayload.selectionCellOffsets;
   if (offsets.length !== ids.length + 1) throw new Error("Topology selection cell offsets are inconsistent");
@@ -77,7 +78,8 @@ export function topologyPassiveCells(
   const source = request.input.sourceStructuralRequest;
   const structural = source.document.studies.find(({ id }) => id === study.sourceStudyId);
   if (!structural || structural.kind !== "structural-linear") throw new Error("Topology source study is not structural");
-  const interfaceIds = [...structural.supports, ...structural.loads.map(({ selectionId }) => selectionId)];
+  const interfaceIds = [...structural.supports, ...structural.loads.map(({ selectionId }) => selectionId),
+    ...(study.requiredSelectionIds ?? [])];
   const requiredInterfaces = interfaceIds.map((id) => ({ id, cellIndices: selectionCells(source, id) }));
   const requiredCells = new Set(requiredInterfaces.flatMap(({ cellIndices }) => [...cellIndices]));
   const protectedCells = new Set(study.protectedVoidSelectionIds.flatMap((id) => [...selectionCells(source, id)]));

@@ -4,6 +4,10 @@ import type { DesignDocument } from "../cad/document-schema";
 import type {
   CadEvaluationEvent, CadEvaluationRequest, CadKernelAdapter,
 } from "../cad/runtime-contracts";
+import { OcctKernel } from "occt-wasm";
+import { createOcctBridge, type OcctBridge } from "../cad/kernel/occt-bridge";
+import { rebuildDocument } from "../cad/kernel/feature-rebuild";
+import { buildCadEvaluationResults } from "../cad/kernel/rebuild-results";
 import {
   digestCadOutputPayload, encodeCadOutputPayload, type SemanticMeshPayload,
 } from "../cad/rebuild-payload";
@@ -17,6 +21,8 @@ import type {
   EngineeringWorkspaceOptions, StudyRequestPlanner,
 } from "./engineering-workspace-service";
 import { STRUCTURAL_VOXEL_MEDIA_TYPE, type StructuralVoxelPayload } from "../solver/structural/structural-contract";
+import { se6UpperArmDocument } from "../models/component-documents";
+import { createComponentStudyPlanners } from "./component-study-planners";
 
 export const human = { kind: "human", id: "sebastian" } as const;
 export const agent = { kind: "agent", id: "design-agent" } as const;
@@ -107,21 +113,30 @@ export type RunGate = Readonly<{
   release: (result: SolverRunResult<{ readonly completed: true }>) => void;
 }>;
 
-export function gatedAdapter(): Readonly<{
+export function gatedAdapter(kind?: "fea" | "thermal"): Readonly<{
   adapter: SolverAdapter<unknown, { readonly completed: true }>;
   gate: RunGate;
   signal: () => AbortSignal | undefined;
+  request: () => EngineeringSolveRequest<unknown> | undefined;
+}>;
+export function gatedAdapter(kind: "fea" | "thermal" = "fea"): Readonly<{
+  adapter: SolverAdapter<unknown, { readonly completed: true }>;
+  gate: RunGate;
+  signal: () => AbortSignal | undefined;
+  request: () => EngineeringSolveRequest<unknown> | undefined;
 }> {
   let start!: () => void;
   let release!: (result: SolverRunResult<{ readonly completed: true }>) => void;
   let observedSignal: AbortSignal | undefined;
+  let observedRequest: EngineeringSolveRequest<unknown> | undefined;
   const started = new Promise<void>((resolve) => { start = resolve; });
   const completion = new Promise<SolverRunResult<{ readonly completed: true }>>((resolve) => { release = resolve; });
   return {
     adapter: {
-      capability: { kind: "fea" },
+      capability: { kind },
       supports: () => ({ supported: true }),
-      run: async (_request, signal) => {
+      run: async (request, signal) => {
+        observedRequest = request;
         observedSignal = signal;
         start();
         return completion;
@@ -129,6 +144,7 @@ export function gatedAdapter(): Readonly<{
     },
     gate: { started, release },
     signal: () => observedSignal,
+    request: () => observedRequest,
   };
 }
 
@@ -137,14 +153,48 @@ export function immediateAdapter(
   seen: EngineeringSolveRequest<unknown>[] = [],
   valueForRequest: (request: EngineeringSolveRequest<unknown>) => number =
     (request) => request.jobId.endsWith("two") ? 2 : 1,
+  kind: "fea" | "thermal" = "fea",
 ): SolverAdapter<unknown, { readonly completed: true }> {
   return {
-    capability: { kind: "fea" },
+    capability: { kind },
     supports: () => ({ supported: true }),
     async run(request) {
       seen.push(request);
       return solveResult(request, valueForRequest(request), duplicate);
     },
+  };
+}
+
+let exactBridge: Promise<OcctBridge> | undefined;
+const componentCadAdapter = (): CadKernelAdapter => ({
+  async evaluate(request, signal, emit) {
+    exactBridge ??= OcctKernel.init().then(createOcctBridge);
+    const payload = await rebuildDocument(
+      await exactBridge, request.document, request.requestedOutputs, signal,
+    );
+    emit({ requestId: request.requestId, state: "succeeded",
+      sourceRevision: request.sourceRevision, requestedOutputs: [...request.requestedOutputs],
+      results: await buildCadEvaluationResults(request, payload) });
+  },
+  async importStep() { throw new Error("STEP import is outside the production planner fixture"); },
+});
+
+export const PRODUCTION_TEST_STUDY_ID = "se6-upper-arm-thermal";
+
+export async function productionWorkspaceOptions(
+  overrides: Partial<EngineeringWorkspaceOptions> = {},
+): Promise<EngineeringWorkspaceOptions> {
+  const model = await se6UpperArmDocument();
+  let resultValue = 0;
+  const registry = createSolverRegistry();
+  registry.register(immediateAdapter(false, [], () => ++resultValue, "thermal"));
+  return {
+    session: createDesignSession(model.document),
+    store: createArtifactStore(), registry,
+    createCadAdapter: componentCadAdapter,
+    planners: createComponentStudyPlanners(model),
+    clock: { now: () => "2026-09-01T10:00:00.000Z", elapsedMs: () => 1 },
+    ...overrides,
   };
 }
 

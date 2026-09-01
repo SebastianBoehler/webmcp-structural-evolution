@@ -79,6 +79,7 @@ const TopologyStudyBaseSchema = LegacyTopologyStudySchema.extend({
     isoValue: finite.gt(0).lt(1),
     toleranceM: positive,
   }).strict(),
+  requiredSelectionIds: uniqueIdsSchema(0, "Topology required selections must be unique").optional(),
   protectedVoidSelectionIds: uniqueIdsSchema(0, "Topology protected-void selections must be unique"),
   acceptance: z.object({
     maximumDisplacementM: positive,
@@ -262,7 +263,9 @@ export function addStudyIntegrityIssues(value: StudyIntegrityInput, context: z.R
           context.addIssue({ code: "custom", message: `Topology source study must be structural-linear: ${study.sourceStudyId}` });
         } else if (study.configurationState === "configured") {
           const sourceBodies = new Set(source.bodyIds);
-          for (const selectionId of study.protectedVoidSelectionIds) {
+          for (const selectionId of [
+            ...(study.requiredSelectionIds ?? []), ...study.protectedVoidSelectionIds,
+          ]) {
             const selection = selections.get(selectionId);
             if (!selection) context.addIssue({ code: "custom", message: `Named selection is unresolved: ${selectionId}` });
             else if (!sourceBodies.has(selection.bodyId)) {

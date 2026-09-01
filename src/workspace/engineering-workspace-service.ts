@@ -14,8 +14,9 @@ import { validateStudyCompilation, type StudyRequestPlanner } from "./workspace-
 import type { EngineeringWorkspaceOptions, EngineeringWorkspaceService } from "./workspace-service-contract";
 import type { WorkspaceInspection } from "./workspace-inspection";
 import { acquireExactComponentSource } from "./exact-component-source";
-import { isProductionComponentPlanner } from "./component-study-planners";
 import { createExactComponentSourceLease } from "./exact-component-source-lease";
+import { createWorkspaceDerivationAuthority } from "./workspace-derivation-receipt";
+import { boundComponentPlanner, componentDerivationProof } from "./workspace-component-derivation";
 import { latestJobEntry, ownWorkspaceValue as own, uniqueArtifacts } from "./workspace-service-helpers";
 
 export type { StudyCompilation, StudyRequestPlanner, StudyRequestPlanners } from "./workspace-study-plan";
@@ -96,6 +97,7 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       }
     }),
   );
+  const derivations = createWorkspaceDerivationAuthority();
 
   const inspection = (): WorkspaceInspection => {
     inspectionCache ??= freezeSnapshot({
@@ -205,12 +207,19 @@ export function createEngineeringWorkspaceService(options: EngineeringWorkspaceO
       if (!study) throw new WorkspaceError("unknown-study", `Study is unresolved: ${request.studyId}`);
       const planner = options.planners[study.kind] as StudyRequestPlanner<typeof study.kind> | undefined;
       if (!planner) throw new WorkspaceError("unavailable-study-planner", `No planner is registered for study kind: ${study.kind}`);
-      const productionPlanner = isProductionComponentPlanner(planner);
+      const plannerAuthority = boundComponentPlanner(planner, current);
+      let acquiredExact: Awaited<ReturnType<typeof exactSources.get>> | undefined;
       const planned = await planner({ document: current, study: study as never, artifacts: active(),
-        exactSource: () => exactSources.get(current) });
+        exactSource: async () => {
+          acquiredExact = await exactSources.get(current);
+          return acquiredExact;
+        } });
       if (document().revision !== request.expectedRevision) throw new WorkspaceError("stale-revision", "Study launch became stale while planning");
+      const proof = await componentDerivationProof(
+        plannerAuthority, acquiredExact, planned, derivations,
+      );
       const compilation = await validateStudyCompilation(
-        planned, current, study, active(), productionPlanner,
+        planned, current, study, active(), proof,
       );
       if (document().revision !== request.expectedRevision) {
         throw new WorkspaceError("stale-revision", "Study launch became stale during request validation");

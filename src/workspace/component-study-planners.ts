@@ -1,7 +1,9 @@
 import { defineEngineeringSolveRequest } from "../cad/engineering-job-contract";
 import type { SemanticMeshPayload } from "../cad/rebuild-payload";
 import type { EngineeringSolveRequest } from "../engineering/solver-adapter";
-import type { AuthoritativeComponentDocument } from "../models/component-documents";
+import {
+  authoritativeComponentIntent, type AuthoritativeComponentDocument,
+} from "../models/component-documents";
 import type { MechanismAdapterInput } from "../simulation/mechanism-adapter";
 import type { StructuralSolveInput } from "../solver/structural/structural-contract";
 import { produceStructuralVoxelMeshFromExact } from "../solver/structural/structural-voxelizer";
@@ -13,13 +15,20 @@ import type {
   StudyCompilation, StudyRequestPlanner, StudyRequestPlanners,
 } from "./workspace-study-plan";
 
-const productionPlanners = new WeakSet<Function>();
-export const isProductionComponentPlanner = (planner: Function): boolean => productionPlanners.has(planner);
+export type ComponentPlannerAuthority = Readonly<{
+  documentId: string;
+  documentRevision: string;
+  intentDigest: string;
+}>;
+const plannerAuthorities = new WeakMap<Function, ComponentPlannerAuthority>();
+export const componentPlannerAuthority = (
+  planner: Function,
+): ComponentPlannerAuthority | undefined => plannerAuthorities.get(planner);
 
 function ownedPlanner<Kind extends Parameters<StudyRequestPlanner<any>>[0]["study"]["kind"]>(
-  planner: StudyRequestPlanner<Kind>,
+  planner: StudyRequestPlanner<Kind>, authority: ComponentPlannerAuthority,
 ): StudyRequestPlanner<Kind> {
-  productionPlanners.add(planner);
+  plannerAuthorities.set(planner, authority);
   return planner;
 }
 
@@ -156,11 +165,13 @@ async function mechanismCompilation(
 export function createComponentStudyPlanners(
   model: AuthoritativeComponentDocument,
 ): StudyRequestPlanners {
+  const authority = { documentId: model.document.id, documentRevision: model.document.revision,
+    intentDigest: authoritativeComponentIntent(model) };
   const kinds = new Set(model.document.studies.map(({ kind }) => kind));
   return {
-    ...(kinds.has("structural-linear") ? { "structural-linear": ownedPlanner((input) => structuralCompilation(model, input)) } : {}),
-    ...(kinds.has("topology") ? { topology: ownedPlanner((input) => topologyCompilation(model, input)) } : {}),
-    ...(kinds.has("thermal-steady") ? { "thermal-steady": ownedPlanner((input) => thermalCompilation(model, input)) } : {}),
-    ...(kinds.has("mechanism") ? { mechanism: ownedPlanner((input) => mechanismCompilation(model, input)) } : {}),
+    ...(kinds.has("structural-linear") ? { "structural-linear": ownedPlanner((input) => structuralCompilation(model, input), authority) } : {}),
+    ...(kinds.has("topology") ? { topology: ownedPlanner((input) => topologyCompilation(model, input), authority) } : {}),
+    ...(kinds.has("thermal-steady") ? { "thermal-steady": ownedPlanner((input) => thermalCompilation(model, input), authority) } : {}),
+    ...(kinds.has("mechanism") ? { mechanism: ownedPlanner((input) => mechanismCompilation(model, input), authority) } : {}),
   };
 }
