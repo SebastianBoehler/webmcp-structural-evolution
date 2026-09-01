@@ -9,15 +9,22 @@ import { EntityIdSchema } from "./model-schema";
 const JsonValueSchema = ActionReceiptSchema.shape.validatedInputs;
 const JobIdSchema = z.string().min(1);
 
-export const EngineeringPartialResultSchema = z.object({
-  kind: z.literal("topology-objective-history"),
-  samples: z.array(z.object({
-    iteration: z.number().int().min(0),
-    objectiveJ: z.number().finite().nonnegative(),
-    maskDigest: RevisionSchema,
-    structuralResultDigest: RevisionSchema,
-  }).strict()).min(1).max(16),
-}).strict();
+export const EngineeringPartialResultSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("topology-objective-history"),
+    samples: z.array(z.object({
+      iteration: z.number().int().min(0),
+      objectiveJ: z.number().finite().nonnegative(),
+      maskDigest: RevisionSchema,
+      structuralResultDigest: RevisionSchema,
+    }).strict()).min(1).max(16),
+  }).strict(),
+  z.object({
+    kind: z.literal("mechanism-worker-started"),
+    requestId: z.string().min(1).max(256),
+    mechanismInputDigest: RevisionSchema,
+  }).strict(),
+]);
 
 export const EngineeringJobKindSchema = z.enum([
   "cad-rebuild",

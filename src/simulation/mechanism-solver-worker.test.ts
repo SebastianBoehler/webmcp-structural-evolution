@@ -19,9 +19,13 @@ test("runs the pinned deterministic Rapier build inside the worker composition",
   await import("./mechanism-solver-worker");
   const input = await mechanismSolverInput();
   listener!({ data: { type: "solve-mechanism", requestId: "actual-worker",
+    mechanismInputDigest: input.mechanismInputDigest,
     inputBytes: new TextEncoder().encode(JSON.stringify(input)) } });
-  await vi.waitFor(() => expect(messages).toHaveLength(1));
-  const event = MechanismSolverEventSchema.parse(messages[0]);
+  await vi.waitFor(() => expect(messages).toHaveLength(2));
+  expect(MechanismSolverEventSchema.parse(messages[0])).toEqual({
+    type: "started", requestId: "actual-worker", mechanismInputDigest: input.mechanismInputDigest,
+  });
+  const event = MechanismSolverEventSchema.parse(messages[1]);
   if (event.type !== "succeeded") throw new Error(`unexpected worker terminal: ${JSON.stringify(event)}`);
   const output = MechanismWorkerOutputSchema.parse(JSON.parse(new TextDecoder().decode(event.outputBytes)));
   expect(output.evidence).toMatchObject({

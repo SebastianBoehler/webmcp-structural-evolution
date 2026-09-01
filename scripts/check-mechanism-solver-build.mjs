@@ -11,23 +11,24 @@ const workerAssets = assets.filter((name) =>
   /^mechanism-solver-worker-[\w-]+\.js$/.test(name)
 );
 
-if (solverEntries.length !== 1) {
-  throw new Error(`Expected one mechanism solver entry, found ${solverEntries.length}`);
+if (solverEntries.length === 0) {
+  throw new Error("Expected at least one mechanism solver entry");
 }
 if (workerAssets.length !== 1) {
   throw new Error(`Expected one mechanism solver worker asset, found ${workerAssets.length}`);
 }
 
-const solverPath = path.join(assetsDirectory, solverEntries[0]);
-const source = await readFile(solverPath, "utf8");
-const solverModule = await import(pathToFileURL(solverPath).href);
-
-if (typeof solverModule.solveMechanismStudy !== "function") {
-  throw new Error("Production mechanism solver entry does not export solveMechanismStudy");
+const entries = await Promise.all(solverEntries.map(async (name) => {
+  const solverPath = path.join(assetsDirectory, name);
+  return { name, source: await readFile(solverPath, "utf8"),
+    module: await import(pathToFileURL(solverPath).href) };
+}));
+const publicEntries = entries.filter(({ module }) => typeof module.solveMechanismStudy === "function");
+if (publicEntries.length !== 1) {
+  throw new Error(`Expected one public mechanism solver entry, found ${publicEntries.length}`);
 }
-if (!source.includes(workerAssets[0])) {
-  throw new Error("Production mechanism solver entry does not reference its worker asset");
-}
-if (!source.includes("new Worker(")) {
-  throw new Error("Production mechanism solver entry does not construct its worker");
+const workerOwners = entries.filter(({ source }) =>
+  source.includes(workerAssets[0]) && source.includes("new Worker("));
+if (workerOwners.length !== 1) {
+  throw new Error(`Expected one mechanism solver worker-owning chunk, found ${workerOwners.length}`);
 }

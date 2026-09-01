@@ -18,7 +18,12 @@ function normalizedComponents<const Values extends readonly number[]>(values: Va
   const scaled = values.map((value) => value / scale);
   const magnitude = Math.hypot(...scaled);
   if (magnitude === 0 || !Number.isFinite(magnitude)) return undefined;
-  const normalized = scaled.map((value) => value / magnitude) as unknown as Values;
+  // Preserve already canonical unit vectors bit-for-bit. Re-normalizing them after
+  // the solver JSON boundary can move a last-place bit and invalidate the digest.
+  const inputMagnitude = scale * magnitude;
+  const alreadyUnit = Number.isFinite(inputMagnitude)
+    && Math.abs(inputMagnitude - 1) <= Number.EPSILON * 8;
+  const normalized = (alreadyUnit ? [...values] : scaled.map((value) => value / magnitude)) as unknown as Values;
   return normalized.every(Number.isFinite) && normalized.some((value) => value !== 0) ? normalized : undefined;
 }
 

@@ -78,10 +78,14 @@ describe("artifact payload store", () => {
     await store.put(record, payload);
     payload.displacement[0] = 99;
     const firstRead = await store.get(record.id);
-    if (!firstRead || firstRead instanceof ArrayBuffer) throw new Error("Expected structured artifact payload");
+    if (!firstRead || firstRead instanceof ArrayBuffer || ArrayBuffer.isView(firstRead)) {
+      throw new Error("Expected structured artifact payload");
+    }
     (firstRead.displacement as Float32Array)[0] = 55;
     const secondRead = await store.get(record.id);
-    if (!secondRead || secondRead instanceof ArrayBuffer) throw new Error("Expected structured artifact payload");
+    if (!secondRead || secondRead instanceof ArrayBuffer || ArrayBuffer.isView(secondRead)) {
+      throw new Error("Expected structured artifact payload");
+    }
 
     expect(viewValues(secondRead.displacement)).toEqual([1.5, 2.5]);
     expect(firstRead.displacement.buffer).not.toBe(secondRead.displacement.buffer);

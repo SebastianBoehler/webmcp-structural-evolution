@@ -10,6 +10,14 @@ import { mechanismSolverInput } from "./mechanism-solver.test-support";
 beforeAll(async () => { await RAPIER.init(); });
 
 describe("Rapier mechanism world mapping", () => {
+  test("locks the high-accuracy joint-chain solver budget", async () => {
+    const state = createRapierState(RAPIER, await mechanismSolverInput());
+    try {
+      expect(state.world.numSolverIterations).toBe(64);
+      expect(state.world.numInternalPgsIterations).toBe(1);
+    } finally { state.world.free(); }
+  });
+
   test("preserves full uint32 collision masks with worker physics hooks", async () => {
     const input = await mechanismSolverInput({
       colliders: [

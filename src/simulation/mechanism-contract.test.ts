@@ -99,6 +99,27 @@ describe("mechanism input contract", () => {
     expect(joint.secondAxisLocal).toEqual([1, 0, 0]);
   });
 
+  it("preserves a nontrivial input digest across the solver worker JSON boundary", async () => {
+    const candidate = await inputCandidate();
+    const first = await defineMechanismInput({
+      ...candidate,
+      bodies: candidate.bodies.map((body) => body.kind === "dynamic" ? {
+        ...body, transform: transform([.991657261355221, .035048264018622266,
+          .5602995726696665, .8726987061059761]),
+        principalInertiaFrameToBody: [.4, .1, .2, .7],
+      } : body),
+      joints: [{ ...candidate.joints[0],
+        firstAxisLocal: [.06824528919817308, -.3990907379115254, .07709939548244016],
+        secondAxisLocal: [-2, 5, 7] }],
+    });
+    const transported = JSON.parse(JSON.stringify(first));
+
+    const second = await defineMechanismInput(transported);
+
+    expect(second.mechanismInputDigest).toBe(first.mechanismInputDigest);
+    expect(second).toEqual(first);
+  });
+
   it("issues recursively frozen input detached from caller-owned nested arrays", async () => {
     const candidate = await inputCandidate();
     const input = await defineMechanismInput(candidate);

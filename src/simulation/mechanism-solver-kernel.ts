@@ -109,6 +109,12 @@ function perpendicular(axis: readonly [number, number, number]): [number, number
 export async function runRapierMechanism(value: unknown, signal: AbortSignal): Promise<MechanismWorkerSolve> {
   abort(signal);
   const input = await defineMechanismInput(value);
+  return runCanonicalRapierMechanism(input, signal);
+}
+
+export async function runCanonicalRapierMechanism(
+  input: MechanismInput, signal: AbortSignal,
+): Promise<MechanismWorkerSolve> {
   abort(signal);
   await RAPIER.init();
   abort(signal);

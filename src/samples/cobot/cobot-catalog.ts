@@ -22,7 +22,7 @@ const specs: readonly PartSpec[] = [
   { id: "shoulder-fastener", category: "robotics/fastener", size: [10, 20], shape: "cylinder", massKg: 0.05 },
   { id: "shoulder-guard", category: "robotics/cover", size: [112, 16, 122], shape: "box", massKg: 0.2 },
   { id: "upper-boss", category: "robotics/interface", size: [68, 24], shape: "cylinder", massKg: 0.25 },
-  { id: "upper-service-cover", category: "robotics/cover", size: [240, 8, 28], shape: "box", massKg: 0.2 },
+  { id: "upper-arm-housing", category: "robotics/structure", size: [420, 80, 80], shape: "box", massKg: 0.2 },
   { id: "upper-fastener", category: "robotics/fastener", size: [8, 18], shape: "cylinder", massKg: 0.025 },
   { id: "elbow-joint", category: "robotics/joint", size: [72, 96], shape: "cylinder", massKg: 1 },
   { id: "elbow-cap", category: "robotics/cover", size: [58, 16], shape: "cylinder", massKg: 0.2 },

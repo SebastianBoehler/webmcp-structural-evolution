@@ -227,4 +227,5 @@ export interface CadKernelAdapter {
     emit: (event: CadEvaluationEvent) => void,
   ): Promise<void>;
   importStep(request: ExactStepImportRequest, signal: AbortSignal): Promise<ExactStepImportResult>;
+  dispose?(): void;
 }

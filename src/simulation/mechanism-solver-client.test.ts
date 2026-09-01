@@ -32,6 +32,8 @@ describe("mechanism solver worker client", () => {
       bodyIds: input.bodies.map(({ id }) => id), jointIds: [], colliderIds: input.colliders.map(({ id }) => id),
       clearancePairIds: [], frames: [], contacts: [], clearanceSamples: [],
     }, evidence: null }));
+    worker.emit("message", { data: { type: "started", requestId: request.requestId,
+      mechanismInputDigest: input.mechanismInputDigest } });
     worker.emit("message", { data: { type: "succeeded", requestId: request.requestId, outputBytes: output } });
     await expect(promise).resolves.toBeDefined();
     expect(worker.terminated).toBe(true);
@@ -79,5 +81,67 @@ describe("mechanism solver worker client", () => {
     await expect(createMechanismSolverClient(() => { throw new Error("factory crashed"); })(
       input, new AbortController().signal,
     )).rejects.toThrow("factory crashed");
+  });
+
+  test("fails closed on duplicate start acknowledgements", async () => {
+    const input = await mechanismSolverInput(), worker = new FakeWorker();
+    const promise = createMechanismSolverClient(() => worker)(input, new AbortController().signal);
+    const request = MechanismSolverRequestSchema.parse(worker.posted[0]!.message);
+    if (request.type !== "solve-mechanism") throw new Error("expected solve request");
+    const started = { type: "started", requestId: request.requestId,
+      mechanismInputDigest: input.mechanismInputDigest };
+
+    worker.emit("message", { data: started });
+    worker.emit("message", { data: started });
+
+    await expect(promise).rejects.toThrow("invalid start acknowledgement");
+    expect(worker.terminated).toBe(true); expect(worker.listenerCount()).toBe(0);
+  });
+
+  test("fails closed on a wrong start digest and a same-request terminal before start", async () => {
+    const input = await mechanismSolverInput();
+    const wrongDigest = new FakeWorker();
+    const wrongPromise = createMechanismSolverClient(() => wrongDigest)(input, new AbortController().signal);
+    const wrongRequest = MechanismSolverRequestSchema.parse(wrongDigest.posted[0]!.message);
+    wrongDigest.emit("message", { data: { type: "started", requestId: wrongRequest.requestId,
+      mechanismInputDigest: "f".repeat(64) } });
+    await expect(wrongPromise).rejects.toThrow("invalid start acknowledgement");
+    expect(wrongDigest.terminated).toBe(true); expect(wrongDigest.listenerCount()).toBe(0);
+
+    const earlyTerminal = new FakeWorker();
+    const earlyPromise = createMechanismSolverClient(() => earlyTerminal)(input, new AbortController().signal);
+    const earlyRequest = MechanismSolverRequestSchema.parse(earlyTerminal.posted[0]!.message);
+    earlyTerminal.emit("message", { data: { type: "failed", requestId: earlyRequest.requestId,
+      error: "premature terminal" } });
+    await expect(earlyPromise).rejects.toThrow("terminal before starting: premature terminal");
+    expect(earlyTerminal.terminated).toBe(true); expect(earlyTerminal.listenerCount()).toBe(0);
+  });
+
+  test("terminates cleanly when the start callback throws", async () => {
+    const input = await mechanismSolverInput(), worker = new FakeWorker();
+    const promise = createMechanismSolverClient(() => worker)(input, new AbortController().signal, () => {
+      throw new Error("callback failed");
+    });
+    const request = MechanismSolverRequestSchema.parse(worker.posted[0]!.message);
+    worker.emit("message", { data: { type: "started", requestId: request.requestId,
+      mechanismInputDigest: input.mechanismInputDigest } });
+
+    await expect(promise).rejects.toThrow("callback failed");
+    expect(worker.terminated).toBe(true); expect(worker.listenerCount()).toBe(0);
+  });
+
+  test("supports synchronous cancellation from the start callback", async () => {
+    const input = await mechanismSolverInput(), worker = new FakeWorker();
+    const controller = new AbortController();
+    const promise = createMechanismSolverClient(() => worker)(input, controller.signal, () => controller.abort());
+    const request = MechanismSolverRequestSchema.parse(worker.posted[0]!.message);
+
+    worker.emit("message", { data: { type: "started", requestId: request.requestId,
+      mechanismInputDigest: input.mechanismInputDigest } });
+
+    expect(worker.posted.map(({ message }) => (message as { type: string }).type))
+      .toEqual(["solve-mechanism", "cancel"]);
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(worker.terminated).toBe(true); expect(worker.listenerCount()).toBe(0);
   });
 });

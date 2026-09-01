@@ -41,9 +41,8 @@ describe("SE-6 assembly", () => {
     expect(centerOf("calibration-payload")[0]).toBeGreaterThan(centerOf("gripper-body")[0]!);
   });
 
-  it("leaves the load-bearing upper arm to the topology design domain", () => {
-    expect(se6Assembly.components.some(({ instanceId }) => instanceId === "upper-arm-link")).toBe(false);
-    expect(centerOf("upper-arm-service-cover")[1]).toBeLessThan(-65);
+  it("anchors the load-bearing upper arm across the preserved J2-to-J3 centers", () => {
+    expect(centerOf("upper-arm-housing")).toEqual([210, 0, 340]);
   });
 
   it("is buildable from its declared inventory without unresolved conflicts", () => {

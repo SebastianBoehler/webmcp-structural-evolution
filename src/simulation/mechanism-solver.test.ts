@@ -24,9 +24,12 @@ class SolverWorker {
   static verificationOverride: Record<string, unknown> = {};
   private listeners = new Map<string, Set<(event: unknown) => void>>();
   postMessage(value: unknown) {
-    const request = value as { readonly type: string; readonly requestId: string; readonly inputBytes?: Uint8Array };
+    const request = value as { readonly type: string; readonly requestId: string;
+      readonly mechanismInputDigest: string; readonly inputBytes?: Uint8Array };
     if (request.type !== "solve-mechanism") return;
     const input = JSON.parse(new TextDecoder().decode(request.inputBytes!));
+    queueMicrotask(() => this.emit("message", { data: { type: "started", requestId: request.requestId,
+      mechanismInputDigest: request.mechanismInputDigest } }));
     const frames = Array.from({ length: input.durationSteps / input.outputStrideSteps + 1 }, (_value, index) => ({
       sourceRevision: input.sourceRevision, studyId: input.studyId, mechanismInputDigest: input.mechanismInputDigest,
       stepIndex: index * input.outputStrideSteps,

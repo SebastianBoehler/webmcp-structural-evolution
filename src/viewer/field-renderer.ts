@@ -1,16 +1,15 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { installAssemblyInteractions, type PartInteractionHandlers } from "./assembly-interactions";
 import { installTransformGizmo, type TransformGizmoSession } from "./transform-gizmo";
-import { structuralReplayScale, type FlightFrame } from "../simulation/flight-scenarios";
+import type { FlightFrame } from "../simulation/flight-scenarios";
 
 import {
   createFieldMeshes,
   highlightFieldMesh,
-  restoreAnalysisSurfaceField,
-  updateAnalysisSurfaceField,
   type FieldMeshSet,
 } from "./field-meshes";
+import { updateFlightReplay } from "./field-flight-replay";
+import { FieldRendererMountError } from "./field-renderer-error";
 import {
   createAssemblyMeshes,
   highlightAssemblyPart,
@@ -19,63 +18,30 @@ import {
 import { createCleanupLedger, type CleanupToken } from "./cleanup-ledger";
 import {
   prepareRenderModel,
+  type AssemblyVisualPart,
   type CameraEnvelope,
   type ViewerRenderModel,
 } from "./render-envelope";
+import {
+  type ControlsLike,
+  type FieldViewerEnvironment,
+  type RendererLike,
+  type ResizeEntryLike,
+} from "./field-renderer-environment";
 
 export type { ViewerRenderModel } from "./render-envelope";
+export { FieldRendererMountError } from "./field-renderer-error";
 
 // A 2x DPR ceiling is a rendering-budget decision: voxel comparisons favor legibility over 3x pixels.
 export const MAX_RENDER_DPR = 2;
 
-export interface ResizeEntryLike {
-  readonly devicePixelContentBoxSize?: readonly {
-    readonly inlineSize: number;
-    readonly blockSize: number;
-  }[];
-  readonly contentRect: { readonly width: number; readonly height: number };
-}
-
-interface RendererLike {
-  setPixelRatio(value: number): void;
-  setSize(width: number, height: number, updateStyle?: boolean): void;
-  render(scene: THREE.Scene, camera: THREE.Camera): void;
-  dispose(): void;
-}
-
-interface ControlsLike {
-  enableDamping: boolean;
-  enablePan?: boolean;
-  screenSpacePanning?: boolean;
-  enabled?: boolean;
-  readonly target: { set(x: number, y: number, z: number): unknown };
-  addEventListener(type: "change", listener: () => void): void;
-  removeEventListener(type: "change", listener: () => void): void;
-  update(): void;
-  dispose(): void;
-}
-
-interface ObserverLike {
-  observe(target: Element, options?: ResizeObserverOptions): void;
-  disconnect(): void;
-}
-
-export interface FieldViewerEnvironment {
-  readonly createRenderer: (canvas: HTMLCanvasElement) => RendererLike;
-  readonly createControls: (camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement) => ControlsLike;
-  readonly createResizeObserver: (
-    callback: (entries: readonly ResizeEntryLike[]) => void,
-  ) => ObserverLike;
-  readonly requestFrame: (callback: FrameRequestCallback) => number;
-  readonly cancelFrame: (handle: number) => void;
-  readonly devicePixelRatio: () => number;
-  readonly prefersReducedMotion: () => boolean;
-}
+export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer-environment";
 
 export interface FieldRendererSession {
   dispose(): void;
   setHighlightedBranch(branchRevision: string | undefined): void;
   setSelectedPart(partId: string | undefined): void;
+  setAssemblyPartPoses(parts: readonly AssemblyVisualPart[]): void;
   focusSelectedPart(): void;
   setFlightFrame(frame: FlightFrame | undefined): void;
   setReferenceGridVisible(visible: boolean): void;
@@ -83,39 +49,7 @@ export interface FieldRendererSession {
   setTransformSpace(space: "world" | "local"): void;
   setTranslationSnap(distance: number | null): void;
 }
-
-export class FieldRendererMountError extends Error {
-  readonly cleanupSession: FieldRendererSession;
-
-  constructor(cause: unknown, cleanupSession: FieldRendererSession) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
-    this.name = "FieldRendererMountError";
-    this.cleanupSession = cleanupSession;
-  }
-}
-
-const defaultEnvironment: FieldViewerEnvironment = {
-  createRenderer: (canvas) => {
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, canvas });
-    renderer.setClearColor(0x000000, 0);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
-    return renderer;
-  },
-  createControls: (camera, canvas) => new OrbitControls(camera, canvas),
-  createResizeObserver: (callback) => new ResizeObserver((entries) => callback(entries)),
-  requestFrame: (callback) => requestAnimationFrame(callback),
-  cancelFrame: (handle) => cancelAnimationFrame(handle),
-  devicePixelRatio: () => window.devicePixelRatio || 1,
-  prefersReducedMotion: () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-};
-
-export function viewerEnvironment(
-  override: FieldViewerEnvironment | undefined,
-): FieldViewerEnvironment {
-  return override ?? defaultEnvironment;
-}
+export interface FieldRendererOptions { readonly preserveDrawingBuffer?: boolean }
 
 function cameraFor(envelope: CameraEnvelope): THREE.PerspectiveCamera {
   const camera = new THREE.PerspectiveCamera(38, 1, envelope.near, envelope.far);
@@ -129,6 +63,7 @@ export function mountFieldRenderer(
   model: ViewerRenderModel,
   environment: FieldViewerEnvironment,
   interactions: PartInteractionHandlers = {},
+  options: FieldRendererOptions = {},
 ): FieldRendererSession {
   const prepared = prepareRenderModel(model);
   const referenceLoads = (prepared.assemblyParts ?? []).flatMap((part) => (
@@ -192,6 +127,18 @@ export function mountFieldRenderer(
       transformGizmo?.setSelectedPart(partId);
       scheduleRender();
     },
+    setAssemblyPartPoses(parts) {
+      if (inactive || !assemblyMeshSet) return;
+      for (const root of assemblyMeshSet.roots.values()) root.visible = false;
+      for (const part of parts) {
+        const root = assemblyMeshSet.roots.get(part.id);
+        if (!root) throw new Error(`Assembly pose part is outside the mounted catalog: ${part.id}`);
+        root.visible = true;
+        root.position.set(...part.center);
+        root.rotation.set(...(part.rotation ?? [0, 0, 0]));
+      }
+      scheduleRender();
+    },
     focusSelectedPart() {
       if (!camera || !controls || !assemblyMeshSet || !selectedPart) return;
       const part = [...assemblyMeshSet.parts.values()].find((candidate) => candidate.selectionId === selectedPart);
@@ -206,54 +153,8 @@ export function mountFieldRenderer(
     },
     setFlightFrame(flightFrame) {
       if (!flightGroup || !assemblyMeshSet) return;
-      const attitude = flightFrame?.attitudeRad ?? [0, 0, 0];
-      flightGroup.rotation.set(...attitude);
-      const structuralScale = flightFrame && referenceMotorLoadN !== undefined
-        ? structuralReplayScale(flightFrame, referenceMotorLoadN)
-        : flightFrame ? 0 : 1;
-      const loadVectors = flightFrame?.motorLoadVectorsN ?? [];
-      const meanLoad = Math.max(0.001, loadVectors.reduce(
-        (sum, vector) => sum + Math.hypot(...vector), 0,
-      ) / Math.max(1, loadVectors.length));
-      for (const [index, vector] of loadVectors.entries()) {
-        const motor = prepared.assemblyParts?.filter(({ kind }) => kind === "load-vector")[index];
-        const root = motor ? assemblyMeshSet.roots.get(motor.id) : undefined;
-        if (!root) continue;
-        const direction = new THREE.Vector3(...vector);
-        const magnitude = direction.length();
-        root.visible = magnitude > 1.0e-6;
-        root.scale.set(1, 1, Math.max(0.18, magnitude / meanLoad));
-        if (root.visible) root.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 0, -1),
-          direction.normalize(),
-        );
-      }
-      if (!flightFrame) {
-        for (const [id, root] of assemblyMeshSet.roots) if (id.endsWith("-load-vector")) {
-          root.visible = true;
-          root.quaternion.identity();
-          root.scale.set(1, 1, 1);
-        }
-      }
-      for (const mesh of meshSet?.meshes ?? []) {
-        const match = /verified-(?:stress|displacement|safety)-band-(\d+)/.exec(mesh.name);
-        if (!match || !(mesh.material instanceof THREE.MeshBasicMaterial)) continue;
-        const band = Number(match[1]) / 6;
-        const utilization = Math.min(1, band * structuralScale);
-        mesh.material.color.copy(new THREE.Color(0x16b9ff).lerp(new THREE.Color(0xff2d55), utilization));
-      }
-      const activeField = flightFrame
-        ? prepared.analysisField?.cases?.[flightFrame.solverCase]
-        : undefined;
-      if (!flightFrame) {
-        restoreAnalysisSurfaceField(meshSet?.analysisSurfaces ?? []);
-      } else if (activeField) {
-        updateAnalysisSurfaceField(
-          meshSet?.analysisSurfaces ?? [], activeField.values, activeField.maximum, structuralScale,
-        );
-      } else {
-        restoreAnalysisSurfaceField(meshSet?.analysisSurfaces ?? []);
-      }
+      updateFlightReplay(flightFrame, { flightGroup, assemblyMeshSet, meshSet,
+        model: prepared, referenceMotorLoadN });
       scheduleRender();
     },
     setReferenceGridVisible(visible) {
@@ -287,7 +188,9 @@ export function mountFieldRenderer(
     scene.add(flightGroup);
     ownership.own(() => scene!.remove(flightGroup!));
     camera = cameraFor(prepared.camera);
-    const createdRenderer = environment.createRenderer(canvas);
+    const createdRenderer = environment.createRenderer(canvas, {
+      preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
+    });
     renderer = createdRenderer;
     ownership.own(() => createdRenderer.dispose());
     const createdControls = environment.createControls(camera, canvas);

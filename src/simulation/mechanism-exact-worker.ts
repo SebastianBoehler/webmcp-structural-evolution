@@ -6,5 +6,12 @@ export function evaluateMechanismExactRequest(
   signal: AbortSignal,
   emit: (event: CadEvaluationEvent) => void,
 ): Promise<void> {
-  return createOcctCadAdapter().evaluate(request, signal, emit);
+  const adapter = createOcctCadAdapter();
+  return (async () => {
+    try {
+      await adapter.evaluate(request, signal, emit);
+    } finally {
+      try { adapter.dispose?.(); } catch { /* preserve the evaluation outcome */ }
+    }
+  })();
 }

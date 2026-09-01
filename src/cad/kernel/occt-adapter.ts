@@ -50,8 +50,69 @@ class BrowserOcctWorker implements OcctWorkerLike {
 
 export const defaultOcctWorkerFactory: OcctWorkerFactory = () => new BrowserOcctWorker();
 
+function ownedFactory(factory: OcctWorkerFactory) {
+  const workers = new Set<OcctWorkerLike>();
+  return {
+    create(): OcctWorkerLike {
+      const worker = factory(), listeners = new Set<(event: OcctWorkerMessageEvent) => void>();
+      let terminated = false;
+      const owned: OcctWorkerLike = {
+        postMessage: (message) => worker.postMessage(message),
+        addEventListener(type, listener) {
+          listeners.add(listener);
+          worker.addEventListener(type, listener);
+        },
+        removeEventListener(type, listener) {
+          listeners.delete(listener);
+          worker.removeEventListener(type, listener);
+        },
+        terminate() {
+          if (terminated) return;
+          terminated = true;
+          for (const listener of listeners) worker.removeEventListener("message", listener);
+          listeners.clear();
+          workers.delete(owned);
+          worker.terminate();
+        },
+      };
+      workers.add(owned);
+      return owned;
+    },
+    dispose() {
+      for (const worker of [...workers]) worker.terminate();
+    },
+  };
+}
+
 export function createOcctCadAdapter(
   factory: OcctWorkerFactory = defaultOcctWorkerFactory,
 ): CadKernelAdapter {
-  return createOcctWorkerClient(factory);
+  const owned = ownedFactory(factory);
+  const client = createOcctWorkerClient(owned.create);
+  let disposed = false;
+  const controllers = new Set<AbortController>();
+  const signalFor = (signal: AbortSignal) => {
+    const controller = new AbortController();
+    controllers.add(controller);
+    return { controller, signal: AbortSignal.any([signal, controller.signal]) };
+  };
+  return {
+    evaluate(request, signal, emit) {
+      if (disposed) return Promise.reject(new Error("OCCT CAD adapter has been disposed"));
+      const operation = signalFor(signal);
+      return client.evaluate(request, operation.signal, emit).finally(() => controllers.delete(operation.controller));
+    },
+    importStep(request, signal) {
+      if (disposed) return Promise.reject(new Error("OCCT CAD adapter has been disposed"));
+      const operation = signalFor(signal);
+      return client.importStep(request, operation.signal).finally(() => controllers.delete(operation.controller));
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      client.dispose();
+      for (const controller of controllers) controller.abort();
+      owned.dispose();
+    },
+  };
 }

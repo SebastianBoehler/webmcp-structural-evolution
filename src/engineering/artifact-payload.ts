@@ -1,4 +1,4 @@
-export type ArtifactPayload = ArrayBuffer | Readonly<Record<string, ArrayBufferView>>;
+export type ArtifactPayload = ArrayBuffer | ArrayBufferView | Readonly<Record<string, ArrayBufferView>>;
 
 export type ArtifactStoreErrorCode =
   | "content-digest-mismatch"
@@ -36,6 +36,7 @@ type ViewKind =
 type StoredView = Readonly<{ key: string; kind: ViewKind; value: ArrayBufferView }>;
 export type StoredArtifactPayload =
   | Readonly<{ kind: "bytes"; bytes: ArrayBuffer }>
+  | Readonly<{ kind: "view"; viewKind: ViewKind; value: ArrayBufferView }>
   | Readonly<{ kind: "views"; views: readonly StoredView[] }>;
 
 const encoder = new TextEncoder();
@@ -99,8 +100,13 @@ function normalize(payload: ArtifactPayload): StoredArtifactPayload {
     if (resizable(payload)) throw new ArtifactStoreError("unsafe-payload", "Artifact payload cannot use a resizable backing buffer");
     return { kind: "bytes", bytes: payload.slice(0) };
   }
+  if (ArrayBuffer.isView(payload)) {
+    const kind = viewKind(payload);
+    return { kind: "view", viewKind: kind, value: copyView(payload, kind) };
+  }
   if (!payload || typeof payload !== "object" || Object.getPrototypeOf(payload) !== Object.prototype) {
-    throw new ArtifactStoreError("unsafe-payload", "Artifact payload must be an ArrayBuffer or a plain structured view map");
+    throw new ArtifactStoreError("unsafe-payload",
+      "Artifact payload must be an ArrayBuffer, typed view, or plain structured view map");
   }
   const keys = Object.keys(payload).sort();
   if (Object.getOwnPropertyNames(payload).length !== keys.length || Object.getOwnPropertySymbols(payload).length > 0) {
@@ -148,13 +154,20 @@ function canonicalViewMapBytes(views: readonly StoredView[]): ArrayBuffer {
 
 async function digest(payload: StoredArtifactPayload): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new Error("Web Crypto SHA-256 is unavailable");
-  const input = payload.kind === "bytes" ? payload.bytes : canonicalViewMapBytes(payload.views);
+  let input: ArrayBuffer | Uint8Array<ArrayBuffer>;
+  if (payload.kind === "bytes") input = payload.bytes;
+  else if (payload.kind === "view") {
+    input = new Uint8Array(payloadBuffer(payload.value), payload.value.byteOffset, payload.value.byteLength);
+  } else input = canonicalViewMapBytes(payload.views);
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", input));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function representation(payload: StoredArtifactPayload): string {
   if (payload.kind === "bytes") return "raw:ArrayBuffer";
+  if (payload.kind === "view") {
+    return `raw:${payload.viewKind}:${payload.value.byteOffset}:${payload.value.byteLength}`;
+  }
   return JSON.stringify(payload.views.map((view) => [
     view.key, view.kind, view.value.byteOffset, view.value.byteLength,
   ]));
@@ -162,6 +175,7 @@ function representation(payload: StoredArtifactPayload): string {
 
 function copy(payload: StoredArtifactPayload): ArtifactPayload {
   if (payload.kind === "bytes") return payload.bytes.slice(0);
+  if (payload.kind === "view") return copyView(payload.value, payload.viewKind);
   const result: Record<string, ArrayBufferView> = {};
   for (const view of payload.views) {
     Object.defineProperty(result, view.key, {

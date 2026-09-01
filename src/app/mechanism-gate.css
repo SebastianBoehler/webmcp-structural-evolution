@@ -1,0 +1,25 @@
+.mechanism-gate {
+  min-height: 100vh;
+  padding: clamp(1rem, 2vw, 2rem);
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+}
+.mechanism-gate > header { max-width: 74rem; margin: 0 auto 1rem; }
+.mechanism-gate h1 { margin: .25rem 0; font-size: clamp(1.65rem, 4vw, 2.7rem); }
+.mechanism-gate h2 { margin-block-start: 0; }
+.mechanism-gate__eyebrow { margin: 0; color: var(--accent); font: 600 .78rem/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.mechanism-gate__buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: 1rem; }
+.mechanism-gate__buttons button { min-height: 2.5rem; padding: .55rem .85rem; border: 1px solid var(--separator); border-radius: var(--radius-sm); color: var(--text-primary); background: var(--surface-raised); }
+.mechanism-gate__viewer { height: clamp(26rem, 42vw, 36rem); max-width: 74rem; margin: 0 auto; border: 1px solid var(--separator); border-radius: var(--radius-md); overflow: hidden; }
+.mechanism-gate__playback, .mechanism-gate__evidence { max-width: 74rem; margin: 1rem auto; padding: 1rem; border: 1px solid var(--separator); border-radius: var(--radius-md); background: var(--surface-raised); }
+.mechanism-gate__playback p { margin: .35rem 0; font: .82rem/1.45 ui-monospace, monospace; }
+.mechanism-gate__evidence dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.mechanism-gate__evidence dl div { min-width: 0; padding: .65rem; border-radius: var(--radius-sm); background: var(--surface-canvas); }
+.mechanism-gate__evidence dt { color: var(--text-secondary); font-size: .75rem; }
+.mechanism-gate__evidence dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.mechanism-gate pre { max-height: 28rem; overflow: auto; font-size: .72rem; }
+@media (max-width: 42rem) {
+  .mechanism-gate { padding: .75rem; }
+  .mechanism-gate__viewer { height: 24rem; }
+  .mechanism-gate__evidence dl { grid-template-columns: 1fr; }
+}

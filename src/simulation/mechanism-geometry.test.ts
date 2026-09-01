@@ -5,6 +5,25 @@ import { mechanismDocument } from "./compile-mechanism-study.test-support";
 import { assertPrimitiveDynamics, exactPrimitiveOrConvexProof } from "./mechanism-geometry";
 
 describe("mechanism exact primitive proof", () => {
+  it("proves a closed semicircle extrusion as convex collision geometry", async () => {
+    const original = await mechanismDocument();
+    const { revision: _revision, ...content } = original;
+    const document = await defineDesignDocument({ ...content,
+      sketches: content.sketches.map((sketch) => sketch.id !== "link-sketch" ? sketch : {
+        ...sketch, constraints: [], entities: [
+          { id: "link-arc", kind: "arc" as const, centerM: [0, 0] as const, radiusM: 0.05,
+            startAngleRad: -Math.PI / 2, endAngleRad: Math.PI / 2 },
+          { id: "link-chord", kind: "line" as const,
+            startM: [0, 0.05] as const, endM: [0, -0.05] as const },
+        ],
+      }),
+    });
+
+    const proof = exactPrimitiveOrConvexProof(document, "link-body");
+
+    expect(proof).toEqual({ convexStraightExtrusion: true });
+  });
+
   it("rotates the collider-local cylinder Y axis onto the exact extrusion Z axis", async () => {
     const original = await mechanismDocument();
     const { revision: _revision, ...content } = original;

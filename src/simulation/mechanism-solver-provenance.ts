@@ -1,4 +1,7 @@
 import { revisionId } from "../domain/revisions";
+import {
+  MECHANISM_INTERNAL_PGS_ITERATIONS, MECHANISM_SOLVER_ITERATIONS,
+} from "./mechanism-rapier-world";
 
 export const MECHANISM_ENGINE_VERSION = "0.18.1";
 export const MECHANISM_RUNTIME_VERSION = "@dimforge/rapier3d-deterministic-compat@0.18.1";
@@ -7,7 +10,9 @@ export const MECHANISM_WASM_MODULE_DIGEST = "42462532fe5eb4d443c267d63624954e2ac
 
 export async function mechanismSolverProvenance(workerArtifactDigest: string) {
   const settingsDigest = await revisionId({ fixedStepHz: 240, deterministicRuntime: true,
-    localFrameConvention: "initial-world-aligned-v1", collisionFiltering: "uint32-physics-hooks-v1" });
+    localFrameConvention: "initial-world-aligned-v1", collisionFiltering: "uint32-physics-hooks-v1",
+    solverIterations: MECHANISM_SOLVER_ITERATIONS,
+    internalPgsIterations: MECHANISM_INTERNAL_PGS_ITERATIONS });
   const runtimeDigest = await revisionId({ engineVersion: MECHANISM_ENGINE_VERSION,
     runtimeVersion: MECHANISM_RUNTIME_VERSION, solverBuildDigest: MECHANISM_SOLVER_BUILD_DIGEST,
     wasmModuleDigest: MECHANISM_WASM_MODULE_DIGEST, workerArtifactDigest });

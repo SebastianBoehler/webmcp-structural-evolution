@@ -14,7 +14,7 @@ const forearmPitch = -Math.atan2(180, 230);
 export const SE6_INSTANCE_GROUPS = Object.freeze({
   base: ["base-plate", "base-fastener-nw", "base-fastener-ne", "base-fastener-sw", "base-fastener-se", "pedestal", "j1-turntable", "j1-bearing-ring", "j1-cover"],
   shoulder: ["shoulder-yoke-left", "shoulder-yoke-right", "j2-barrel", "j2-cap-left", "j2-cap-right", "j2-fastener-left", "j2-fastener-right", "shoulder-guard"],
-  upperArm: ["shoulder-boss", "upper-arm-service-cover", "elbow-boss", "upper-fastener-shoulder-left", "upper-fastener-shoulder-right", "upper-fastener-elbow-left", "upper-fastener-elbow-right"],
+  upperArm: ["shoulder-boss", "upper-arm-housing", "elbow-boss", "upper-fastener-shoulder-left", "upper-fastener-shoulder-right", "upper-fastener-elbow-left", "upper-fastener-elbow-right"],
   forearm: ["j3-barrel", "j3-cap-left", "j3-cap-right", "elbow-guard", "forearm-shell", "forearm-cable-cover", "forearm-cover-fastener"],
   wrist: ["j4-roll-housing", "j4-cap", "j4-spacer", "j5-pitch-housing", "j5-cap-left", "j5-cap-right", "j5-spacer", "j6-tool-roll", "j6-cap"],
   tooling: ["tool-flange", "gripper-body", "gripper-jaw-left", "gripper-jaw-right", "finger-pad-left", "finger-pad-right", "calibration-payload"],
@@ -37,7 +37,7 @@ const components: AssemblyDraft["components"] = [
   requirement("j2-fastener-right", "shoulder-fastener", [0, 82, 340], axisY),
   requirement("shoulder-guard", "shoulder-guard", [-24, 0, 340]),
   requirement("shoulder-boss", "upper-boss", [30, 0, 340], axisY),
-  requirement("upper-arm-service-cover", "upper-service-cover", [210, -72, 382]),
+  requirement("upper-arm-housing", "upper-arm-housing", [210, 0, 340]),
   requirement("elbow-boss", "upper-boss", [390, 0, 340], axisY),
   requirement("upper-fastener-shoulder-left", "upper-fastener", [30, -18, 340], axisY),
   requirement("upper-fastener-shoulder-right", "upper-fastener", [30, 18, 340], axisY),

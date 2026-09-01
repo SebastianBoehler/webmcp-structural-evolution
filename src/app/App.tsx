@@ -14,6 +14,10 @@ const StructuralTopologyGateRoute = lazy(async () => {
   const module = await import("./StructuralTopologyGateRoute");
   return { default: module.StructuralTopologyGateRoute };
 });
+const MechanismGateRoute = lazy(async () => {
+  const module = await import("./MechanismGateRoute");
+  return { default: module.MechanismGateRoute };
+});
 
 const FoundationJourney = lazy(async () => {
   const module = await import("./FoundationJourney");
@@ -58,6 +62,12 @@ const exactCadRouteRequested = () => typeof globalThis.location !== "undefined"
   && new URLSearchParams(globalThis.location.search).has("exact-cad-gate");
 
 export function App(): JSX.Element {
+  if (typeof globalThis.location !== "undefined"
+    && new URLSearchParams(globalThis.location.search).has("mechanism-gate")) {
+    return <ErrorBoundary><Suspense fallback={<p role="status">Loading mechanism gate…</p>}>
+      <MechanismGateRoute />
+    </Suspense></ErrorBoundary>;
+  }
   if (typeof globalThis.location !== "undefined"
     && new URLSearchParams(globalThis.location.search).has("structural-topology-gate")) {
     return <ErrorBoundary><Suspense fallback={<p role="status">Loading live gate…</p>}>

@@ -20,10 +20,15 @@ describe("SE-6 visual adapter", () => {
     expect(components.find(({ id }) => id === "calibration-payload")).toMatchObject({
       material: "payload", semanticGroup: "tooling", selectionId: "calibration-payload",
     });
-    expect(components.find(({ id }) => id === "upper-arm-service-cover")).toMatchObject({
-      material: "cover", semanticGroup: "upper-arm",
+    const housing = components.find(({ id }) => id === "upper-arm-housing");
+    expect(housing).toMatchObject({
+      label: "J2–J3 structural upper-arm housing", kind: "box", material: "structural",
+      semanticGroup: "upper-arm", center: [210, 0, 340], size: [420, 80, 80],
     });
-    expect(components.some(({ id }) => id === "upper-arm-link")).toBe(false);
+    if (!housing || housing.kind !== "box") throw new Error("missing rendered upper-arm housing");
+    expect(housing.center[0] - housing.size[0] / 2).toBe(0);
+    expect(housing.center[0] + housing.size[0] / 2).toBe(420);
+    expect(components.some(({ id }) => id === "upper-arm-service-cover")).toBe(false);
     expect(Object.values(SE6_INSTANCE_GROUPS).flat()).toHaveLength(52);
   });
 

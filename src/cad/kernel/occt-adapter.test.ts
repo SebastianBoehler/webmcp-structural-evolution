@@ -62,6 +62,10 @@ class LifecycleWorker implements OcctWorkerLike {
     this.terminateCount += 1;
   }
 
+  listenerCount(): number {
+    return this.listeners.size;
+  }
+
   succeed(requestId: string): void {
     const evaluation = this.posted.find((message) =>
       message.type === "evaluate" && message.request.requestId === requestId);
@@ -89,6 +93,56 @@ class AutoSuccessWorker extends LifecycleWorker {
 }
 
 describe("OCCT CAD adapter", () => {
+  it("disposes every owned worker and listener across repeated scoped runs", async () => {
+    const workers = [new AutoSuccessWorker(), new AutoSuccessWorker(), new AutoSuccessWorker()];
+    for (const [index, worker] of workers.entries()) {
+      const adapter = createOcctCadAdapter(() => worker);
+      await adapter.evaluate(await request(`scoped-${index}`), new AbortController().signal, () => undefined);
+      adapter.dispose?.();
+      adapter.dispose?.();
+    }
+
+    expect(workers.map(({ terminateCount }) => terminateCount)).toEqual([1, 1, 1]);
+    expect(workers.map((worker) => worker.listenerCount())).toEqual([0, 0, 0]);
+  });
+
+  it("fails closed when a disposed adapter is called again", async () => {
+    const worker = new LifecycleWorker();
+    const adapter = createOcctCadAdapter(() => worker);
+    adapter.dispose?.();
+    adapter.dispose?.();
+
+    await expect(adapter.evaluate(
+      await request("after-dispose"), new AbortController().signal, () => undefined,
+    )).rejects.toThrow(/disposed/i);
+
+    expect(worker.posted).toEqual([]);
+    expect(worker.terminateCount).toBe(0);
+  });
+
+  it("terminates a pending evaluation when its adapter is disposed", async () => {
+    const worker = new LifecycleWorker();
+    const adapter = createOcctCadAdapter(() => worker);
+    const events: CadEvaluationEvent[] = [];
+    const pending = adapter.evaluate(
+      await request("dispose-pending"), new AbortController().signal, (event) => events.push(event),
+    );
+
+    await vi.waitFor(() => expect(worker.posted).toHaveLength(1));
+    adapter.dispose?.();
+    adapter.dispose?.();
+    await pending;
+
+    expect(events).toEqual([
+      { requestId: "dispose-pending", state: "progress", progress: 0 },
+      expect.objectContaining({
+        requestId: "dispose-pending", state: "cancelled", workerDisposition: "quarantined",
+      }),
+    ]);
+    expect(worker.terminateCount).toBe(1);
+    expect(worker.listenerCount()).toBe(0);
+  });
+
   it("fails a tampered document at verified adapter ingress", async () => {
     const worker = new AutoSuccessWorker();
     const adapter = createOcctCadAdapter(() => worker);

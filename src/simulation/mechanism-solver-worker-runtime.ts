@@ -1,3 +1,4 @@
+import { defineMechanismInput, type MechanismInput } from "./mechanism-contract";
 import { MechanismSolverEventSchema, MechanismSolverRequestSchema } from "./mechanism-solver-protocol";
 import { MechanismWorkerOutputSchema, type MechanismWorkerOutput } from "./mechanism-solver-output";
 
@@ -10,7 +11,7 @@ const messageFor = (error: unknown) => error instanceof Error ? error.message : 
 
 export function createMechanismSolverWorkerRuntime(
   scope: MechanismSolverWorkerScope,
-  solve: (value: unknown, signal: AbortSignal) => Promise<MechanismWorkerOutput>,
+  solve: (value: MechanismInput, signal: AbortSignal) => Promise<MechanismWorkerOutput>,
 ): void {
   let active: { readonly requestId: string; readonly controller: AbortController } | undefined;
   const post = (value: unknown, transfer: readonly Transferable[] = []) =>
@@ -34,10 +35,18 @@ export function createMechanismSolverWorkerRuntime(
       return;
     }
     const controller = new AbortController();
-    active = { requestId: request.requestId, controller };
+    const owner = { requestId: request.requestId, controller };
+    active = owner;
     void (async () => {
       try {
-        const input = JSON.parse(new TextDecoder().decode(request.inputBytes));
+        const input = await defineMechanismInput(JSON.parse(new TextDecoder().decode(request.inputBytes)));
+        if (input.mechanismInputDigest !== request.mechanismInputDigest) {
+          throw new Error("Mechanism solver request digest does not match its canonical input");
+        }
+        if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError");
+        post({ type: "started", requestId: request.requestId,
+          mechanismInputDigest: input.mechanismInputDigest });
+        if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError");
         const output = MechanismWorkerOutputSchema.parse(await solve(input, controller.signal));
         if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError");
         const outputBytes = new TextEncoder().encode(JSON.stringify(output));
@@ -47,7 +56,7 @@ export function createMechanismSolverWorkerRuntime(
           post({ type: "cancelled", requestId: request.requestId });
         } else post({ type: "failed", requestId: request.requestId, error: messageFor(error).slice(0, 8_192) || "Mechanism solve failed" });
       } finally {
-        if (active?.requestId === request.requestId) active = undefined;
+        if (active === owner) active = undefined;
       }
     })();
   });

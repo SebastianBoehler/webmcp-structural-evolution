@@ -1,5 +1,6 @@
 .field-viewer {
   contain: layout paint;
+  container-type: inline-size;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -30,9 +31,13 @@
   min-height: 18rem;
   cursor: grab;
   touch-action: none;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
 .field-viewer canvas:active { cursor: grabbing; }
+.field-viewer__top-overlay { display: contents; }
 .field-viewer--drone-only .field-viewer__help,
 .field-viewer--drone-only .cad-view-controls,
 .field-viewer--drone-only .cad-transform-controls { display: none; }
@@ -115,6 +120,34 @@
     max-width: calc(100% - 1.5rem);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+}
+
+/* Gate replay status can wrap at phone width, so its capture viewer reserves a control row. */
+.field-viewer--gate-capture .cad-view-controls { inset: 7rem 0.75rem auto auto; }
+.field-viewer--gate-capture .field-viewer__field-status { max-width: calc(100% - 1.5rem); }
+
+@container (max-width: 42rem) {
+  .field-viewer--gate-capture .field-viewer__top-overlay {
+    position: absolute;
+    z-index: 3;
+    inset: 0.75rem 0.75rem auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .field-viewer--gate-capture .field-viewer__top-overlay > .field-viewer__field-status,
+  .field-viewer--gate-capture .field-viewer__top-overlay > .cad-transform-controls,
+  .field-viewer--gate-capture .field-viewer__top-overlay > .cad-view-controls {
+    position: static;
+    inset: auto;
+  }
+
+  .field-viewer--gate-capture .field-viewer__top-overlay > .field-viewer__field-status {
+    align-self: stretch;
+    max-width: none;
   }
 }
 

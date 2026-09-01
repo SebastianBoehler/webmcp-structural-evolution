@@ -38,7 +38,7 @@ const jointLabel: Readonly<Record<string, string>> = {
   "j4-roll-housing": "J4 forearm-roll housing",
   "j5-pitch-housing": "J5 wrist-pitch housing",
   "j6-tool-roll": "J6 tool-roll housing",
-  "upper-arm-service-cover": "Upper-arm service cover",
+  "upper-arm-housing": "J2–J3 structural upper-arm housing",
   "calibration-payload": "Mounted 1.5 kg calibration payload",
 };
 

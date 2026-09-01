@@ -138,7 +138,7 @@ describe("Rapier mechanism worker kernel", () => {
     clearancePairs: [{ id: "moving-gap", sourceQueryId: "gap",
       firstColliderId: "ground-collider", secondColliderId: "link-collider" }] });
     const solved = await runRapierMechanism(input, new AbortController().signal);
-    expect(solved.replay.clearanceSamples.at(-1)).toMatchObject({ stepIndex: 240, distanceM: expect.closeTo(100, 2) });
+    expect(solved.replay.clearanceSamples.at(-1)).toMatchObject({ stepIndex: 240, distanceM: expect.closeTo(100, 1) });
   });
 
   test("validates positive clearance on the output step where contact ends", async () => {

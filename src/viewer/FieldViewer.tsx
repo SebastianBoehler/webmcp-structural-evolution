@@ -10,12 +10,11 @@ import {
 import {
   FieldRendererMountError,
   mountFieldRenderer,
-  viewerEnvironment,
   type FieldRendererSession,
-  type FieldViewerEnvironment,
   type ResizeEntryLike,
   type ViewerRenderModel,
 } from "./field-renderer";
+import { viewerEnvironment, type FieldViewerEnvironment } from "./field-renderer-environment";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
 import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
 import { analysisRenderField } from "./analysis-render-field";
@@ -26,7 +25,7 @@ import "./field-viewer.css";
 export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer";
 
 const EMPTY_ASSEMBLY_PARTS: readonly AssemblyVisualPart[] = Object.freeze([]);
-
+const EMPTY_ALTERNATIVES: readonly ViewerBranch[] = Object.freeze([]);
 export interface FieldViewerProps {
   readonly current: ViewerBranch | null;
   readonly alternatives: readonly ViewerBranch[];
@@ -35,6 +34,10 @@ export interface FieldViewerProps {
   readonly mode: AlternativeMode;
   readonly grid?: VoxelGrid;
   readonly assemblyParts?: readonly AssemblyVisualPart[];
+  /** Updates mounted assembly roots without rebuilding their geometry. */
+  readonly assemblyPoseParts?: readonly AssemblyVisualPart[];
+  /** Gate-only WebGL capture retention; ordinary viewers keep the fast default buffer. */
+  readonly preserveDrawingBuffer?: boolean;
   readonly selectedAlternative?: string;
   readonly selectedPart?: string;
   readonly analysisLayer?: "density" | "loads" | "displacement" | "stress" | "safety";
@@ -141,6 +144,8 @@ export function FieldViewer({
   mode,
   grid,
   assemblyParts = EMPTY_ASSEMBLY_PARTS,
+  assemblyPoseParts,
+  preserveDrawingBuffer = false,
   selectedAlternative,
   selectedPart,
   analysisLayer = "density",
@@ -161,10 +166,11 @@ export function FieldViewer({
   const [gridVisible, setGridVisible] = useState(true);
   const [worldCoordinates, setWorldCoordinates] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const stableAlternatives = alternatives.length === 0 ? EMPTY_ALTERNATIVES : alternatives;
   const auditionSelection = mode === "audition" ? selectedAlternative : undefined;
   const prepared = useMemo(() => prepareViewer(
     current,
-    alternatives,
+    stableAlternatives,
     selectedRegion,
     threshold,
     mode,
@@ -172,7 +178,7 @@ export function FieldViewer({
     grid,
     assemblyParts,
     analysisLayer,
-  ), [current, alternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts, analysisLayer]);
+  ), [current, stableAlternatives, selectedRegion, threshold, mode, auditionSelection, grid, assemblyParts, analysisLayer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -184,6 +190,7 @@ export function FieldViewer({
         prepared.model,
         viewerEnvironment(environment),
         { onSelect: onPartSelect, onMove: onPartMove, onDragState: onPartDragState },
+        { preserveDrawingBuffer },
       );
       sessionRef.current = session;
       return () => {
@@ -196,10 +203,13 @@ export function FieldViewer({
       setRenderError(`The 3D renderer failed. ${error instanceof Error ? error.message : String(error)}`);
       return failed ? () => failed.dispose() : undefined;
     }
-  }, [environment, onPartDragState, onPartMove, onPartSelect, prepared.model]);
+  }, [environment, onPartDragState, onPartMove, onPartSelect, prepared.model, preserveDrawingBuffer]);
 
   useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [prepared.model, selectedAlternative]);
   useEffect(() => sessionRef.current?.setSelectedPart(selectedPart), [prepared.model, selectedPart]);
+  useEffect(() => {
+    if (assemblyPoseParts) sessionRef.current?.setAssemblyPartPoses(assemblyPoseParts);
+  }, [assemblyPoseParts]);
   useEffect(() => sessionRef.current?.setReferenceGridVisible(gridVisible && !droneOnly), [droneOnly, gridVisible, prepared.model]);
   useEffect(() => sessionRef.current?.setFlightFrame(flightFrame), [flightFrame]);
   useEffect(() => flightFrameSource?.subscribe((frame) => sessionRef.current?.setFlightFrame(frame)), [flightFrameSource]);
@@ -209,7 +219,7 @@ export function FieldViewer({
 
   const issue = prepared.error ?? renderError;
   return (
-    <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}`} aria-label="3D engineering viewport">
+    <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}${preserveDrawingBuffer ? " field-viewer--gate-capture" : ""}`} aria-label="3D engineering viewport">
       <canvas
         ref={canvasRef}
         role="img"
@@ -220,48 +230,33 @@ export function FieldViewer({
       <p className="field-viewer__help" id={descriptionId}>
         Select a part · X/Y/Z move · left-drag orbit · right-drag pan · scroll zoom
       </p>
-      <div className="cad-view-controls" role="group" aria-label="Viewport orientation">
-        {(["isometric", "top", "front", "right"] as const).map((preset) => (
-          <button
-            type="button"
-            key={preset}
-            aria-label={`${preset[0]!.toUpperCase()}${preset.slice(1)} view`}
-            aria-pressed={view === preset}
-            onClick={() => { setView(preset); sessionRef.current?.setView(preset); }}
-          >{preset === "isometric" ? "ISO" : preset[0]!.toUpperCase()}</button>
-        ))}
+      <div className="field-viewer__top-overlay" aria-label="Viewport status and controls">
+        <p className="field-viewer__field-status" role="status">
+          {statusText ?? (current
+            ? `Verified field · ${selectedRegion.label}`
+            : "Assembly ready · Generate topology to add the density field")}
+        </p>
+        <div className="cad-transform-controls" role="group" aria-label="CAD display and transforms">
+          <button type="button" aria-label="Focus selected part" disabled={!selectedPart}
+            onClick={() => sessionRef.current?.focusSelectedPart()}>Focus</button>
+          <button type="button" aria-label="Toggle reference grid" aria-pressed={gridVisible}
+            onClick={() => setGridVisible((visible) => !visible)}>Grid</button>
+          <button type="button" aria-label={worldCoordinates ? "World coordinates" : "Local coordinates"}
+            aria-pressed={worldCoordinates}
+            onClick={() => setWorldCoordinates((world) => !world)}>{worldCoordinates ? "World" : "Local"}</button>
+          <button type="button" aria-label="Snap 10 millimetres" aria-pressed={snapEnabled}
+            onClick={() => setSnapEnabled((enabled) => !enabled)}>10 mm</button>
+        </div>
+        <div className="cad-view-controls" role="group" aria-label="Viewport orientation">
+          {(["isometric", "top", "front", "right"] as const).map((preset) => (
+            <button type="button" key={preset}
+              aria-label={`${preset[0]!.toUpperCase()}${preset.slice(1)} view`}
+              aria-pressed={view === preset}
+              onClick={() => { setView(preset); sessionRef.current?.setView(preset); }}
+            >{preset === "isometric" ? "ISO" : preset[0]!.toUpperCase()}</button>
+          ))}
+        </div>
       </div>
-      <div className="cad-transform-controls" role="group" aria-label="CAD display and transforms">
-        <button
-          type="button"
-          aria-label="Focus selected part"
-          disabled={!selectedPart}
-          onClick={() => sessionRef.current?.focusSelectedPart()}
-        >Focus</button>
-        <button
-          type="button"
-          aria-label="Toggle reference grid"
-          aria-pressed={gridVisible}
-          onClick={() => setGridVisible((visible) => !visible)}
-        >Grid</button>
-        <button
-          type="button"
-          aria-label={worldCoordinates ? "World coordinates" : "Local coordinates"}
-          aria-pressed={worldCoordinates}
-          onClick={() => setWorldCoordinates((world) => !world)}
-        >{worldCoordinates ? "World" : "Local"}</button>
-        <button
-          type="button"
-          aria-label="Snap 10 millimetres"
-          aria-pressed={snapEnabled}
-          onClick={() => setSnapEnabled((enabled) => !enabled)}
-        >10 mm</button>
-      </div>
-      <p className="field-viewer__field-status" role="status">
-        {statusText ?? (current
-          ? `Verified field · ${selectedRegion.label}`
-          : "Assembly ready · Generate topology to add the density field")}
-      </p>
       {issue && <p className="field-viewer__message field-viewer__message--error" role="alert">{issue}</p>}
       {prepared.notice && <p className="field-viewer__message" role="status">{prepared.notice}</p>}
       {prepared.omittedCount > 0 && (

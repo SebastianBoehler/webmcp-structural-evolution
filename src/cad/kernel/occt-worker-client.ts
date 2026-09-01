@@ -17,12 +17,13 @@ import type {
 } from "./occt-worker-client-types";
 import { cadFailureCode, isFatalOcctFailure } from "./occt-worker-failure";
 import { createOcctWorkerIngress } from "./occt-worker-ingress";
+import { createOcctWorkerOperationQueue } from "./occt-worker-operation-queue";
 export type { OcctWorkerFactory, OcctWorkerLike, OcctWorkerMessageEvent } from "./occt-worker-client-types";
 export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   let worker: OcctWorkerLike | undefined;
   let active: PendingOcctOperation | undefined;
   let settling: PendingOcctOperation | undefined;
-  const queue: PendingOcctOperation[] = [];
+  const queue = createOcctWorkerOperationQueue(() => { void startNext(); });
   const emit = (event: CadEvaluationEvent) => {
     if (active?.kind === "evaluation") active.emit(CadEvaluationEventSchema.parse(event));
   };
@@ -265,8 +266,8 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
   }
 
   async function startNext() {
-    if (active || queue.length === 0) return;
-    active = queue.shift();
+    if (active || !queue.hasPending()) return;
+    active = queue.dequeue();
     if (!active) return;
     if (active.signal.aborted) {
       cancelOperation(active, "not-started");
@@ -293,8 +294,5 @@ export function createOcctWorkerClient(factory: OcctWorkerFactory) {
     }
   }
 
-  return createOcctWorkerIngress((operation) => {
-    queue.push(operation);
-    void startNext();
-  });
+  return { ...createOcctWorkerIngress(queue.enqueue), dispose: queue.dispose };
 }

@@ -7,6 +7,8 @@ import {
 import { assertRapierRepresentable, rapierColliderBoundingRadius } from "./mechanism-rapier-range";
 
 export type RapierModule = typeof Rapier;
+export const MECHANISM_SOLVER_ITERATIONS = 64;
+export const MECHANISM_INTERNAL_PGS_ITERATIONS = 1;
 export type RapierState = Readonly<{
   world: Rapier.World;
   bodies: ReadonlyMap<string, Rapier.RigidBody>;
@@ -68,6 +70,8 @@ export function createRapierState(rapier: RapierModule, input: MechanismInput): 
   assertRapierRepresentable(input);
   const world = new rapier.World(vectorObject(input.gravityWorldMps2));
   world.timestep = 1 / 240;
+  world.numSolverIterations = MECHANISM_SOLVER_ITERATIONS;
+  world.numInternalPgsIterations = MECHANISM_INTERNAL_PGS_ITERATIONS;
   const bodies = new Map<string, Rapier.RigidBody>();
   const initialOrientations = new Map<string, Quat>();
   for (const body of input.bodies) {

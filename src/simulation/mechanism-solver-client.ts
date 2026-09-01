@@ -1,5 +1,7 @@
 import type { MechanismInput } from "./mechanism-contract";
-import { MechanismSolverEventSchema, MechanismSolverRequestSchema } from "./mechanism-solver-protocol";
+import {
+  MechanismSolverEventSchema, MechanismSolverRequestSchema, type MechanismSolverEvent,
+} from "./mechanism-solver-protocol";
 
 export interface MechanismSolverWorker {
   postMessage(message: unknown, transfer?: readonly Transferable[]): void;
@@ -9,18 +11,24 @@ export interface MechanismSolverWorker {
 }
 
 const cancelled = () => new DOMException("Mechanism solve was cancelled", "AbortError");
+export type MechanismSolverStarted = Extract<MechanismSolverEvent, { type: "started" }>;
 
 export function createMechanismSolverClient(factory: () => MechanismSolverWorker) {
-  return (input: MechanismInput, signal: AbortSignal): Promise<unknown> => {
+  return (
+    input: MechanismInput, signal: AbortSignal,
+    onStarted: (event: MechanismSolverStarted) => void = () => undefined,
+  ): Promise<unknown> => {
     if (signal.aborted) return Promise.reject(cancelled());
     const inputBytes = new TextEncoder().encode(JSON.stringify(input));
     const requestId = `mechanism-solver-${crypto.randomUUID()}`;
-    const request = MechanismSolverRequestSchema.parse({ type: "solve-mechanism", requestId, inputBytes });
+    const request = MechanismSolverRequestSchema.parse({
+      type: "solve-mechanism", requestId, mechanismInputDigest: input.mechanismInputDigest, inputBytes,
+    });
     if (request.type !== "solve-mechanism") return Promise.reject(new Error("Mechanism solve preflight failed"));
     let worker: MechanismSolverWorker;
     try { worker = factory(); } catch (error) { return Promise.reject(error); }
     return new Promise((resolve, reject) => {
-      let settled = false;
+      let settled = false, started = false;
       const finish = (error?: unknown, value?: unknown) => {
         if (settled) return;
         settled = true;
@@ -42,6 +50,18 @@ export function createMechanismSolverClient(factory: () => MechanismSolverWorker
         const parsed = MechanismSolverEventSchema.safeParse(data);
         if (!parsed.success || parsed.data.requestId !== requestId) {
           finish(new Error("Mechanism solver worker returned an invalid response")); return;
+        }
+        if (parsed.data.type === "started") {
+          if (started || parsed.data.mechanismInputDigest !== input.mechanismInputDigest) {
+            finish(new Error("Mechanism solver worker returned an invalid start acknowledgement")); return;
+          }
+          started = true;
+          try { onStarted(parsed.data); } catch (error) { finish(error); }
+          return;
+        }
+        if (!started) {
+          const detail = parsed.data.type === "failed" ? `: ${parsed.data.error}` : "";
+          finish(new Error(`Mechanism solver worker returned a terminal before starting${detail}`)); return;
         }
         if (parsed.data.type === "failed") finish(new Error(parsed.data.error));
         else if (parsed.data.type === "cancelled") finish(cancelled());

@@ -45,6 +45,27 @@ export function indexBodyMeshes(mesh: SemanticMeshPayload, bodyIds: readonly str
   return new Map([...states].map(([bodyId, { verticesM, triangles }]) => [bodyId, { verticesM, triangles }]));
 }
 
+function semicircleIsConvex(document: DesignDocument, sketch: DesignDocument["sketches"][number]): boolean {
+  if (sketch.entities.length !== 2) return false;
+  const arc = sketch.entities.find(({ kind }) => kind === "arc");
+  const line = sketch.entities.find(({ kind }) => kind === "line");
+  if (!arc || arc.kind !== "arc" || !line || line.kind !== "line") return false;
+  const center = arc.centerM.map((value) => scalar(document, value, "length"));
+  const radius = scalar(document, arc.radiusM, "length");
+  const start = scalar(document, arc.startAngleRad, "angle");
+  const end = scalar(document, arc.endAngleRad, "angle");
+  const sweep = end - start;
+  if (!(sweep > 0) || sweep > Math.PI + 1e-12) return false;
+  const endpoints = [start, end].map((angle) => [
+    center[0]! + radius * Math.cos(angle), center[1]! + radius * Math.sin(angle),
+  ]);
+  const lineStart = line.startM.map((value) => scalar(document, value, "length"));
+  const lineEnd = line.endM.map((value) => scalar(document, value, "length"));
+  const same = (left: readonly number[], right: readonly number[]) =>
+    Math.hypot(left[0]! - right[0]!, left[1]! - right[1]!) <= 1e-12;
+  return same(lineStart, endpoints[1]!) && same(lineEnd, endpoints[0]!);
+}
+
 function polygonIsConvex(document: DesignDocument, sketch: DesignDocument["sketches"][number]): boolean {
   if (sketch.entities.length < 3 || sketch.entities.some(({ kind }) => kind !== "line")) return false;
   const lines = sketch.entities as readonly Extract<typeof sketch.entities[number], { kind: "line" }>[];
@@ -99,7 +120,7 @@ export function exactPrimitiveOrConvexProof(document: DesignDocument, bodyId: st
         ]) },
     }, inertiaRotation: frame.rotation };
   }
-  return { convexStraightExtrusion: polygonIsConvex(document, sketch) };
+  return { convexStraightExtrusion: polygonIsConvex(document, sketch) || semicircleIsConvex(document, sketch) };
 }
 
 export function assertPrimitiveDynamics(

@@ -10,7 +10,9 @@ import {
   type MechanismWorkerResultEvidenceCandidate,
 } from "./mechanism-contract";
 import { createMechanismReplay } from "./mechanism-replay";
-import { createMechanismSolverClient, type MechanismSolverWorker } from "./mechanism-solver-client";
+import {
+  createMechanismSolverClient, type MechanismSolverStarted, type MechanismSolverWorker,
+} from "./mechanism-solver-client";
 import {
   MECHANISM_SOLVER_WORKER_ASSET_URL, readMechanismSolverWorkerArtifactDigest,
 } from "./mechanism-solver-artifact";
@@ -62,12 +64,13 @@ export function resolveMechanismResult(value: unknown): Readonly<{
 
 export async function solveMechanismStudy(
   value: unknown, signal: AbortSignal,
+  onStarted: (event: MechanismSolverStarted) => void = () => undefined,
 ): Promise<MechanismResult> {
   const compiled = assertCompiledMechanismStudy(value);
   abort(signal);
   const workerArtifactDigest = await readMechanismSolverWorkerArtifactDigest(signal);
   abort(signal);
-  const output = MechanismWorkerOutputSchema.parse(await solveInWorker(compiled.input, signal));
+  const output = MechanismWorkerOutputSchema.parse(await solveInWorker(compiled.input, signal, onStarted));
   abort(signal);
   const replay = await createMechanismReplay(compiled.input, output.replay);
   abort(signal);
