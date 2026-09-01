@@ -60,7 +60,7 @@ it("supports exact world-coordinate placement in millimetres", () => {
   expect(screen.getByText(/world coordinates.*millimetres/i)).toBeVisible();
 });
 
-it("distinguishes exact release CAD from an unpublished mass budget", () => {
+it("describes catalog-derived geometry without claiming release CAD", () => {
   const flightController: AssemblyVisualPart = {
     id: "flight-controller",
     selectionId: "flight-controller",
@@ -86,7 +86,7 @@ it("distinguishes exact release CAD from an unpublished mass budget", () => {
     onMovePart={() => undefined}
   />);
 
-  expect(screen.getByText("Exact licensed release CAD")).toBeVisible();
+  expect(screen.getByText("Parametric engineering model from catalog/sourced dimensions")).toBeVisible();
   expect(screen.getByText("17 g engineering budget")).toBeVisible();
   expect(screen.getByText(/does not publish assembled mass/i)).toBeVisible();
 });

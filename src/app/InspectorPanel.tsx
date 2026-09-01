@@ -106,7 +106,7 @@ export function InspectorPanel({
     mass: `${definition.mass.value * 1_000} g${massUncertainty ? " engineering budget" : ""}`,
     source: definition.provenance.sources[0]?.reference,
     fit: `${definition.mountInterfaces.length + definition.interfaces.length} declared interfaces`,
-    fidelity: definition.provenance.mode === "sourced-asset" ? "Exact licensed release CAD" : "Official-specification model",
+    fidelity: "Parametric engineering model from catalog/sourced dimensions",
     caveat: definition.provenance.uncertainty.map(({ statement }) => statement).join(" "),
   } : undefined;
   const details = canonicalDetails ?? knownDetails(part);
