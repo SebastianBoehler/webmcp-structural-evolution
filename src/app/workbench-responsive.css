@@ -1,0 +1,61 @@
+@media (max-width: 68rem) {
+  .workbench-header { grid-template-columns: minmax(11rem, 1fr) auto auto auto; }
+  .header-status { display: none; }
+  .viewport-toolbar { grid-template-columns: minmax(9rem, 0.65fr) minmax(12rem, 0.8fr) minmax(0, 1.8fr); }
+  .selection-context { display: none; }
+}
+
+@media (max-width: 52rem) {
+  .workbench-header { grid-template-columns: minmax(10rem, 1fr) auto auto; gap: 0.45rem; min-height: 3.25rem; padding: 0.4rem 0.55rem; }
+  .brand-lockup p, .fixture-select > span { display: none; }
+  .fixture-select select { max-width: 10.5rem; }
+  .theme-switch { grid-column: 3; grid-row: 1; }
+  .workflow-navigation { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0.15rem; }
+  .workflow-navigation button { justify-content: center; }
+  .viewport-toolbar { grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr); gap: 0.5rem; min-height: 3.75rem; padding: 0.45rem 0.55rem; }
+  .viewport-heading { display: none; }
+  .toolbar-controls { justify-content: flex-end; overflow-x: auto; flex-wrap: nowrap; padding: 0.1rem 0.15rem 0.2rem; overscroll-behavior-inline: contain; }
+  .workbench-stage[data-panel="components"], .workbench-stage[data-panel="inspector"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .workbench-stage > .viewport-workspace { grid-row: 1; grid-column: 1; }
+  .workbench-stage > .side-panel {
+    position: absolute;
+    z-index: 30;
+    inset-block: 4.4rem 0.65rem;
+    width: min(20rem, calc(100% - 1.3rem));
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-float);
+  }
+  .workbench-stage > .component-browser { inset-inline-start: 0.65rem; }
+  .workbench-stage > .inspector-panel { inset-inline-end: 0.65rem; }
+  .viewport-canvas[data-dock-open="true"] { grid-template-columns: minmax(0, 1fr); }
+  .analysis-dock, .review-dock {
+    position: absolute;
+    z-index: 10;
+    inset-block: 0.65rem;
+    inset-inline-end: 0.65rem;
+    width: min(22rem, calc(100% - 1.3rem));
+    border: 1px solid var(--separator);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-float);
+  }
+  .analysis-dock { inset-block-end: auto; max-height: calc(100% - 1.3rem); }
+  input, select { font-size: 1rem; }
+}
+
+@media (max-width: 32rem) {
+  .workbench-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .brand-lockup h1 { font-size: 0.95rem; }
+  .brand-mark { width: 2rem; height: 2rem; }
+  .fixture-select { grid-column: 1 / -1; grid-row: 2; }
+  .fixture-select select { width: 100%; max-width: none; }
+  .theme-switch { display: flex; grid-column: 2; grid-row: 1; }
+  .workflow-navigation { grid-row: 3; }
+  .workflow-navigation button { gap: 0.25rem; padding-inline: 0.35rem; }
+  .workflow-navigation button span { display: none; }
+  .viewport-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .workspace-status small { display: none; }
+  .toolbar-controls { justify-content: flex-start; overflow: visible; flex-wrap: wrap; }
+  .workbench-stage > .side-panel { inset-block-start: 9rem; }
+  .analysis-dock, .review-dock { inset: auto 0.5rem 0.5rem; width: calc(100% - 1rem); max-height: min(26rem, 52%); }
+}

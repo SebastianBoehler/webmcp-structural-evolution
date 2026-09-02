@@ -61,7 +61,7 @@ export function FoundationJourney({
   });
   const { theme, setTheme } = useTheme();
   const [workspaceMode, setWorkspaceMode] = useState<WorkbenchMode>("assembly");
-  const [assemblyPanel, setAssemblyPanel] = useState<AssemblyPanel>("components");
+  const [assemblyPanel, setAssemblyPanel] = useState<AssemblyPanel | undefined>("components");
   const [comparisonMode, setComparisonMode] = useState<AlternativeMode>("overlay");
   const [analysisLayer, setAnalysisLayer] = useState<AnalysisLayer>("density");
   const [selectedAlternative, setSelectedAlternative] = useState<string>();
@@ -75,6 +75,7 @@ export function FoundationJourney({
   const [simulationActive, setSimulationActive] = useState(false);
   const flightFrameChannel = useMemo(createFlightFrameChannel, []);
   const [activeDrawer, setActiveDrawer] = useState<DrawerView>("evidence");
+  const [dockVisible, setDockVisible] = useState(true);
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
 
@@ -122,12 +123,13 @@ export function FoundationJourney({
 
   const changeWorkspaceMode = (next: WorkbenchMode) => {
     setWorkspaceMode(next);
-    if (next === "assembly") setAssemblyPanel("components");
+    if (next === "assembly" && assemblyPanel === undefined) setAssemblyPanel("components");
     if (next === "simulate") {
       setAnalysisLayer("stress");
       setShowConstraints(false);
     }
     if (next === "review") setActiveDrawer(pendingPromotion ? "branches" : "evidence");
+    if (next !== "assembly") setDockVisible(true);
   };
   const cancel = async () => {
     setError(undefined);
@@ -163,9 +165,17 @@ export function FoundationJourney({
   const handlePartDragState = useCallback((dragging: boolean) => {
     workspace.setLayoutState(dragging ? "dragging" : "changed");
   }, [workspace.setLayoutState]);
-  const dockOpen = workspaceMode === "simulate"
+  const dockAvailable = workspaceMode === "simulate"
     || workspaceMode === "review"
     || (workspaceMode === "optimize" && viewerCurrent !== null);
+  const dockOpen = dockVisible && dockAvailable;
+  const receipts = [...state.receipts, ...workspace.receipts]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const openActivity = () => {
+    setActiveDrawer("history");
+    setWorkspaceMode("review");
+    setDockVisible(true);
+  };
 
   return (
     <main className="workbench-shell">
@@ -179,7 +189,7 @@ export function FoundationJourney({
         onThemeChange={setTheme}
       />
       {error && <p className="global-error" role="alert">{error}</p>}
-      <div className="workbench-stage" data-panel={workspaceMode === "assembly" ? assemblyPanel : "none"}>
+      <div className="workbench-stage" data-panel={workspaceMode === "assembly" ? assemblyPanel ?? "none" : "none"}>
         <ComponentBrowser
           selectedId={selectedPart} open={workspaceMode === "assembly" && assemblyPanel === "components"} parts={workspace.parts}
           revision={workspace.revision} conflictCount={workspace.conflicts.length}
@@ -192,7 +202,7 @@ export function FoundationJourney({
             try { setSelectedPart(await workspace.replaceDisplayFile(id, file)); }
             catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
           }}
-          onClose={() => setAssemblyPanel("inspector")}
+          onClose={() => setAssemblyPanel(undefined)}
         />
         <section className="viewport-workspace" aria-labelledby="viewport-title">
           <ViewportModeToolbar
@@ -210,12 +220,20 @@ export function FoundationJourney({
             showConstraints={showConstraints}
             topologySubject={fixture.topologySubject}
             supportsFlightReplay={fixture.supportsFlightReplay}
+            operationStatus={state.operationStatus}
+            activityCount={receipts.length}
+            latestAction={receipts.at(-1)?.action}
+            reviewRequired={pendingPromotion !== undefined || pendingEstimate !== undefined}
+            dockAvailable={dockAvailable}
+            dockOpen={dockOpen}
             onAssemblyPanelChange={setAssemblyPanel}
             onAnalysisLayerChange={setAnalysisLayer}
             onComparisonModeChange={setComparisonMode}
             onShowConstraintsChange={setShowConstraints}
             onPrimary={runPrimary}
             onCancel={() => void cancel()}
+            onOpenActivity={openActivity}
+            onDockToggle={() => setDockVisible((visible) => !visible)}
           />
           <div className="viewport-canvas" data-dock-open={dockOpen}>
             <div className="viewport-scene">
@@ -257,14 +275,14 @@ export function FoundationJourney({
                 onSelect={setSelectedAlternative}
               />}
             </div>
-            {workspaceMode === "optimize" && viewerCurrent && <aside className="analysis-dock" aria-label="Optimization results">
+            {workspaceMode === "optimize" && viewerCurrent && dockOpen && <aside className="analysis-dock" aria-label="Optimization results">
               <TopologyResultPanel
                 branch={viewerCurrent} variant={preview?.variant} assemblyParts={workspace.parts}
                 assemblyId={fixture.id} topologySubject={fixture.topologySubject} materialLabel={fixture.materialLabel}
                 loadCaseIds={liveTopology.input.loadCases.map(({ id }) => id)}
               />
             </aside>}
-            {workspaceMode === "simulate" && <FixtureSimulationDock
+            {workspaceMode === "simulate" && dockOpen && <FixtureSimulationDock
                 supportsFlightReplay={fixture.supportsFlightReplay}
                 topology={liveTopology.input}
                 motors={viewerCurrent ? flightMotors : []}
@@ -279,7 +297,7 @@ export function FoundationJourney({
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
             />}
-            <aside className="review-dock" aria-label="Review evidence" hidden={workspaceMode !== "review"}>
+            <aside className="review-dock" aria-label="Review evidence" hidden={workspaceMode !== "review" || !dockOpen}>
               <WorkbenchReviewDock
                 active={activeDrawer}
                 state={state}
@@ -308,7 +326,7 @@ export function FoundationJourney({
           assembly={workspace.draft} catalog={workspace.catalog} conflicts={workspace.conflicts}
           layoutState={workspace.layoutState}
           open={workspaceMode === "assembly" && assemblyPanel === "inspector"}
-          onClose={() => setAssemblyPanel("components")}
+          onClose={() => setAssemblyPanel(undefined)}
           onLockCableClearance={() => void intervene()}
           onMovePart={workspace.movePart}
         />

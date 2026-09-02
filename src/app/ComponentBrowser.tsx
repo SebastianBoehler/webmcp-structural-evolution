@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import { PanelCloseButton } from "./PanelCloseButton";
 
 export interface ComponentBrowserProps {
   readonly selectedId: string;
@@ -46,7 +47,7 @@ export function ComponentBrowser({ selectedId, open, parts, revision, conflictCo
     <aside className="side-panel component-browser" data-open={open} aria-label="Assembly components" hidden={!open}>
       <div className="panel-heading">
         <div><h2>Assembly</h2><p>{revision ? `Staged revision ${revision.slice(0, 8)}` : "Quadrotor frame"}</p></div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="Collapse components">×</button>
+        <PanelCloseButton label="Close components" onClick={onClose} />
       </div>
       <label className="search-field">
         <span className="visually-hidden">Find a component</span>

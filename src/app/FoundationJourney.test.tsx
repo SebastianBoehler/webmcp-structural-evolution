@@ -41,6 +41,10 @@ test("reveals only controls that belong to the current engineering step", () => 
 
   expect(screen.getByRole("button", { name: /^parts$/i })).toBeVisible();
   expect(screen.getByRole("button", { name: /^details$/i })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /close components/i }));
+  expect(screen.queryByRole("searchbox", { name: /find a component/i })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^parts$/i }));
+  expect(screen.getByRole("searchbox", { name: /find a component/i })).toBeVisible();
   expect(screen.queryByRole("button", { name: /^density$/i })).toBeNull();
   expect(screen.queryByRole("button", { name: /^evidence$/i })).toBeNull();
 
@@ -51,6 +55,8 @@ test("reveals only controls that belong to the current engineering step", () => 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
   expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
   expect(screen.getByText(/generate a verified topology before replaying flight loads/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /hide panel/i }));
+  expect(screen.queryByRole("button", { name: /run flight replay/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
   expect(screen.getByRole("button", { name: /^evidence$/i })).toBeVisible();
@@ -90,6 +96,9 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
     contextRevision: string; context: unknown;
   };
   expect(initialFacts.context).toEqual(DEMO_FIXTURES["reference-drone"].context);
+  await waitFor(() => expect(screen.getByRole("button", { name: /activity 1/i })).toBeVisible());
+  fireEvent.click(screen.getByRole("button", { name: /activity 1/i }));
+  expect(screen.getByRole("log", { name: /action receipts/i })).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
