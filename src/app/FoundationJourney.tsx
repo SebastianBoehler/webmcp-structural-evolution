@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 import { runTopologyProbeInWorker } from "../optimization/topology-probe-client";
 import { DEMO_FIXTURES } from "../samples/demo-fixtures";
 import { FOUNDATION_SELECTIONS } from "../samples/drone-arm-foundation";
 import { FieldViewer } from "../viewer/FieldViewer";
-import type { AlternativeMode } from "../viewer/alternative-instances";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
 import { createFlightFrameChannel } from "../simulation/flight-frame-channel";
 import { ComponentBrowser } from "./ComponentBrowser";
@@ -15,10 +14,9 @@ import { ImportReview } from "./ImportReview";
 import { TopologyResultPanel } from "./TopologyResultPanel";
 import { useProjectState } from "./useProjectState";
 import { useTheme } from "./useTheme";
-import type { DrawerView } from "./WorkbenchDrawer";
 import { WorkbenchHeader } from "./WorkbenchHeader";
 import { WorkbenchReviewDock } from "./WorkbenchReviewDock";
-import { ViewportModeToolbar, type AnalysisLayer } from "./ViewportModeToolbar";
+import { ViewportModeToolbar } from "./ViewportModeToolbar";
 import { foundationView } from "./foundation-view";
 import { FixtureSimulationDock } from "./FixtureSimulationDock";
 import { fixtureViewerStatus } from "./fixture-viewer-status";
@@ -27,7 +25,7 @@ import { deriveOptimizationNavigation } from "./optimization-navigation";
 import { buildProbeInput } from "./project-probe";
 import { probeCopy } from "./probe-copy";
 import { useVisibleAssemblyParts } from "./use-visible-assembly-parts";
-import type { AssemblyPanel, WorkbenchMode } from "./workbench-mode";
+import { deriveResponsivePanelState, useWorkbenchUiState } from "./use-workbench-ui-state";
 export function FoundationJourney({
   capability,
   compute,
@@ -60,28 +58,20 @@ export function FoundationJourney({
     buildProbeInput: (variant) => buildProbeInput(variant, liveTopology),
   });
   const { theme, setTheme } = useTheme();
-  const [workspaceMode, setWorkspaceMode] = useState<WorkbenchMode>("assembly");
-  const [assemblyPanel, setAssemblyPanel] = useState<AssemblyPanel | undefined>("components");
-  const [comparisonMode, setComparisonMode] = useState<AlternativeMode>("overlay");
-  const [analysisLayer, setAnalysisLayer] = useState<AnalysisLayer>("density");
-  const [selectedAlternative, setSelectedAlternative] = useState<string>();
+  const {
+    workspaceMode, setWorkspaceMode, assemblyPanel, setAssemblyPanel, comparisonMode, setComparisonMode,
+    analysisLayer, setAnalysisLayer, selectedAlternative, setSelectedAlternative, showConstraints, setShowConstraints,
+    showComponents, setShowComponents, simulationActive, activeDrawer, setActiveDrawer, dockVisible, setDockVisible,
+    changeWorkspaceMode, openActivity, setSimulationActivity,
+  } = useWorkbenchUiState(state.operationStatus);
   const [selectedPart, setSelectedPart] = useState(
     fixtureId === "reference-drone"
       ? "arm-design-region"
       : fixture.initialState.draft.components[0]?.instanceId ?? initialContext.selection.id,
   );
-  const [showConstraints, setShowConstraints] = useState(false);
-  const [showComponents, setShowComponents] = useState(true);
-  const [simulationActive, setSimulationActive] = useState(false);
   const flightFrameChannel = useMemo(createFlightFrameChannel, []);
-  const [activeDrawer, setActiveDrawer] = useState<DrawerView>("evidence");
-  const [dockVisible, setDockVisible] = useState(true);
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    if (state.operationStatus === "running") setWorkspaceMode("optimize");
-  }, [state.operationStatus]);
 
   const { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
   const { nextVariant, pendingPromotion, pendingEstimate, readyToCompare, primaryLabel, primaryDisabled } = deriveOptimizationNavigation(
@@ -121,16 +111,6 @@ export function FoundationJourney({
     }
   };
 
-  const changeWorkspaceMode = (next: WorkbenchMode) => {
-    setWorkspaceMode(next);
-    if (next === "assembly" && assemblyPanel === undefined) setAssemblyPanel("components");
-    if (next === "simulate") {
-      setAnalysisLayer("stress");
-      setShowConstraints(false);
-    }
-    if (next === "review") setActiveDrawer(pendingPromotion ? "branches" : "evidence");
-    if (next !== "assembly") setDockVisible(true);
-  };
   const cancel = async () => {
     setError(undefined);
     try { await services.cancelProbe(); }
@@ -165,17 +145,7 @@ export function FoundationJourney({
   const handlePartDragState = useCallback((dragging: boolean) => {
     workspace.setLayoutState(dragging ? "dragging" : "changed");
   }, [workspace.setLayoutState]);
-  const dockAvailable = workspaceMode === "simulate"
-    || workspaceMode === "review"
-    || (workspaceMode === "optimize" && viewerCurrent !== null);
-  const dockOpen = dockVisible && dockAvailable;
-  const receipts = [...state.receipts, ...workspace.receipts]
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-  const openActivity = () => {
-    setActiveDrawer("history");
-    setWorkspaceMode("review");
-    setDockVisible(true);
-  };
+  const { dockAvailable, dockOpen, receipts } = deriveResponsivePanelState(workspaceMode, dockVisible, viewerCurrent !== null, state.receipts, workspace.receipts);
 
   return (
     <main className="workbench-shell">
@@ -184,7 +154,7 @@ export function FoundationJourney({
         theme={theme}
         mode={workspaceMode}
         fixtureId={fixtureId}
-        onModeChange={changeWorkspaceMode}
+        onModeChange={(mode) => changeWorkspaceMode(mode, pendingPromotion !== undefined)}
         onFixtureChange={onFixtureChange}
         onThemeChange={setTheme}
       />
@@ -287,13 +257,7 @@ export function FoundationJourney({
                 topology={liveTopology.input}
                 motors={viewerCurrent ? flightMotors : []}
                 onFrame={handleFlightFrame}
-                onActiveChange={(active) => {
-                  setSimulationActive(active);
-                  if (active) {
-                    setAnalysisLayer("stress");
-                    setShowConstraints(false);
-                  }
-                }}
+                onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
             />}
