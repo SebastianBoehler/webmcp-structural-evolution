@@ -63,7 +63,7 @@ describe("structural result artifacts", () => {
       metadata: { maxIterations: 512, maxTotalIterations: 2_048 },
     });
     expect(summaryVerification(componentEnvelope)).toMatchObject({
-      metadata: { maxIterations: 1_024, maxTotalIterations: 4_096 },
+      metadata: { maxIterations: 2_048, maxTotalIterations: 8_192 },
     });
     expect(new Set(genericEnvelope.artifacts.map(({ record }) => record.settingsDigest)).size).toBe(1);
     expect(new Set(componentEnvelope.artifacts.map(({ record }) => record.settingsDigest)).size).toBe(1);

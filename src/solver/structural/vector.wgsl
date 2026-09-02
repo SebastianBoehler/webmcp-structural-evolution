@@ -14,6 +14,7 @@ struct VectorParams {
 @group(0) @binding(6) var<storage, read_write> direction: array<f32>;
 @group(0) @binding(7) var<storage, read> product: array<f32>;
 @group(0) @binding(8) var<storage, read> block_diagonal: array<f32>;
+@group(0) @binding(9) var<storage, read_write> solution_compensation: array<f32>;
 
 fn block_precondition(node: u32, value: vec3<f32>) -> vec3<f32> {
   let offset = node * 9u;
@@ -54,6 +55,7 @@ fn initialize_pcg(@builtin(global_invocation_id) id: vec3<u32>) {
   let conditioned = block_precondition(id.x, value);
   for (var axis = 0u; axis < 3u; axis += 1u) {
     solution[offset + axis] = 0.0;
+    solution_compensation[offset + axis] = 0.0;
     residual[offset + axis] = value[axis];
     preconditioned[offset + axis] = conditioned[axis];
     direction[offset + axis] = conditioned[axis];
@@ -63,7 +65,11 @@ fn initialize_pcg(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(64)
 fn update_solution_residual(@builtin(global_invocation_id) id: vec3<u32>) {
   if (id.x >= params.count || fixed_dofs[id.x] != 0u) { return; }
-  solution[id.x] += params.alpha * direction[id.x];
+  let increment = params.alpha * direction[id.x];
+  let corrected = increment - solution_compensation[id.x];
+  let next = solution[id.x] + corrected;
+  solution_compensation[id.x] = (next - solution[id.x]) - corrected;
+  solution[id.x] = next;
   residual[id.x] -= params.alpha * product[id.x];
 }
 

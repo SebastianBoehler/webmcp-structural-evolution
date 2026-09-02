@@ -90,7 +90,7 @@ export async function createStructuralPipelines(
   });
   const vectorLayout = device.createBindGroupLayout({
     entries: [uniform(), storage(1, true), storage(2, true), storage(3, false), storage(4, false),
-      storage(5, false), storage(6, false), storage(7, true), storage(8, true)],
+      storage(5, false), storage(6, false), storage(7, true), storage(8, true), storage(9, false)],
   });
   const reductionLayout = device.createBindGroupLayout({
     entries: [uniform(), storage(1, true), storage(2, true), storage(3, false)],

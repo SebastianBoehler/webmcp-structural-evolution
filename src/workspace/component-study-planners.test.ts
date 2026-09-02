@@ -120,7 +120,7 @@ describe("exact component study planners", () => {
     }
     expect(evaluate).toHaveBeenCalledOnce();
     expect(seen.map(({ kind }) => kind)).toEqual(["fea", "topology"]);
-    expect((seen[0]!.settings as { pcgIterationBudget?: number }).pcgIterationBudget).toBe(1_024);
+    expect((seen[0]!.settings as { pcgIterationBudget?: number }).pcgIterationBudget).toBe(2_048);
     vi.stubGlobal("navigator", { gpu: {} });
     expect(createWebGpuStructuralAdapter().supports(
       seen[0]! as EngineeringSolveRequest<StructuralSolveInput>,
@@ -130,7 +130,7 @@ describe("exact component study planners", () => {
       producer.name === "workspace-exact-body-brep"))).toBe(true);
     const topology = seen[1] as EngineeringSolveRequest<TopologySolveInput>;
     expect((topology.input.sourceStructuralRequest.settings as { pcgIterationBudget?: number })
-      .pcgIterationBudget).toBe(1_024);
+      .pcgIterationBudget).toBe(2_048);
     const compiled = await compileStructuralStudy(topology.input.sourceStructuralRequest);
     const passive = topologyPassiveCells(topology, configuredTopologyStudy(topology));
     const componentLabels = activeComponents(compiled.activeCells, compiled.grid.cellDimensions);
