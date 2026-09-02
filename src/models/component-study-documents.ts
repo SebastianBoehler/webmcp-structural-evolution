@@ -171,7 +171,7 @@ export async function withDroneComponentStudies(
       configurationState: "configured", objective: "minimum-compliance",
       targetVolumeFraction: .35, moveLimit: .2, filterRadiusM: .0012,
       minimumFeatureM: .0012, maxIterations: 32,
-      extraction: { isoValue: .5, toleranceM: .0003 }, requiredSelectionIds,
+      extraction: { isoValue: .5, toleranceM: .0002 }, requiredSelectionIds,
       protectedVoidSelectionIds: [],
       acceptance: { maximumDisplacementM: .0015,
         maximumVonMisesStressPa: document.materials[0]!.failureStressPa,

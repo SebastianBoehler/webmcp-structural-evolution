@@ -157,7 +157,8 @@ describe("topology extraction and acceptance", () => {
       displacementM: new Float32Array(24), vonMisesStressPa: new Float32Array([10]),
     } as StructuralResult;
     const base = {
-      objectiveHistory: [8, 9, 10], materialFraction: 0.7, structuralSettings: undefined, analysis,
+      objectiveHistory: [8, 9, 10], materialFraction: 0.7,
+      materialCount: 70, domainCount: 100, structuralSettings: undefined, analysis,
       extraction: {
         closed: true, oriented: true, requiredInterfacesConnected: true,
         protectedVoidsClear: true, minimumFeatureSatisfied: true,
@@ -196,5 +197,17 @@ describe("topology extraction and acceptance", () => {
         },
       },
     }).reasons).toContain("post-extraction structural evidence is incoherent");
+    const discreteBoundary = {
+      ...base, materialFraction: 3190 / 9114, materialCount: 3190, domainCount: 9114,
+      constraints: { ...base.constraints, maximumMaterialFraction: .35 },
+    };
+    expect(decideTopologyAcceptance(discreteBoundary).reasons)
+      .not.toContain("material fraction exceeds the acceptance limit");
+    expect(decideTopologyAcceptance({
+      ...discreteBoundary, materialFraction: 3191 / 9114, materialCount: 3191,
+    }).reasons)
+      .toContain("material fraction exceeds the acceptance limit");
+    expect(decideTopologyAcceptance({ ...base, materialCount: 70.5 }).reasons)
+      .toContain("material count evidence is invalid");
   });
 });

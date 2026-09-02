@@ -10,6 +10,8 @@ import type {
 interface AcceptanceInput {
   readonly objectiveHistory: readonly number[];
   readonly materialFraction: number;
+  readonly materialCount: number;
+  readonly domainCount: number;
   readonly structuralSettings: unknown;
   readonly analysis: StructuralResult;
   readonly extraction: TopologyExtractionValidation;
@@ -79,7 +81,16 @@ export function decideTopologyAcceptance(input: AcceptanceInput): TopologyAccept
   if (safetyFactor < input.constraints.minimumSafetyFactor) {
     reasons.push("post-extraction safety factor is below the acceptance limit");
   }
-  if (input.materialFraction > input.constraints.maximumMaterialFraction) {
+  const materialCountsValid = Number.isSafeInteger(input.materialCount)
+    && Number.isSafeInteger(input.domainCount)
+    && input.materialCount >= 0 && input.domainCount > 0
+    && input.materialCount <= input.domainCount
+    && Number.isFinite(input.materialFraction)
+    && input.materialFraction === input.materialCount / input.domainCount;
+  if (!materialCountsValid) reasons.push("material count evidence is invalid");
+  if (materialCountsValid && input.materialCount > Math.round(
+    input.constraints.maximumMaterialFraction * input.domainCount,
+  )) {
     reasons.push("material fraction exceeds the acceptance limit");
   }
   return {

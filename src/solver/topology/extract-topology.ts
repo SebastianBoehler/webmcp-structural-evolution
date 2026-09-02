@@ -4,6 +4,7 @@ import type {
   TopologyExtractionValidation,
   TopologyMesh,
 } from "./topology-contract";
+import { topologyMinimumFeatureSatisfied } from "./minimum-feature";
 
 type Point = readonly [number, number, number];
 type Face = readonly [Point, Point, Point, Point];
@@ -218,26 +219,6 @@ function connected(active: Uint32Array, grid: StructuralGrid, required: readonly
   return required.every((value) => seen.has(value));
 }
 
-function minimumFeature(active: Uint32Array, grid: StructuralGrid, minimumM: number): boolean {
-  const cells = Math.ceil(minimumM / grid.cellSizeM - 1e-9);
-  if (cells <= 1) return true;
-  const [width, height, depth] = grid.cellDimensions;
-  const run = (x: number, y: number, z: number, axis: number) => {
-    let length = 1;
-    for (const direction of [-1, 1]) for (let step = 1; ; step += 1) {
-      const point = [x, y, z]; point[axis] += direction * step;
-      if (point[axis]! < 0 || point[axis]! >= [width, height, depth][axis]!
-        || active[cellIndex(grid, point[0]!, point[1]!, point[2]!)] !== 1) break;
-      length += 1;
-    }
-    return length;
-  };
-  for (let z = 0; z < depth; z += 1) for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
-    if (active[cellIndex(grid, x, y, z)] && [0, 1, 2].some((axis) => run(x, y, z, axis) < cells)) return false;
-  }
-  return true;
-}
-
 export function validateExtractedTopology(
   mesh: TopologyMesh,
   grid: StructuralGrid,
@@ -260,6 +241,8 @@ export function validateExtractedTopology(
     ...edges,
     requiredInterfacesConnected: connected(active, grid, required),
     protectedVoidsClear: [...constraints.protectedVoidCellIndices].every((cell) => active[cell] === 0),
-    minimumFeatureSatisfied: minimumFeature(active, grid, constraints.minimumFeatureM),
+    minimumFeatureSatisfied: topologyMinimumFeatureSatisfied(
+      active, grid.cellDimensions, constraints.minimumFeatureM, grid.cellSizeM,
+    ),
   };
 }

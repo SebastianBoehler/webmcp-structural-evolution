@@ -26,6 +26,7 @@ import type { ThermalSolveInput } from "../solver/thermal/thermal-contract";
 import { createVerifiedThermalAdapter } from "../solver/thermal/verified-thermal-adapter";
 import { createWebGpuTopologyAdapter } from "../solver/topology/topology-adapter";
 import type { TopologySolveInput } from "../solver/topology/topology-contract";
+import { topologyDiscreteLimits } from "../solver/topology/density-constraints";
 import { configuredTopologyStudy, topologyPassiveCells } from "../solver/topology/topology-input";
 import { MECHANISM_MAX_CLEARANCE_SAMPLES } from "../simulation/mechanism-contract";
 import { createMechanismAdapter, type MechanismAdapterInput } from "../simulation/mechanism-adapter";
@@ -132,6 +133,9 @@ describe("exact component study planners", () => {
     expect((topology.input.sourceStructuralRequest.settings as { pcgIterationBudget?: number })
       .pcgIterationBudget).toBe(2_048);
     const compiled = await compileStructuralStudy(topology.input.sourceStructuralRequest);
+    const topologyStudy = configuredTopologyStudy(topology);
+    expect(topologyStudy.extraction.toleranceM).toBeGreaterThan(0);
+    expect(topologyStudy.extraction.toleranceM).toBeLessThanOrEqual(compiled.grid.cellSizeM * .25);
     const passive = topologyPassiveCells(topology, configuredTopologyStudy(topology));
     const componentLabels = activeComponents(compiled.activeCells, compiled.grid.cellDimensions);
     const activeLabels = new Set([...componentLabels].filter((label) => label >= 0));
@@ -159,6 +163,53 @@ describe("exact component study planners", () => {
     expect(evaluate).toHaveBeenCalledOnce();
     expect(seen.map(({ kind }) => kind)).toEqual(["fea", "topology"]);
     expect(seen.every(({ sourceRevision }) => sourceRevision === model.document.revision)).toBe(true);
+    workspace.dispose();
+  });
+
+  it("pads drone interfaces to their manufacturing width before target selection", async () => {
+    const model = await droneMotorSideArmDocument();
+    const { workspace, seen } = await service(model, vi.fn());
+    const launched = await workspace.launchStudy({
+      studyId: "drone-arm-topology", expectedRevision: model.document.revision,
+    });
+    await waitVerified(workspace, launched.jobId);
+    const request = seen[0] as EngineeringSolveRequest<TopologySolveInput>;
+    const system = await compileStructuralStudy(request.input.sourceStructuralRequest);
+    const study = configuredTopologyStudy(request);
+    const passive = topologyPassiveCells(request, study);
+    const interfaceCells = new Set(passive.requiredInterfaces
+      .flatMap(({ cellIndices }) => [...cellIndices]));
+    const minimumCells = Math.ceil(study.minimumFeatureM / system.grid.cellSizeM - 1e-9);
+    const [width, height, depth] = system.grid.cellDimensions, plane = width * height;
+    const mask = Uint32Array.from(system.activeCells, (_value, cell) =>
+      Number(passive.requiredCells.has(cell)));
+    const run = (cell: number, axis: number) => {
+      const z = Math.floor(cell / plane), rest = cell - z * plane;
+      const y = Math.floor(rest / width), x = rest - y * width;
+      let length = 1;
+      for (const direction of [-1, 1]) for (let step = 1; ; step += 1) {
+        const point = [x, y, z]; point[axis] += direction * step;
+        if (point[axis]! < 0 || point[axis]! >= [width, height, depth][axis]!) break;
+        const next = point[0]! + width * (point[1]! + height * point[2]!);
+        if (mask[next] !== 1) break;
+        length += 1;
+      }
+      return length;
+    };
+    expect(minimumCells).toBe(2);
+    expect(passive.requiredCells.size).toBeGreaterThan(interfaceCells.size);
+    expect([...passive.requiredCells].every((cell) => system.activeCells[cell] === 1)).toBe(true);
+    expect([...passive.requiredCells].every((cell) =>
+      [0, 1, 2].every((axis) => run(cell, axis) >= minimumCells))).toBe(true);
+    expect(() => topologyDiscreteLimits(
+      study.targetVolumeFraction, study.moveLimit, system.activeCells,
+      passive.requiredCells, passive.protectedCells,
+    )).not.toThrow();
+    const domainCount = system.activeCells.reduce((sum, value) => sum + value, 0);
+    expect(() => topologyDiscreteLimits(
+      (passive.requiredCells.size - 1) / domainCount, study.moveLimit,
+      system.activeCells, passive.requiredCells, passive.protectedCells,
+    )).toThrow(/passive constraints/i);
     workspace.dispose();
   });
 

@@ -146,7 +146,12 @@ export function createWebGpuTopologyAdapter(
           density = projectTopologyAnalysisDensity(
             continuous, binaryMasks.at(-1)!, study.extraction.isoValue,
             study.targetVolumeFraction, study.moveLimit,
-            passive.requiredCells, passive.protectedCells, system.activeCells,
+            passive.requiredCells, passive.protectedCells, system.activeCells, {
+              dimensions: system.grid.cellDimensions,
+              minimumFeatureM: study.minimumFeatureM,
+              cellSizeM: system.grid.cellSizeM,
+              requiredInterfaces: passive.requiredInterfaces,
+            },
           );
           active = await analyze(iteration);
         }

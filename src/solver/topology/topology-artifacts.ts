@@ -175,10 +175,12 @@ export async function packInteractiveTopologyRunResult(input: Readonly<{
   const post = await validateTopologyPostAnalysis(
     request, meshArtifact.record, canonical.rerasterized, input.postAnalysis,
   );
-  const materialFraction = canonical.rerasterized.reduce((sum, value) => sum + value, 0)
-    / canonical.system.activeCellCount;
+  const materialCount = canonical.rerasterized.reduce((sum, value) => sum + value, 0);
+  const domainCount = canonical.system.activeCellCount;
+  const materialFraction = materialCount / domainCount;
   const acceptance = decideTopologyAcceptance({
-    objectiveHistory: canonical.samples.map(({ objectiveJ }) => objectiveJ), materialFraction,
+    objectiveHistory: canonical.samples.map(({ objectiveJ }) => objectiveJ),
+    materialFraction, materialCount, domainCount,
     structuralSettings: source.settings,
     analysis: input.postAnalysis, extraction: canonical.extraction,
     constraints: canonical.study.acceptance,

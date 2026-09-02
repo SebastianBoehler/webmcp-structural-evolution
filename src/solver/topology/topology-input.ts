@@ -2,6 +2,9 @@ import type { EngineeringSolveRequest } from "../../engineering/solver-adapter";
 import { resolveNamedSelections } from "../../cad/kernel/named-selection-resolution";
 import type { StructuralSolveInput, StructuralVoxelPayload } from "../structural/structural-contract";
 import type { RequiredTopologyInterface, TopologySolveInput } from "./topology-contract";
+import {
+  topologyMinimumFeatureCellWidth, topologyMinimumFeatureOffenders,
+} from "./minimum-feature";
 
 type TopologyRequest = EngineeringSolveRequest<TopologySolveInput>;
 type ConfiguredStudy = Extract<
@@ -67,6 +70,49 @@ export function configuredTopologyStudy(request: TopologyRequest): ConfiguredStu
   return study;
 }
 
+function manufacturingRequiredCells(
+  source: EngineeringSolveRequest<StructuralSolveInput>,
+  required: ReadonlySet<number>,
+  minimumFeatureM: number,
+): ReadonlySet<number> {
+  const { dimensions, cellSizeM, activeCells } = source.input.voxelPayload;
+  const [width, height, depth] = dimensions;
+  const count = width! * height! * depth!, cellSize = cellSizeM[0]!;
+  if (dimensions.length !== 3 || cellSizeM.length !== 3 || activeCells.length !== count
+    || !Number.isFinite(cellSize) || cellSize <= 0
+    || activeCells.some((value) => value !== 0 && value !== 1)) {
+    throw new Error("Topology source grid cannot compile manufacturing-aware passive material");
+  }
+  const minimumCells = topologyMinimumFeatureCellWidth(minimumFeatureM, cellSize);
+  const layers = Math.max(0, minimumCells - 1), plane = width! * height!;
+  const index = (x: number, y: number, z: number) => x + width! * (y + height! * z);
+  const padded = new Set<number>();
+  for (const cell of required) {
+    if (cell < 0 || cell >= activeCells.length || activeCells[cell] !== 1) {
+      throw new Error("Topology required interface lies outside the active design domain");
+    }
+    const z = Math.floor(cell / plane), rest = cell - z * plane;
+    const y = Math.floor(rest / width!), x = rest - y * width!;
+    for (let dz = -layers; dz <= layers; dz += 1) {
+      for (let dy = -layers; dy <= layers; dy += 1) {
+        for (let dx = -layers; dx <= layers; dx += 1) {
+          const nx = x + dx, ny = y + dy, nz = z + dz;
+          if (nx < 0 || ny < 0 || nz < 0 || nx >= width! || ny >= height! || nz >= depth!) continue;
+          const neighbor = index(nx, ny, nz);
+          if (activeCells[neighbor] === 1) padded.add(neighbor);
+        }
+      }
+    }
+  }
+  const mask = Uint8Array.from(activeCells, (_value, cell) => Number(padded.has(cell)));
+  if (topologyMinimumFeatureOffenders(
+    mask, [width!, height!, depth!], minimumFeatureM, cellSize,
+  ).length > 0) {
+    throw new Error("Topology active domain cannot satisfy the required-interface minimum feature");
+  }
+  return padded;
+}
+
 export function topologyPassiveCells(
   request: TopologyRequest,
   study: ConfiguredStudy,
@@ -81,7 +127,8 @@ export function topologyPassiveCells(
   const interfaceIds = [...structural.supports, ...structural.loads.map(({ selectionId }) => selectionId),
     ...(study.requiredSelectionIds ?? [])];
   const requiredInterfaces = interfaceIds.map((id) => ({ id, cellIndices: selectionCells(source, id) }));
-  const requiredCells = new Set(requiredInterfaces.flatMap(({ cellIndices }) => [...cellIndices]));
+  const interfaceCells = new Set(requiredInterfaces.flatMap(({ cellIndices }) => [...cellIndices]));
+  const requiredCells = manufacturingRequiredCells(source, interfaceCells, study.minimumFeatureM);
   const protectedCells = new Set(study.protectedVoidSelectionIds.flatMap((id) => [...selectionCells(source, id)]));
   for (const cell of protectedCells) {
     if (requiredCells.has(cell)) throw new Error("Topology protected void intersects a required structural interface");

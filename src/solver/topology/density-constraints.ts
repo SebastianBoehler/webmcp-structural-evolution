@@ -1,4 +1,7 @@
 import type { RequiredTopologyInterface } from "./topology-contract";
+import {
+  projectManufacturingMask, type ManufacturingProjectionConstraints,
+} from "./manufacturing-projection";
 
 export function assertTopologyInterfacesConnected(
   mask: Uint32Array,
@@ -100,6 +103,7 @@ export function projectTopologyAnalysisDensity(
   required: ReadonlySet<number>,
   protectedCells: ReadonlySet<number>,
   designDomain: Uint32Array,
+  manufacturing: ManufacturingProjectionConstraints,
 ): Float32Array {
   if (candidate.length !== previousMask.length || candidate.length !== designDomain.length
     || candidate.some((value) => !Number.isFinite(value) || value < 0 || value > 1)
@@ -114,19 +118,17 @@ export function projectTopologyAnalysisDensity(
   if (previousCount < targetCount) {
     throw new Error("Topology baseline material count is below the configured target volume");
   }
-  const removable = [...candidate.keys()].filter((cell) => previousMask[cell] === 1
-    && !required.has(cell) && !protectedCells.has(cell))
-    .sort((left, right) => candidate[left]! - candidate[right]! || left - right);
-  const removeCount = Math.min(moveBudget, previousCount - targetCount, removable.length);
-  const removed = new Set(removable.slice(0, removeCount));
+  const removeCount = Math.min(moveBudget, previousCount - targetCount);
+  const mask = projectManufacturingMask({
+    scores: candidate, previousMask, designDomain, required, protectedCells,
+    removalQuota: removeCount, moveBudget, ...manufacturing,
+  });
   const belowIso = Math.fround(isoValue * (1 - 1e-6));
   const output = new Float32Array(candidate.length);
   for (let cell = 0; cell < output.length; cell += 1) {
-    if (designDomain[cell] === 0 || protectedCells.has(cell)) output[cell] = 0;
+    if (mask[cell] === 0) output[cell] = Math.min(belowIso, candidate[cell]!);
     else if (required.has(cell)) output[cell] = 1;
-    else if (removed.has(cell)) output[cell] = Math.min(belowIso, candidate[cell]!);
-    else if (previousMask[cell] === 1) output[cell] = Math.max(isoValue, candidate[cell]!);
-    else output[cell] = Math.min(belowIso, candidate[cell]!);
+    else output[cell] = Math.max(isoValue, candidate[cell]!);
   }
   return output;
 }
