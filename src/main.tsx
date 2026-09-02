@@ -6,6 +6,7 @@ import "./app/tokens.css";
 import "./app/app.css";
 import "./app/workbench.css";
 import "./app/workbench-panels.css";
+import "./app/workbench-responsive.css";
 import "./app/receipt-ledger.css";
 import "./app/component-import.css";
 

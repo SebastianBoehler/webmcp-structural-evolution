@@ -4,6 +4,7 @@ import type { ComponentDefinition } from "../domain/component-model";
 import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { VoxelGrid } from "../viewer/field-instances";
+import { PanelCloseButton } from "./PanelCloseButton";
 
 export interface InspectorPanelProps {
   readonly selectedId: string;
@@ -118,7 +119,7 @@ export function InspectorPanel({
     <aside className="side-panel inspector-panel" data-open={open} aria-label="Selection inspector" hidden={!open}>
       <div className="panel-heading">
         <div><h2>Inspector</h2><p>{layoutState === "verified" ? "Assembly aligned" : layoutState === "dragging" ? "Moving component" : "Verification required"}</p></div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="Close inspector">×</button>
+        <PanelCloseButton label="Close inspector" onClick={onClose} />
       </div>
       <div className="selection-heading">
         <span className="selection-icon" aria-hidden="true" />

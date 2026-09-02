@@ -6,7 +6,7 @@ export type AnalysisLayer = "density" | "loads" | "displacement" | "stress" | "s
 interface ViewportModeToolbarProps {
   readonly mode: WorkbenchMode;
   readonly selectionLabel: string;
-  readonly assemblyPanel: AssemblyPanel;
+  readonly assemblyPanel?: AssemblyPanel;
   readonly analysisLayer: AnalysisLayer;
   readonly comparisonMode: AlternativeMode;
   readonly hasCandidate: boolean;
@@ -18,12 +18,20 @@ interface ViewportModeToolbarProps {
   readonly showConstraints: boolean;
   readonly topologySubject: string;
   readonly supportsFlightReplay: boolean;
+  readonly operationStatus: "idle" | "running" | "canceling";
+  readonly activityCount: number;
+  readonly latestAction?: string;
+  readonly reviewRequired: boolean;
+  readonly dockAvailable: boolean;
+  readonly dockOpen: boolean;
   readonly onAssemblyPanelChange: (panel: AssemblyPanel) => void;
   readonly onAnalysisLayerChange: (layer: AnalysisLayer) => void;
   readonly onComparisonModeChange: (mode: AlternativeMode) => void;
   readonly onShowConstraintsChange: (shown: boolean) => void;
   readonly onPrimary: () => void;
   readonly onCancel: () => void;
+  readonly onOpenActivity: () => void;
+  readonly onDockToggle: () => void;
 }
 
 const layerLabels: Readonly<Record<AnalysisLayer, string>> = {
@@ -37,7 +45,7 @@ const layerLabels: Readonly<Record<AnalysisLayer, string>> = {
 function Segment<T extends string>({ label, values, selected, onChange }: {
   readonly label: string;
   readonly values: readonly { readonly id: T; readonly label: string }[];
-  readonly selected: T;
+  readonly selected?: T;
   readonly onChange: (value: T) => void;
 }) {
   return <div className="segmented-control" aria-label={label}>
@@ -60,11 +68,23 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
   const layers: readonly AnalysisLayer[] = props.mode === "simulate"
     ? ["loads", "stress", "displacement"]
     : ["density", "stress", "displacement", "safety"];
+  const workspaceStatus = props.operationStatus === "running"
+    ? { state: "working", label: "Agent working", detail: `Solving ${props.solverCellCount.toLocaleString()} cells` }
+    : props.operationStatus === "canceling"
+      ? { state: "working", label: "Stopping agent", detail: "Waiting for the current operation to stop" }
+      : props.reviewRequired
+        ? { state: "review", label: "Your review is needed", detail: "A candidate is waiting for a human decision" }
+        : props.latestAction
+          ? { state: "ready", label: "Workspace synchronized", detail: props.latestAction.replaceAll("_", " ") }
+          : { state: "ready", label: "Agent ready", detail: "Watching the shared engineering workspace" };
   return <header className="viewport-toolbar">
     <div className="viewport-heading">
-      <p className="eyebrow">Current step</p>
       <h2 id="viewport-title">{copy.title}</h2>
       <p>{copy.description}</p>
+    </div>
+    <div className="workspace-status" data-state={workspaceStatus.state} role="status">
+      <span className="workspace-status__mark" aria-hidden="true" />
+      <span><strong>{workspaceStatus.label}</strong><small>{workspaceStatus.detail}</small></span>
     </div>
     <div className="toolbar-controls">
       {props.mode === "assembly" && <>
@@ -98,6 +118,15 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
       {props.mode === "optimize" && (props.cancelVisible
         ? <button className="secondary-action" type="button" onClick={props.onCancel}>Cancel optimization</button>
         : <button className="primary-action" type="button" disabled={props.primaryDisabled} onClick={props.onPrimary}>{props.primaryLabel}</button>)}
+      {props.dockAvailable && <button
+        className="dock-toggle"
+        type="button"
+        aria-pressed={props.dockOpen}
+        onClick={props.onDockToggle}
+      >{props.dockOpen ? "Hide panel" : "Show panel"}</button>}
+      <button className="activity-button" type="button" onClick={props.onOpenActivity}>
+        Activity <span>{props.activityCount}</span>
+      </button>
     </div>
     {props.cancelVisible
       ? <p className="selection-context optimization-context" role="status">
