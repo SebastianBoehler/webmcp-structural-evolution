@@ -33,4 +33,4 @@ Status: complete mechanically; no production code changes.
 ## Commits
 
 - Submission packet commit: `9879182` (`docs(submission): add public judge packet`)
-- Contract/report commit: pending
+- Contract/report commit: `8096808` (`docs(hackathon): correct deadline and record task 2 report`)
