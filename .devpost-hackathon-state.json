@@ -1,0 +1,41 @@
+{
+  "plugin": "devpost-hackathon",
+  "version": 2,
+  "hackathon": {
+    "slug": "webmcp",
+    "name": "The WebMCP Challenge",
+    "url": "https://webmcp.devpost.com/",
+    "selected": true,
+    "source": "known"
+  },
+  "participant": {
+    "name": "Sebastian Boehler",
+    "display_name": "Sebastian Boehler"
+  },
+  "project": {
+    "name": "Structural Evolution",
+    "summary": "A browser-native human-agent physical-engineering workbench where an AI agent uses typed WebMCP tools against the same live design state the human supervises.",
+    "ai_usage": "Typed WebMCP tools let an AI agent inspect and request bounded actions in the shared physical-engineering workbench.",
+    "codex_usage": "OpenAI Codex was used to build, test, and document the project and was tested as a WebMCP client."
+  },
+  "current_stage": "prepare-submission",
+  "completed_stages": [
+    "start-hackathon",
+    "review-hackathon-rules",
+    "resources",
+    "prepare-submission"
+  ],
+  "rules_acknowledged": true,
+  "learning": {
+    "status": "not-started",
+    "current_step": "",
+    "completed_steps": [],
+    "plan_file": "",
+    "checklist_file": ""
+  },
+  "submission": {
+    "draft_file": "devpost-submission.md",
+    "status": "drafting"
+  },
+  "next_command": "submit-project"
+}
