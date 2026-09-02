@@ -12,7 +12,7 @@ Early physical design is fragmented: a hardware engineer, a 3D model, a solver, 
 
 ## Solution
 
-Structural Evolution keeps the agent and human in one browser workbench. WebMCP exposes bounded, typed operations over the live design state: inspect the exact context, select an approved typed assembly, generate a bounded topology candidate, compare eligible candidates, or stage a component import for human review. The same visible workspace then shows the assembly, action receipts, estimate/evidence labels, and the human-only decision boundary.
+Structural Evolution keeps the agent and human in one browser workbench. WebMCP exposes bounded, typed operations over the live design state: inspect the exact context, select an approved typed assembly, generate a bounded topology candidate, inspect the component library, stage a component import for human review, or move a permitted component in the shared layout. The same visible workspace then shows the assembly, action receipts, estimate/evidence labels, and the human-only decision boundary.
 
 ## Impact
 
@@ -29,7 +29,7 @@ OpenAI Codex was used to implement and iterate on the application, its typed too
 ## Key Features
 
 - Shared editable 3D workbench with reference FPV-drone and SE-6 cobot demo assemblies.
-- Typed WebMCP inspection, approved-assembly generation, candidate generation/comparison, component inspection, staged import, and bounded component-move tools.
+- Six typed WebMCP tools: inspection, approved-assembly generation, candidate generation, component inspection, staged import, and bounded component moves.
 - Same-origin module-worker topology execution with a Rust/Wasm reference solver and immutable action receipts.
 - Review panel that separates agent prediction, interactive output/evidence, current plan state, and human authority.
 - Protected volumes, named load cases, connected load paths, stale-plan marking after edits, and no automatic candidate promotion.
@@ -46,6 +46,8 @@ No credentials are required.
 2. Check the shared 3D assembly and open **Review**. The evidence panel must state that agent prediction, output/evidence, and human authority are distinct.
 3. In ChatGPT/Codex in-app browser with WebMCP enabled, invoke the prompts in [the demo script](docs/hackathon/demo-video-script.md). Verify the visible assembly/receipt changes and that no automatic promotion occurs.
 4. For a local source verification, run `pnpm test:run` and `pnpm build` after `pnpm install` with the pinned Node and pnpm versions.
+
+Production rehearsal evidence from September 2, 2026: on the deployed reference-drone flow, `generate_topology_candidate` completed in `13,211 ms` with status `estimate`, material `33.5%`, compliance `0.001348`, and a reviewable Balanced frame branch; **Use this frame** remained disabled.
 
 ## Public Demo
 
@@ -66,12 +68,12 @@ The planned recording is under three minutes with audio; its shot-by-shot script
 ## Screenshot Shot List
 
 1. [Agent-synchronized reference assembly](docs/submission/screenshots/01-agent-synchronized-assembly.png): the human and agent share the visible FPV-drone workbench after context inspection.
-2. [Agent-ready optimization state](docs/submission/screenshots/02-agent-ready-to-optimize.png): the bounded **Generate balanced frame** action is visible for the current assembly.
-3. [Human evidence review](docs/submission/screenshots/03-human-evidence-review.png): the evidence panel visibly separates prediction, measured output, plan state, and human authority.
+2. [Agent-generated estimate](docs/submission/screenshots/04-agent-generated-estimate.png): the deployed dashboard shows the reviewable Balanced frame estimate produced by `generate_topology_candidate`.
+3. [Human review with disabled promotion](docs/submission/screenshots/05-human-reviews-estimate.png): the human reviews the estimate while **Use this frame** remains disabled at the estimate stage.
 
 ## Readiness
 
-The public demo returns successfully without credentials, the public repository is available with an Apache-2.0 license, and the Devpost draft project is <https://devpost.com/software/structural-evolution>. The remaining blocking asset is the single public under-three-minute YouTube video URL. The Devpost project is still a draft; nothing in this document submits it.
+The public demo returns successfully without credentials, and the public repository is available with an Apache-2.0 license. The Devpost draft project exists at <https://devpost.com/software/structural-evolution>, but it should be treated as author-only until the final submission step. The remaining blocking assets are the single public under-three-minute YouTube video URL and the final Devpost submit action.
 
 ## Known Limitations
 

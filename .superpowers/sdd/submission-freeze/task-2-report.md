@@ -30,6 +30,21 @@ Status: complete mechanically; no production code changes.
 - I did not rerun the app test/build suite in this mechanical finish pass; only the requested diff/JSON/link-command sanity checks were run.
 - The Devpost draft URL did not verify as anonymously public from curl because it redirected to login.
 
+## Round 1 follow-up on 2026-09-02
+
+- Rewrote the public story to match the real production path: selected reference drone -> inspect current context -> generate one balanced candidate -> human review with disabled promotion.
+- Removed current-production claims about a compare WebMCP tool and updated the packet to the six-tool production surface.
+- Replaced the screenshot story with `01-agent-synchronized-assembly.png`, `04-agent-generated-estimate.png`, and `05-human-reviews-estimate.png`.
+- Added the new production screenshots `04-agent-generated-estimate.png` and `05-human-reviews-estimate.png` to the committed submission packet.
+- Qualified the Devpost draft as author-only until the final submission step.
+- Updated the contract ledger with the provided production evidence: deployed in-app WebMCP inspection verified, timed production rehearsal verified, final public video and final Devpost action still open.
+
+## Round 1 verification
+
+- `git diff --check` -> pass
+- Demo script spoken word count -> `320`
+- Current-production compare-tool claim grep across the edited packet -> no matches
+
 ## Commits
 
 - Submission packet commit: `9879182` (`docs(submission): add public judge packet`)

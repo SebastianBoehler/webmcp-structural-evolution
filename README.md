@@ -2,14 +2,16 @@
 
 Structural Evolution is a browser-native human-agent physical-engineering workbench. An AI agent uses typed WebMCP tools against the same live design state that a human supervises: the visible assembly, constraints, topology candidate, evidence, and decision boundary are shared rather than inferred from screenshots.
 
-[Open the public demo](https://webmcp-structural-evolution.vercel.app) · [View the public repository](https://github.com/SebastianBoehler/webmcp-structural-evolution) · [View the Devpost draft](https://devpost.com/software/structural-evolution) · [Read the demo-video script](docs/hackathon/demo-video-script.md)
+[Open the public demo](https://webmcp-structural-evolution.vercel.app) · [View the public repository](https://github.com/SebastianBoehler/webmcp-structural-evolution) · [Read the demo-video script](docs/hackathon/demo-video-script.md)
+
+The Devpost draft project exists, but it should be treated as author-only until the final submission step is complete.
 
 ![Reference FPV drone in the shared workbench](docs/submission/screenshots/01-agent-synchronized-assembly.png)
 
 ## What works today
 
 - A public, credential-free dashboard for a reference FPV drone and an SE-6 cobot assembly, with an editable shared 3D view and workflow steps for assembly, optimization, simulation, and review.
-- Typed WebMCP tools for inspecting the exact active design context, selecting an approved typed assembly, generating a topology candidate, comparing eligible candidates, inspecting the component library, staging an import for human review, and moving a permitted component in the shared layout.
+- Six typed WebMCP tools for inspecting the exact active design context, selecting an approved typed assembly, generating a topology candidate, inspecting the component library, staging an import for human review, and moving a permitted component in the shared layout.
 - Browser-local topology work in a module worker with Rust/Wasm, protected volumes, named load cases, connected load paths, immutable receipts, and explicit stale-state handling after an edit.
 - A review surface that keeps agent prediction, output/evidence, plan state, and human authority separate. Component imports remain staged until human approval; an agent cannot promote a candidate or authorize manufacturing export.
 - Separate raw verification routes exist for browser engineering gates. They are not the product demo; the shared dashboard is the judge-facing product.
@@ -20,7 +22,7 @@ Topology output in the interactive dashboard is an **interactive estimate**. It 
 
 The static Vite + React + TypeScript application renders the shared scene with Three.js. The dashboard detects WebGPU capability, uses same-origin module workers for interactive topology work, and dynamically loads a Rust/Wasm reference solver. WebMCP tools register page-locally through `document.modelContext.registerTool`, with bounded JSON schemas and read-only/untrusted-content annotations. There is no application backend, account system, remote solver, or durable project storage in this release.
 
-The agent sees typed facts such as the active revision, protected volumes, locks, and eligible next actions. State-changing operations make visible, bounded changes; imported assets wait for a human review; comparison only accepts exact non-stale candidates; and acceptance/promotion is human-only.
+The agent sees typed facts such as the active revision, protected volumes, locks, and eligible next actions. State-changing operations make visible, bounded changes; imported assets wait for a human review; and acceptance/promotion remains human-only.
 
 ## Browser requirements
 
@@ -44,11 +46,11 @@ pnpm build
 ## Judge demo flow
 
 1. Open the [public demo](https://webmcp-structural-evolution.vercel.app); no sign-in is required. Select **Reference FPV drone** if it is not already selected.
-2. In a WebMCP-enabled client, ask the agent to inspect the current design context, then select the approved reference-drone assembly. The shared 3D world updates visibly.
-3. Ask the agent to generate a balanced topology candidate. Open **Review** to inspect the action receipt and the boundary between agent intent, the interactive estimate, and human authority.
-4. Confirm that no candidate is automatically accepted or promoted. See the [paste-ready prompts and timed storyboard](docs/hackathon/demo-video-script.md).
+2. In a WebMCP-enabled client, ask the agent to inspect the current design context for the already selected reference drone.
+3. Ask the agent to generate a balanced topology candidate from that exact current revision. Open **Review** to inspect the action receipt, estimate label, and the boundary between agent intent, the interactive estimate, and human authority.
+4. Confirm that the resulting branch is reviewable and that **Use this frame** remains disabled at the estimate stage. See the [paste-ready prompts and timed storyboard](docs/hackathon/demo-video-script.md).
 
-The production screenshots show the actual shared dashboard states used in this flow: [assembly synchronized](docs/submission/screenshots/01-agent-synchronized-assembly.png), [ready to optimize](docs/submission/screenshots/02-agent-ready-to-optimize.png), and [human evidence review](docs/submission/screenshots/03-human-evidence-review.png).
+The production screenshots show the actual shared dashboard states used in this flow: [assembly synchronized](docs/submission/screenshots/01-agent-synchronized-assembly.png), [agent-generated estimate](docs/submission/screenshots/04-agent-generated-estimate.png), and [human review with disabled promotion](docs/submission/screenshots/05-human-reviews-estimate.png).
 
 ## Limitations
 
