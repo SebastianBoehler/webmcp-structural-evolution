@@ -42,6 +42,38 @@ function nonTriangleScene(): THREE.Group {
   return scene;
 }
 
+function interleavedScene(): THREE.Group {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.InterleavedBufferAttribute(
+    new THREE.InterleavedBuffer(new Float32Array([
+      0, 0, 0, 99, 1, 0, 0, 99, 0, 1, 0, 99,
+    ]), 4), 3, 0,
+  ));
+  geometry.setAttribute("normal", new THREE.InterleavedBufferAttribute(
+    new THREE.InterleavedBuffer(new Float32Array([
+      0, 0, 1, 88, 0, 0, 1, 88, 0, 0, 1, 88,
+    ]), 4), 3, 0,
+  ));
+  geometry.setIndex([0, 1, 2]);
+  const scene = new THREE.Group();
+  scene.add(new THREE.Mesh(geometry));
+  return scene;
+}
+
+function normalizedScene(): THREE.Group {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Uint16BufferAttribute([
+    0, 0, 0, 65535, 0, 0, 0, 65535, 0,
+  ], 3, true));
+  geometry.setAttribute("normal", new THREE.Int16BufferAttribute([
+    0, 0, 32767, 0, 0, 32767, 0, 0, 32767,
+  ], 3, true));
+  geometry.setIndex([0, 1, 2]);
+  const scene = new THREE.Group();
+  scene.add(new THREE.Mesh(geometry));
+  return scene;
+}
+
 describe("materializeSemanticModelParts", () => {
   it("flattens authored meshes into millimetre triangles while preserving the part identity", async () => {
     const loader: Loader = { loadAsync: vi.fn(async () => ({ scene: nestedIndexedScene() })) };
@@ -93,6 +125,24 @@ describe("materializeSemanticModelParts", () => {
     ]));
   });
 
+  it("reads interleaved accessors instead of their padded storage", async () => {
+    const loader: Loader = { loadAsync: vi.fn(async () => ({ scene: interleavedScene() })) };
+    const [part] = await materializeSemanticModelParts([modelPart("interleaved", "/interleaved.glb")], loader);
+    const surface = part.kind === "mesh" ? part.mesh.surfaces[0]! : undefined;
+
+    expect(surface?.positions).toEqual(new Float32Array([0, 0, 0, 1000, 0, 0, 0, 1000, 0]));
+    expect(surface?.normals).toEqual(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]));
+  });
+
+  it("reads normalized quantized position and normal accessors", async () => {
+    const loader: Loader = { loadAsync: vi.fn(async () => ({ scene: normalizedScene() })) };
+    const [part] = await materializeSemanticModelParts([modelPart("quantized", "/quantized.glb")], loader);
+    const surface = part.kind === "mesh" ? part.mesh.surfaces[0]! : undefined;
+
+    expect(surface?.positions).toEqual(new Float32Array([0, 0, 0, 1000, 0, 0, 0, 1000, 0]));
+    expect(surface?.normals).toEqual(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]));
+  });
+
   it.each([
     ["empty", new THREE.Group()],
     ["non-triangle", nonTriangleScene()],
@@ -100,6 +150,15 @@ describe("materializeSemanticModelParts", () => {
     const loader: Loader = { loadAsync: vi.fn(async () => ({ scene })) };
     await expect(materializeSemanticModelParts([modelPart("bad-part", "/bad.glb")], loader))
       .rejects.toThrow(/bad-part.*\/bad\.glb/i);
+  });
+
+  it.each([
+    ["non-finite", (() => { const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, NaN, 0, 0, 0, 1, 0], 3)); const scene = new THREE.Group(); scene.add(new THREE.Mesh(geometry)); return scene; })()],
+    ["inconsistent", (() => { const geometry = new THREE.BufferGeometry(); geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3)); geometry.setIndex([0, 1, 3]); const scene = new THREE.Group(); scene.add(new THREE.Mesh(geometry)); return scene; })()],
+  ])("rejects %s geometry with its part and asset identity", async (_case, scene) => {
+    const loader: Loader = { loadAsync: vi.fn(async () => ({ scene })) };
+    await expect(materializeSemanticModelParts([modelPart("invalid", "/invalid.glb")], loader))
+      .rejects.toThrow(/invalid.*\/invalid\.glb/i);
   });
 
   it("makes loader failures visible with the part and asset identity", async () => {

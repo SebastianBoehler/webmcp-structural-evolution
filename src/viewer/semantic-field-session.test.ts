@@ -16,9 +16,13 @@ const viewport = vi.hoisted(() => ({
   setTransformOptions: vi.fn(),
   setView: vi.fn(),
 }));
+const materializer = vi.hoisted(() => ({ materialize: vi.fn(async (parts) => parts) }));
 
 vi.mock("./webgpu-renderer", () => ({
   createSemanticViewport: vi.fn(async () => viewport),
+}));
+vi.mock("./semantic-model-materializer", () => ({
+  materializeSemanticModelParts: materializer.materialize,
 }));
 
 import { mountSemanticFieldSession } from "./semantic-field-session";
@@ -53,6 +57,8 @@ beforeEach(() => {
   viewport.setDocument.mockReset();
   viewport.capture.mockReset();
   viewport.capture.mockResolvedValue(new Blob());
+  materializer.materialize.mockReset();
+  materializer.materialize.mockImplementation(async (parts) => parts);
 });
 
 it("forwards transform space and snap without either setter resetting the other", async () => {
@@ -193,5 +199,40 @@ it("rebuilds current semantic bounds and captures after an assembly pose update"
   expect(artifact.nodes.find((node: { id: string }) => node.id === "component:motor")
     ?.transform.position).toEqual([50, 0, 0]);
   expect(viewport.capture).toHaveBeenCalledOnce();
+  session.dispose();
+});
+
+it("publishes only the newest revision when model materialization completes out of order", async () => {
+  const materialized = (id: string) => [{ id, selectionId: id, label: id, appearance: "component",
+    kind: "mesh" as const, center: [0, 0, 0], mesh: { surfaces: [{ name: id,
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), indices: new Uint32Array([0, 1, 2]) }],
+      sizeMm: [1, 1, 0] as const, triangleCount: 1 } }];
+  const deferred = new Map<string, (parts: ReturnType<typeof materialized>) => void>();
+  materializer.materialize.mockImplementation((parts) => {
+    const id = parts[0]?.id;
+    if (!id) return Promise.resolve(parts);
+    return new Promise((resolve) => deferred.set(id, resolve));
+  });
+  const lifecycle = vi.fn();
+  const session = await mountSemanticFieldSession(document.createElement("canvas"), model, "initial", undefined, {}, lifecycle);
+  viewport.setDocument.mockClear();
+  viewport.capture.mockClear();
+  lifecycle.mockClear();
+  const old = session.updateModel({ ...(model as object), assemblyParts: [{ id: "old", selectionId: "old", label: "old",
+    appearance: "component", kind: "model", center: [0, 0, 0], assetUrl: "/old.glb", assetUnits: "m", size: [1, 1, 1] }] } as never, "old");
+  const newest = session.updateModel({ ...(model as object), assemblyParts: [{ id: "new", selectionId: "new", label: "new",
+    appearance: "component", kind: "model", center: [0, 0, 0], assetUrl: "/new.glb", assetUnits: "m", size: [1, 1, 1] }] } as never, "new");
+
+  deferred.get("new")!(materialized("new"));
+  await newest;
+  deferred.get("old")!(materialized("old"));
+  await old;
+
+  expect(viewport.setDocument.mock.calls).toHaveLength(1);
+  expect(viewport.setDocument.mock.calls[0]?.[0].revision).toBe("new");
+  expect(viewport.capture).toHaveBeenCalledOnce();
+  expect(lifecycle.mock.calls.map(([event]) => event)).toEqual([
+    { revision: "new", state: "initializing" }, { revision: "new", state: "ready" },
+  ]);
   session.dispose();
 });

@@ -16,14 +16,30 @@ function failure(part: Extract<AssemblyVisualPart, { kind: "model" }>, reason: u
   return new Error(`Could not materialize semantic model part ${part.id} (${part.assetUrl}): ${message}`);
 }
 
-function copiedPositions(geometry: THREE.BufferGeometry): Float32Array {
-  const position = geometry.getAttribute("position");
-  if (!position || position.itemSize !== 3 || position.count < 3 || position.count * 3 !== position.array.length) {
-    throw new Error("geometry has no valid triangle positions");
+interface VectorAttribute { readonly itemSize: number; readonly count: number;
+  getX(index: number): number; getY(index: number): number; getZ(index: number): number }
+
+function copiedVectors(attribute: VectorAttribute | undefined, label: string): Float32Array {
+  if (!attribute || attribute.itemSize !== 3 || attribute.count < 3 || !Number.isSafeInteger(attribute.count)) {
+    throw new Error(`geometry has no valid ${label}`);
   }
-  const values = Float32Array.from(position.array);
-  if (!values.every(Number.isFinite)) throw new Error("geometry positions are not finite");
+  const values = new Float32Array(attribute.count * 3);
+  for (let index = 0; index < attribute.count; index += 1) {
+    values.set([attribute.getX(index), attribute.getY(index), attribute.getZ(index)], index * 3);
+  }
+  if (!values.every(Number.isFinite)) throw new Error(`geometry ${label} are not finite`);
   return values;
+}
+
+function copiedPositions(geometry: THREE.BufferGeometry): Float32Array {
+  return copiedVectors(geometry.getAttribute("position"), "triangle positions");
+}
+
+function floatAttributes(geometry: THREE.BufferGeometry): void {
+  const positions = copiedPositions(geometry);
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const normal = geometry.getAttribute("normal");
+  if (normal) geometry.setAttribute("normal", new THREE.Float32BufferAttribute(copiedVectors(normal, "normals"), 3));
 }
 
 function copiedIndices(geometry: THREE.BufferGeometry, vertices: number): Uint32Array {
@@ -32,15 +48,17 @@ function copiedIndices(geometry: THREE.BufferGeometry, vertices: number): Uint32
     if (vertices % 3 !== 0) throw new Error("non-indexed geometry is not a triangle list");
     return Uint32Array.from({ length: vertices }, (_value, index) => index);
   }
-  if (source.itemSize !== 1 || source.count === 0 || source.count % 3 !== 0 || source.count !== source.array.length) {
+  if (source.itemSize !== 1 || source.count === 0 || source.count % 3 !== 0) {
     throw new Error("geometry indices are not a triangle list");
   }
-  for (const index of source.array) {
-    if (!Number.isSafeInteger(index) || index < 0) {
+  const indices = new Uint32Array(source.count);
+  for (let index = 0; index < source.count; index += 1) {
+    const value = source.getX(index);
+    if (!Number.isSafeInteger(value) || value < 0) {
       throw new Error("geometry indices are not finite vertex references");
     }
+    indices[index] = value;
   }
-  const indices = Uint32Array.from(source.array);
   if (indices.some((index) => index >= vertices)) throw new Error("geometry indices exceed its vertices");
   return indices;
 }
@@ -51,10 +69,10 @@ function copiedNormals(geometry: THREE.BufferGeometry, positions: Float32Array):
     geometry.computeVertexNormals();
     normal = geometry.getAttribute("normal");
   }
-  if (!normal || normal.itemSize !== 3 || normal.count * 3 !== positions.length) {
+  if (!normal || normal.count * 3 !== positions.length) {
     throw new Error("geometry normals do not match its positions");
   }
-  const normals = Float32Array.from(normal.array);
+  const normals = copiedVectors(normal, "normals");
   if (!normals.every(Number.isFinite)) throw new Error("geometry normals are not finite");
   return normals;
 }
@@ -78,6 +96,7 @@ function materializedMesh(scene: THREE.Object3D, part: Extract<AssemblyVisualPar
     if (!(object instanceof THREE.Mesh)) return;
     const geometry = object.geometry.clone();
     try {
+      floatAttributes(geometry);
       geometry.applyMatrix4(object.matrixWorld);
       const positions = copiedPositions(geometry);
       const indices = copiedIndices(geometry, positions.length / 3);

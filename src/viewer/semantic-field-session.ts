@@ -31,8 +31,10 @@ export function flightFrameTransform([roll, pitch, yaw]: readonly [number, numbe
     cz * sy * cx + sz * sx, sz * sy * cx - cz * sx, cy * cx, 0, 0, 0, 0, 1];
 }
 
-function show(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, onError?: (error: unknown) => void) {
-  void viewport.capture().catch((error) => onError?.(error));
+function show(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, onError?: (error: unknown) => void,
+  current: () => boolean = () => true) {
+  if (!current()) return;
+  void viewport.capture().catch((error) => { if (current()) onError?.(error); });
 }
 
 function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel) {
@@ -82,22 +84,29 @@ export async function mountSemanticFieldSession(
   let pendingControlledEcho: string | undefined;
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
-  const setDocument = async () => {
-    assemblyParts = await materializeSemanticModelParts(currentModel.assemblyParts ?? []);
-    const artifact = semanticArtifactFromViewerModel({ ...currentModel, assemblyParts }, currentRevision);
+  let generation = 0;
+  const current = (request: number) => !disposed && generation === request;
+  const setDocument = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
+    const parts = await materializeSemanticModelParts(source.assemblyParts ?? []);
+    if (!current(request)) return false;
+    assemblyParts = parts;
+    const artifact = semanticArtifactFromViewerModel({ ...source, assemblyParts }, sourceRevision);
     currentArtifact = artifact;
     viewport.setDocument(artifact);
     for (const layer of ["topology", "displacement", "stress", "temperature", "flux"] as const) viewport.setResultLayer(layer, undefined);
-    analysisLayers(viewport, currentModel);
+    analysisLayers(viewport, source);
+    return true;
   };
-  const captureRevision = async (revision: string) => {
-    onCapture?.({ revision, state: "initializing" });
+  const captureRevision = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
     try {
-      await setDocument();
+      const published = await setDocument(source, sourceRevision, request);
+      if (!published || !current(request)) return;
+      onCapture?.({ revision: sourceRevision, state: "initializing" });
       await viewport.capture();
-      onCapture?.({ revision, state: "ready" });
+      if (current(request)) onCapture?.({ revision: sourceRevision, state: "ready" });
     } catch (error) {
-      onCapture?.({ revision, state: "error", error });
+      if (!current(request)) return;
+      onCapture?.({ revision: sourceRevision, state: "error", error });
       throw error;
     }
   };
@@ -119,7 +128,8 @@ export async function mountSemanticFieldSession(
         if (source) interactions.onDragState?.(dragging, source);
       },
     });
-    await captureRevision(currentRevision);
+    const initialRequest = ++generation;
+    await captureRevision(currentModel, currentRevision, initialRequest);
   } catch (error) {
     dispose();
     throw error;
@@ -139,15 +149,20 @@ export async function mountSemanticFieldSession(
       show(viewport, onError);
     },
     setAssemblyPartPoses(parts: readonly AssemblyVisualPart[]) {
+      const request = ++generation;
+      const source = currentModel, sourceRevision = currentRevision;
       const setPoses = (materialized: readonly AssemblyVisualPart[]) => {
+        if (!current(request)) return;
         assemblyParts = materialized;
-        const artifact = semanticArtifactFromViewerModel({ ...currentModel, assemblyParts }, currentRevision);
+        const artifact = semanticArtifactFromViewerModel({ ...source, assemblyParts }, sourceRevision);
         currentArtifact = artifact;
         viewport.setDocument(artifact);
-        show(viewport, onError);
+        show(viewport, onError, () => current(request));
       };
       if (parts.some(({ kind }) => kind === "model")) {
-        void materializeSemanticModelParts(parts).then(setPoses).catch(onError);
+        void materializeSemanticModelParts(parts).then(setPoses).catch((error) => {
+          if (current(request)) onError?.(error);
+        });
       } else setPoses(parts);
     },
     focusSelectedPart() { viewport.focus(selectedComponent); show(viewport, onError); },
@@ -167,8 +182,9 @@ export async function mountSemanticFieldSession(
       viewport.setTransformOptions(transformSpace, translationSnap);
     },
     async updateModel(next, nextRevision = currentRevision) {
+      const request = ++generation;
       currentModel = next; currentRevision = nextRevision;
-      await captureRevision(nextRevision);
+      await captureRevision(next, nextRevision, request);
     },
   };
 }
