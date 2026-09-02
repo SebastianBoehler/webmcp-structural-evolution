@@ -4,9 +4,11 @@ import { createWebGpuTopologyAdapter } from "../topology/topology-adapter";
 import type { TopologyResult, TopologySolveInput } from "../topology/topology-contract";
 import { topologyMask } from "../topology/density-constraints";
 import { createGateGpuAudit } from "./browser-gpu-audit";
+import { validateComponentTopologyArtifactBundle } from "./component-topology-artifact-evidence";
 
 const STUDY_ID = "drone-arm-topology";
 const TARGET_VOLUME_FRACTION = 0.35;
+const MINIMUM_FEATURE_M = 0.0012;
 
 export type ComponentTopologyGateReport = Readonly<{
   status: "passed";
@@ -14,12 +16,14 @@ export type ComponentTopologyGateReport = Readonly<{
   scope: "audit-only";
   studyId: typeof STUDY_ID;
   targetVolumeFraction: typeof TARGET_VOLUME_FRACTION;
+  minimumFeatureM: typeof MINIMUM_FEATURE_M;
   sourceRevision: string;
   timingMs: number;
   result: Readonly<{
     truthLevel: TopologyResult["truthLevel"];
     materialCount: number;
     domainCount: number;
+    targetMaterialCount: number;
     materialFraction: number;
     objectiveHistoryJ: readonly number[];
     extraction: TopologyResult["extraction"];
@@ -28,6 +32,7 @@ export type ComponentTopologyGateReport = Readonly<{
       iterations: number;
       relativeResidual: number;
       recomputedF32RelativeResidual: number;
+      directRelativeResidual: number;
       wasmForceBalanceErrorN: number;
       energyRelativeMismatch: number;
       maximumDisplacementM: number;
@@ -60,6 +65,9 @@ export async function runComponentTopologyGate(
     if (study.targetVolumeFraction !== TARGET_VOLUME_FRACTION) {
       throw new Error(`drone-arm-topology target changed to ${study.targetVolumeFraction}`);
     }
+    if (study.minimumFeatureM !== MINIMUM_FEATURE_M) {
+      throw new Error(`drone-arm-topology minimum feature changed to ${study.minimumFeatureM}`);
+    }
     stage = "topology-solve";
     const run = await runComponentStudy<TopologySolveInput, TopologyResult>(
       model, STUDY_ID, createWebGpuTopologyAdapter({ onAcquisition: audit.observe }), signal,
@@ -84,30 +92,37 @@ export async function runComponentTopologyGate(
     const materialCount = topologyMask(
       output.density, output.manufacturingMesh.isoValue, source.activeCells,
     ).reduce((sum, value) => sum + value, 0);
+    const targetMaterialCount = Math.round(TARGET_VOLUME_FRACTION * domainCount);
     if (!Number.isSafeInteger(domainCount) || domainCount <= 0
       || !Number.isSafeInteger(materialCount) || materialCount < 0
       || output.materialFraction !== materialCount / domainCount) {
       throw new Error("drone-arm-topology material-count evidence is incoherent");
     }
-    if (run.artifactIds.length === 0 || new Set(run.artifactIds).size !== run.artifactIds.length
-      || run.artifactIds.some((id) => typeof id !== "string" || id.length === 0)) {
-      throw new Error("drone-arm-topology artifact evidence is incomplete");
+    if (materialCount !== targetMaterialCount) {
+      throw new Error("drone-arm-topology material count misses its rounded target");
     }
-    stage = "gpu-audit";
     const verification = output.postExtractionAnalysis.verification;
+    if (!Number.isFinite(verification.directRelativeResidual)
+      || verification.directRelativeResidual < 0) {
+      throw new Error("drone-arm-topology direct residual evidence is invalid");
+    }
+    const artifactIds = await validateComponentTopologyArtifactBundle(run);
+    stage = "gpu-audit";
     return {
       status: "passed", evidenceSource: "live-browser-webgpu", scope: "audit-only",
       studyId: STUDY_ID, targetVolumeFraction: TARGET_VOLUME_FRACTION,
+      minimumFeatureM: MINIMUM_FEATURE_M,
       sourceRevision: model.document.revision, timingMs: performance.now() - started,
       result: {
-        truthLevel: output.truthLevel, materialCount, domainCount,
+        truthLevel: output.truthLevel, materialCount, domainCount, targetMaterialCount,
         materialFraction: output.materialFraction,
         objectiveHistoryJ: [...output.objectiveHistory], extraction: output.extraction,
-        acceptance: output.acceptance, artifactIds: [...run.artifactIds],
+        acceptance: output.acceptance, artifactIds,
         postExtractionAnalysis: {
           iterations: output.postExtractionAnalysis.iterations,
           relativeResidual: verification.relativeResidual,
           recomputedF32RelativeResidual: verification.recomputedF32RelativeResidual,
+          directRelativeResidual: verification.directRelativeResidual,
           wasmForceBalanceErrorN: verification.wasmForceBalanceErrorN,
           energyRelativeMismatch: verification.energyRelativeMismatch,
           maximumDisplacementM: output.postExtractionAnalysis.maximumDisplacementM,
