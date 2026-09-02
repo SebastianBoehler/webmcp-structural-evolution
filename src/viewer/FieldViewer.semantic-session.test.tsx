@@ -128,15 +128,15 @@ test("replays the newest model after a pending mount and disposes a late stale s
   expect(lateSession.updateModel).not.toHaveBeenCalled();
 });
 
-test("surfaces model mount and later capture failures as visible WebGPU alerts", async () => {
-  semantic.mount.mockRejectedValueOnce(new Error("Unsupported WebGPU semantic model asset: robot"));
+test("surfaces model materialization and later capture failures as visible WebGPU alerts", async () => {
+  semantic.mount.mockRejectedValueOnce(new Error("Could not materialize semantic model part robot (/robot.glb): network unavailable"));
   const view = render(<FieldViewer current={null} alternatives={[]} selectedRegion={region}
     threshold={.5} mode="overlay" grid={grid} assemblyParts={[{
       id: "robot", selectionId: "robot", label: "Robot", appearance: "component",
       kind: "model", center: [0, 0, 0], size: [1, 1, 1], assetUrl: "/robot.glb", assetUnits: "mm",
     }]}/>);
   expect((await screen.findByRole("alert")).textContent)
-    .toMatch(/unsupported webgpu semantic model asset: robot/i);
+    .toMatch(/could not materialize semantic model part robot.*robot\.glb.*network unavailable/i);
 
   semantic.mount.mockResolvedValueOnce(session);
   view.rerender(<FieldViewer current={null} alternatives={[]} selectedRegion={region}

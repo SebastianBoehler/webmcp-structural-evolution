@@ -6,6 +6,7 @@ import { createSemanticViewport } from "./webgpu-renderer";
 import type { FieldRendererSession } from "./field-renderer";
 import type { PartInteractionHandlers } from "./assembly-interactions";
 import type { WebGpuDeviceLossInfo } from "./webgpu-renderer-types";
+import { materializeSemanticModelParts } from "./semantic-model-materializer";
 
 export class SemanticDeviceLostError extends Error {
   readonly name = "SemanticDeviceLostError";
@@ -74,14 +75,15 @@ export async function mountSemanticFieldSession(
     stopLoss();
     viewport.dispose();
   };
-  let assemblyParts = model.assemblyParts;
+  let assemblyParts: readonly AssemblyVisualPart[] | undefined;
   let currentModel = model, currentRevision = revision;
   let currentArtifact: SemanticDocumentArtifact;
   let selectedComponent: string | undefined;
   let pendingControlledEcho: string | undefined;
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
-  const setDocument = () => {
+  const setDocument = async () => {
+    assemblyParts = await materializeSemanticModelParts(currentModel.assemblyParts ?? []);
     const artifact = semanticArtifactFromViewerModel({ ...currentModel, assemblyParts }, currentRevision);
     currentArtifact = artifact;
     viewport.setDocument(artifact);
@@ -91,7 +93,7 @@ export async function mountSemanticFieldSession(
   const captureRevision = async (revision: string) => {
     onCapture?.({ revision, state: "initializing" });
     try {
-      setDocument();
+      await setDocument();
       await viewport.capture();
       onCapture?.({ revision, state: "ready" });
     } catch (error) {
@@ -137,7 +139,16 @@ export async function mountSemanticFieldSession(
       show(viewport, onError);
     },
     setAssemblyPartPoses(parts: readonly AssemblyVisualPart[]) {
-      assemblyParts = parts; setDocument(); show(viewport, onError);
+      const setPoses = (materialized: readonly AssemblyVisualPart[]) => {
+        assemblyParts = materialized;
+        const artifact = semanticArtifactFromViewerModel({ ...currentModel, assemblyParts }, currentRevision);
+        currentArtifact = artifact;
+        viewport.setDocument(artifact);
+        show(viewport, onError);
+      };
+      if (parts.some(({ kind }) => kind === "model")) {
+        void materializeSemanticModelParts(parts).then(setPoses).catch(onError);
+      } else setPoses(parts);
     },
     focusSelectedPart() { viewport.focus(selectedComponent); show(viewport, onError); },
     setFlightFrame(frame: FlightFrame | undefined) {
@@ -156,7 +167,7 @@ export async function mountSemanticFieldSession(
       viewport.setTransformOptions(transformSpace, translationSnap);
     },
     async updateModel(next, nextRevision = currentRevision) {
-      currentModel = next; currentRevision = nextRevision; assemblyParts = next.assemblyParts;
+      currentModel = next; currentRevision = nextRevision;
       await captureRevision(nextRevision);
     },
   };
