@@ -15,9 +15,10 @@ without modifying the application source.
 
 ## OpenDrone reference CAD
 
-The display assets in `public/reference-cad/` derive from OpenDrone hardware releases
-licensed under CERN-OHL-S-2.0. Their asset-level provenance, upstream release links,
-checksums, and corresponding-source notice are in
+The display assets `public/reference-cad/opendrone-openfc-lite-rev3.3.glb` and
+`public/reference-cad/opendrone-openesc-30x30-rev3.3.glb` derive from OpenDrone
+hardware releases licensed under CERN-OHL-S-2.0. Their asset-level provenance,
+upstream release links, checksums, and corresponding-source notice are in
 [`public/reference-cad/OPEN-HARDWARE-NOTICE.md`](public/reference-cad/OPEN-HARDWARE-NOTICE.md).
 
 ## Siemens NX 8 STEP interoperability fixture
