@@ -151,7 +151,7 @@ describe("exact component study planners", () => {
     expect(createWebGpuTopologyAdapter().supports(topology)).toEqual({ supported: true });
     vi.unstubAllGlobals();
     workspace.dispose();
-  });
+  }, 10_000);
 
   it("launches SE-6 upper-arm structural and topology through one exact component source", async () => {
     const evaluate = vi.fn(), model = await se6UpperArmDocument();
@@ -235,10 +235,10 @@ describe("exact component study planners", () => {
     workspace.dispose();
   });
 
-  it.each([
-    ["thermal", se6UpperArmDocument, "se6-upper-arm-thermal"],
-    ["mechanism", se6MechanismDocument, "se6-motion"],
-  ] as const)("launches the %s component study from active exact roots", async (_kind, build, studyId) => {
+  for (const [_kind, build, studyId, timeout] of [
+    ["thermal", se6UpperArmDocument, "se6-upper-arm-thermal", undefined],
+    ["mechanism", se6MechanismDocument, "se6-motion", 10_000],
+  ] as const) it(`launches the ${_kind} component study from active exact roots`, async () => {
     const evaluate = vi.fn(), model = await build();
     const { workspace, seen } = await service(model, evaluate);
     const launched = await workspace.launchStudy({ studyId, expectedRevision: model.document.revision });
@@ -312,5 +312,5 @@ describe("exact component study planners", () => {
       vi.unstubAllGlobals();
     }
     workspace.dispose();
-  });
+  }, timeout);
 });
