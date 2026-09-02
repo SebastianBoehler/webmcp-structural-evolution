@@ -14,6 +14,10 @@ const StructuralTopologyGateRoute = lazy(async () => {
   const module = await import("./StructuralTopologyGateRoute");
   return { default: module.StructuralTopologyGateRoute };
 });
+const ComponentTopologyGateRoute = lazy(async () => {
+  const module = await import("./ComponentTopologyGateRoute");
+  return { default: module.ComponentTopologyGateRoute };
+});
 const MechanismGateRoute = lazy(async () => {
   const module = await import("./MechanismGateRoute");
   return { default: module.MechanismGateRoute };
@@ -66,6 +70,12 @@ const exactCadRouteRequested = () => typeof globalThis.location !== "undefined"
   && new URLSearchParams(globalThis.location.search).has("exact-cad-gate");
 
 export function App(): JSX.Element {
+  if (typeof globalThis.location !== "undefined"
+    && new URLSearchParams(globalThis.location.search).has("component-topology-gate")) {
+    return <ErrorBoundary><Suspense fallback={<p role="status">Loading component topology gate…</p>}>
+      <ComponentTopologyGateRoute />
+    </Suspense></ErrorBoundary>;
+  }
   if (typeof globalThis.location !== "undefined"
     && new URLSearchParams(globalThis.location.search).has("thermal-gate")) {
     return <ErrorBoundary><Suspense fallback={<p role="status">Loading thermal gate…</p>}>
