@@ -37,7 +37,7 @@ export function vectorGroup(
     entries: [
       entry(0, resources.vectorParams), entry(1, resources.fixed), entry(2, resources.rhs),
       entry(3, resources.x), entry(4, resources.r), entry(5, resources.z), entry(6, resources.p),
-      entry(7, resources.product), entry(8, resources.blockDiagonal), entry(9, resources.xCompensation),
+      entry(7, resources.product), entry(8, resources.blockDiagonal),
     ],
   });
 }

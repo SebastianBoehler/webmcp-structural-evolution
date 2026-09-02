@@ -140,7 +140,44 @@ describe("WebGPU structural adapter", () => {
     expect(recorded.errorScopeDepth()).toBe(0);
   });
 
-  it("owns and binds zeroed solution compensation for a structural PCG run", async () => {
+  it("stores solution compensation in the x tail within eight storage bindings", async () => {
+    const recorded = recordingGpu({
+      scalarSequence: [1, 1, 1, 0, 0, 1, -1_000, 0, 0, .001],
+    });
+    const compiled = await compileStructuralStudy(await structuralRequest());
+
+    const solve = await runStructuralPcg(
+      recorded.device as unknown as GPUDevice, compiled,
+      new AbortController().signal, () => undefined,
+    );
+
+    const x = recorded.buffers.find(({ descriptor }) => descriptor.label === "structural-x");
+    expect(x).toBeDefined();
+    if (!x) throw new Error("Structural x was not allocated");
+    expect(x.descriptor.size).toBe(compiled.fixedDofs.byteLength * 2);
+    expect(new Float32Array(x.data)).toEqual(new Float32Array(compiled.fixedDofs.length * 2));
+    expect(x.destroyed).toBe(true);
+    expect(solve.displacementM).toHaveLength(compiled.fixedDofs.length);
+    expect(recorded.buffers.some(
+      ({ descriptor }) => descriptor.label === "structural-x-compensation",
+    )).toBe(false);
+    const bufferLabel = ({ resource }: GPUBindGroupEntry) => "buffer" in resource
+      ? (resource.buffer as unknown as { descriptor: GPUBufferDescriptor }).descriptor.label : undefined;
+    const vectorEntries = recorded.device.createBindGroup.mock.calls
+      .map(([descriptor]) => descriptor.entries)
+      .find((entries) => entries.some((entry) => bufferLabel(entry) === "structural-vector-params"));
+    expect(vectorEntries?.map(({ binding }) => binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const layoutCalls = recorded.device.createBindGroupLayout.mock.calls as unknown as [
+      GPUBindGroupLayoutDescriptor,
+    ][];
+    const vectorLayout = layoutCalls
+      .map(([descriptor]) => descriptor)
+      .find(({ entries }) => entries.some(({ binding }) => binding === 8));
+    expect(vectorLayout?.entries.map(({ binding }) => binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(vectorLayout?.entries.filter(({ buffer }) => buffer?.type !== "uniform")).toHaveLength(8);
+  });
+
+  it("records exact x-tail initialization and compensated solution accumulation", async () => {
     const recorded = recordingGpu({
       scalarSequence: [1, 1, 1, 0, 0, 1, -1_000, 0, 0, .001],
     });
@@ -151,30 +188,20 @@ describe("WebGPU structural adapter", () => {
       new AbortController().signal, () => undefined,
     );
 
-    const compensation = recorded.buffers.find(
-      ({ descriptor }) => descriptor.label === "structural-x-compensation",
-    );
-    expect(compensation).toBeDefined();
-    if (!compensation) throw new Error("Structural x compensation was not allocated");
-    expect(compensation.descriptor.size).toBe(compiled.fixedDofs.byteLength);
-    expect(Number(compensation.descriptor.usage) & RECORDING_GPU_GLOBALS.GPUBufferUsage.STORAGE).not.toBe(0);
-    expect(new Float32Array(compensation.data)).toEqual(new Float32Array(compiled.fixedDofs.length));
-    expect(compensation.destroyed).toBe(true);
-    const boundCompensation = recorded.device.createBindGroup.mock.calls
-      .flatMap(([descriptor]) => [...descriptor.entries])
-      .find(({ binding, resource }) => binding === 9 && "buffer" in resource
-        && (resource.buffer as unknown as { descriptor: GPUBufferDescriptor }).descriptor.label
-          === "structural-x-compensation");
-    expect(boundCompensation).toBeDefined();
-    const layoutCalls = recorded.device.createBindGroupLayout.mock.calls as unknown as [
-      GPUBindGroupLayoutDescriptor,
+    const shaderCalls = recorded.device.createShaderModule.mock.calls as unknown as [
+      GPUShaderModuleDescriptor,
     ][];
-    const vectorLayout = layoutCalls
-      .map(([descriptor]) => descriptor)
-      .find(({ entries }) => entries.some(({ binding }) => binding === 9));
-    expect(vectorLayout?.entries.map(({ binding }) => binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    expect(recorded.dispatches.indexOf("initialize_pcg"))
-      .toBeLessThan(recorded.dispatches.indexOf("update_solution_residual"));
+    const vectorShader = shaderCalls.find(([descriptor]) => descriptor.label === "structural-vector")?.[0].code;
+    expect(vectorShader).toContain("solution[params.count + offset + axis] = 0.0;");
+    expect(vectorShader).toContain([
+      "  let increment = params.alpha * direction[id.x];",
+      "  let compensation_index = params.count + id.x;",
+      "  let corrected = increment - solution[compensation_index];",
+      "  let next = solution[id.x] + corrected;",
+      "  solution[compensation_index] = (next - solution[id.x]) - corrected;",
+      "  solution[id.x] = next;",
+    ].join("\n"));
+    expect(vectorShader).not.toContain("@group(0) @binding(9)");
   });
 
   it("publishes a terminal recomputed f32 residual without mislabeling it as algorithmic convergence", async () => {
@@ -217,7 +244,9 @@ describe("WebGPU structural adapter", () => {
     expect(result.forceBalanceErrorN).toBeLessThan(1e-3);
     expect(result.vonMisesStressPa).toHaveLength(compiled.activeCells.length);
     const x = recorded.buffers.find(({ descriptor }) => descriptor.label === "structural-x")!;
-    expect(new Float32Array(x.data)).toEqual(refined);
+    const xValues = new Float32Array(x.data);
+    expect(xValues.slice(0, refined.length)).toEqual(refined);
+    expect(xValues.slice(refined.length)).toEqual(new Float32Array(refined.length));
     expect(recorded.dispatches).toEqual(expect.arrayContaining([
       "apply_elasticity", "recompute_residual", "mask_reactions", "compute_stress",
     ]));
