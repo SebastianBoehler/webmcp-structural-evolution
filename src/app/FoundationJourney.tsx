@@ -83,7 +83,7 @@ export function FoundationJourney({
   }, [state.operationStatus]);
 
   const { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
-  const { nextVariant, pendingPromotion, readyToCompare, primaryLabel, primaryDisabled } = deriveOptimizationNavigation(
+  const { nextVariant, pendingPromotion, pendingEstimate, readyToCompare, primaryLabel, primaryDisabled } = deriveOptimizationNavigation(
     state, currentBranches, accepted !== undefined, currentVerified.length, workspace.layoutState === "verified",
     fixture.topologySubject,
   );
@@ -114,7 +114,7 @@ export function FoundationJourney({
   const runPrimary = () => {
     if (nextVariant) void runVariant(nextVariant);
     else if (readyToCompare) void compare();
-    else if (pendingPromotion) {
+    else if (pendingPromotion || pendingEstimate) {
       setActiveDrawer("branches");
       setWorkspaceMode("review");
     }

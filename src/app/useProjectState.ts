@@ -19,6 +19,7 @@ import { hasComparableBranches } from "../webmcp/comparability";
 import { inspectProjectFacts } from "./project-inspection";
 import { createExperimentRail } from "./project-experiment-rail";
 import { buildProbeInput, measuredProbe, storeProbeResult } from "./project-probe";
+import { probeReceiptOutcome } from "./project-probe-receipt";
 import { abandonedProbe, cancelActiveProbe, type ActiveProbeOperation } from "./project-probe-cancellation";
 import type { ExperimentRailApi, ProjectStateApi, ProjectStateOptions } from "./project-state-types";
 import { createInitialProjectState, freezeValue, publishProjectState } from "./project-state-copy";
@@ -220,14 +221,13 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         stagedBranches: latest.stagedBranches.map((branch) =>
           branch.branchRevision === branchRevision ? finished : branch),
       });
-      const outcome: ActionReceipt["outcome"] = storedResult.status === "verified"
-        ? {
-            status: "succeeded",
-            result: { proposalRevision, branchRevision, attempt, measurement: measured as unknown as JsonValue },
-          }
-        : storedResult.status === "canceled"
-          ? { status: "canceled", reason: measured.message ?? "Topology optimization canceled" }
-          : { status: "failed", error: measured.message ?? `${storedResult.status} probe result` };
+      const outcome = probeReceiptOutcome({
+        result: storedResult,
+        proposalRevision,
+        branchRevision,
+        attempt,
+        measurement: measured,
+      });
       await addReceipt("generate_topology_candidate", {
         ...parsed, proposalRevision, attempt,
       }, branchRevision, outcome, startedAt);

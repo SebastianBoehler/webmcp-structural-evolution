@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
@@ -178,6 +178,37 @@ test("recovers from failures without erasing their evidence", async () => {
   await screen.findByRole("button", { name: /generate stiffness-first frame/i }, { timeout: 15_000 });
   expect(compute).toHaveBeenCalledTimes(4);
 }, 30_000);
+
+test("reviews an interactive estimate without rendering it as an accepted topology", async () => {
+  renderJourney(async (input) => ({
+    status: "estimate",
+    truthLevel: "interactive-estimate",
+    output: sparseField(input, 0.5),
+    elapsedMs: 8,
+    relativeL2: 0,
+    tolerance: 0.000005,
+    topology: {
+      solver: "sparse-simp-lattice-wasm",
+      initialCompliance: 4,
+      finalCompliance: 2,
+      maxDisplacement: 0.001,
+      maxStress: 10,
+      minimumSafetyFactor: 2,
+      materialFraction: 0.5,
+      iterations: 4,
+    },
+  }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /review interactive estimate/i }));
+
+  const branches = screen.getByRole("list", { name: /experiment branches/i });
+  expect(within(branches).getByText("material")).toBeVisible();
+  expect(within(branches).getByText("compliance")).toBeVisible();
+  expect(within(branches).getByRole("button", { name: /use this frame/i })).toBeDisabled();
+  expect(screen.queryByRole("group", { name: /candidate comparison/i })).toBeNull();
+  expect(screen.queryByLabelText("Topology result")).toBeNull();
+});
 
 test("shows cancellation as immutable evidence and ignores a late result", async () => {
   let resolveProbe!: (result: ProbeResult) => void;

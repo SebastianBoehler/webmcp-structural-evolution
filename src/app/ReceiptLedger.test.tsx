@@ -15,6 +15,7 @@ afterEach(cleanup);
 
 test.each([
   ["verified", "Verified", { status: "succeeded", result: { ...identity, status: "verified" } }],
+  ["estimate", "Interactive estimate", { status: "succeeded", result: { ...identity, status: "estimate", truthLevel: "interactive-estimate" } }],
   ["mismatch", "Failed", { status: "failed", error: "verification mismatch" }],
   ["failed", "Failed", { status: "failed", error: "device lost" }],
   ["canceled", "Canceled", { status: "canceled", reason: "invocation canceled" }],
@@ -33,6 +34,9 @@ test.each([
 
   expect(within(item).getByText("Balanced frame")).toBeVisible();
   expect(within(item).getByText(badge)).toBeVisible();
+  if (_status === "estimate") {
+    expect(within(item).getByText(/available for evidence review, not verified engineering output/i)).toBeVisible();
+  }
   const technical = within(item).getByText("Technical receipt").closest("details");
   expect(technical?.hasAttribute("open")).toBe(false);
   expect(technical?.contains(within(item).getByText("generate_topology_candidate"))).toBe(true);

@@ -92,6 +92,47 @@ test("stages an exact immutable branch and stores prediction before measured out
   });
 });
 
+test("records an interactive estimate as succeeded evidence without verified truth", async () => {
+  const compute = vi.fn(async (): Promise<ProbeResult> => ({
+    status: "estimate",
+    truthLevel: "interactive-estimate",
+    output: new Float32Array(32 ** 3).fill(0.5),
+    elapsedMs: 14,
+    relativeL2: 0,
+    tolerance: 0.000005,
+  }));
+  const { result } = renderHook(() => useProjectState({
+    contextRevision: revisionA,
+    context: testFoundationContext(),
+    acceptedBranchRevision: revisionA,
+    selection: { id: "motor-arm", label: "Motor arm" },
+    locks: ["body-mount"],
+    capability: { status: "available", message: "ready" },
+    compute,
+  }));
+
+  await act(async () => { await result.current.services.runProbe(runInput); });
+
+  expect(result.current.state.stagedBranches[0]).toMatchObject({
+    status: "estimate",
+    result: { truthLevel: "interactive-estimate" },
+  });
+  expect(result.current.state.receipts.at(-1)).toMatchObject({
+    action: "generate_topology_candidate",
+    outcome: {
+      status: "succeeded",
+      result: {
+        status: "estimate",
+        truthLevel: "interactive-estimate",
+        proposalRevision: expect.any(String),
+        branchRevision: expect.any(String),
+        attempt: 1,
+        measurement: { status: "estimate" },
+      },
+    },
+  });
+});
+
 test("human intervention marks staged branches stale and only the rail can promote", async () => {
   const compute = vi.fn(async () => ({
     status: "verified" as const,

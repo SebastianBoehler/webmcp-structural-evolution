@@ -142,7 +142,59 @@ test("run advertises comparison only when the latest state has an exact comparab
   ]);
 });
 
-test.each(["canceled", "running"] as const)(
+test("run returns an interactive estimate as reviewable evidence, not a tool error", async () => {
+  const shared = services({
+    canCompare: vi.fn(() => true),
+    runProbe: vi.fn(async () => ({
+      parentRevision: revisionA,
+      proposalRevision: revisionB,
+      branchRevision: revisionB,
+      attempt: 1,
+      hypothesis: "Check the shipped probe",
+      prediction: "Verification stays within the probe budget",
+      variant: "balanced" as const,
+      stale: false as const,
+      status: "estimate" as const,
+      measurement: {
+        status: "estimate" as const,
+        elapsedMs: 12,
+        relativeL2: 0,
+        resultDigest: "c".repeat(64),
+        code: "interactive-estimate",
+        message: "Legacy Wasm topology is an interactive estimate only",
+      },
+      result: {
+        status: "estimate" as const,
+        truthLevel: "interactive-estimate" as const,
+        output: new Float32Array(8),
+        elapsedMs: 12,
+        relativeL2: 0,
+        tolerance: 0.000005,
+      },
+    })),
+  });
+
+  const response = await runFoundationProbe({
+    parentRevision: revisionA,
+    variant: "balanced",
+    hypothesis: "Check the shipped probe",
+    prediction: "Verification stays within the probe budget",
+  }, shared);
+  const facts = responseJson(response);
+
+  expect(response.isError).not.toBe(true);
+  expect(facts).toMatchObject({
+    status: "estimate",
+    measurement: {
+      status: "estimate",
+      code: "interactive-estimate",
+      message: "Legacy Wasm topology is an interactive estimate only",
+    },
+  });
+  expect(facts.nextActions).toEqual(["inspect_design_context"]);
+});
+
+test.each(["failed", "mismatch", "canceled"] as const)(
   "run returns %s as an explicit non-success tool outcome",
   async (status) => {
     const base = await services().runProbe({

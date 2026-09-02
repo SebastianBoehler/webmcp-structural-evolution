@@ -61,6 +61,9 @@ function probeTitle(receipt: ActionReceipt): string {
 function successfulDescription(receipt: ActionReceipt): string {
   switch (receipt.action) {
     case "generate_topology_candidate":
+      if (isInteractiveEstimate(receipt)) {
+        return "Available for evidence review, not verified engineering output.";
+      }
       return textField(receipt.validatedInputs, "variant") === "balanced"
         ? "The balanced frame converged and passed structural output checks."
         : "A verified topology alternative is ready for human review.";
@@ -71,6 +74,12 @@ function successfulDescription(receipt: ActionReceipt): string {
     case "cancel_topology_optimization": return "The active solve stopped without changing the accepted design.";
     default: return "The action completed and its exact receipt was preserved.";
   }
+}
+
+function isInteractiveEstimate(receipt: ActionReceipt): boolean {
+  return receipt.action === "generate_topology_candidate"
+    && receipt.outcome.status === "succeeded"
+    && textField(receipt.outcome.result, "truthLevel") === "interactive-estimate";
 }
 
 function receiptSummary(receipt: ActionReceipt): ReceiptSummary {
@@ -86,6 +95,14 @@ function receiptSummary(receipt: ActionReceipt): ReceiptSummary {
   }
   if (receipt.outcome.status === "canceled") {
     return { title, badge: "Canceled", description: receipt.outcome.reason, tone: "neutral" };
+  }
+  if (isInteractiveEstimate(receipt)) {
+    return {
+      title,
+      badge: "Interactive estimate",
+      description: successfulDescription(receipt),
+      tone: "neutral",
+    };
   }
   return {
     title,
@@ -108,7 +125,7 @@ export function ReceiptLedger({ receipts }: ReceiptLedgerProps) {
   return (
     <section className="receipt-ledger" aria-labelledby="receipt-ledger-title">
       <header className="receipt-ledger-heading">
-        <div><h2 id="receipt-ledger-title">Activity</h2><p>Human actions and verified agent work.</p></div>
+        <div><h2 id="receipt-ledger-title">Activity</h2><p>Human actions and recorded agent work.</p></div>
         <span>{receipts.length} {receipts.length === 1 ? "event" : "events"}</span>
       </header>
       <ol className="receipt-list" role="log" aria-label="Action receipts" aria-live="polite">

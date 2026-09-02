@@ -98,11 +98,14 @@ export async function runFoundationProbe(
       status: branch.status,
       stale: branch.stale,
       measurement: branch.measurement,
-      nextActions: services.canCompare()
+    };
+    const terminalError = branch.status === "failed" || branch.status === "mismatch" || branch.status === "canceled";
+    return toolResponse({
+      ...facts,
+      nextActions: branch.status === "verified" && services.canCompare()
         ? ["inspect_design_context", "compare_topology_candidates"]
         : ["inspect_design_context"],
-    };
-    return toolResponse(facts, branch.status !== "verified");
+    }, terminalError);
   } catch (error) {
     return toolResponse({ error: errorText(error) }, true);
   }
