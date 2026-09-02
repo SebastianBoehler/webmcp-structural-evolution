@@ -66,7 +66,7 @@ function validateProgression(input: Readonly<{
   }
   let previous: Uint8Array | undefined;
   let previousCount = 0;
-  for (const mask of input.binaryMasks) {
+  for (const [index, mask] of input.binaryMasks.entries()) {
     if (!(mask instanceof Uint8Array) || mask.length !== input.designDomain.length
       || mask.some((value, cell) => value !== 0 && value !== 1
         || value === 1 && input.designDomain[cell] !== 1)) {
@@ -79,6 +79,9 @@ function validateProgression(input: Readonly<{
       throw new Error("Topology analysis mask occupies a protected void cell");
     }
     const count = mask.reduce((sum, value) => sum + value, 0);
+    if (index < input.binaryMasks.length - 1 && count <= limits.targetCount) {
+      throw new Error("Topology pre-final analyzed mask must retain material above the rounded target volume");
+    }
     if (previous) {
       let hamming = 0;
       let reentered = false;

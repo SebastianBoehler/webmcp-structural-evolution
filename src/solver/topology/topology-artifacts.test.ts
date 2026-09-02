@@ -61,12 +61,11 @@ async function canonicalEvidence() {
   const source = topology.input.sourceStructuralRequest;
   const masks = [
     new Uint8Array(16).fill(1),
-    new Uint8Array(16).fill(1),
     new Uint8Array([1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1]),
   ];
   const analyses = await Promise.all(masks.map((mask, index) =>
     analysis(source, mask, `iteration-${index}`, 100 + index * 10)));
-  const postAnalysis = await analysis(source, masks[2]!, "post-probe", 130);
+  const postAnalysis = await analysis(source, masks[1]!, "post-probe", 130);
   return {
     request: topology,
     density: new Float32Array([1, 1, 1, 1, 1, 0.4, 0.4, 1, 1, 1, 1, 1, 1, 0.4, 0.4, 1]),
@@ -188,7 +187,7 @@ describe("canonical topology artifact packaging", () => {
   it("rejects independent density, mask, iteration-analysis, and post-analysis mutations", async () => {
     const base = await canonicalEvidence();
     const badDensity = new Float32Array(base.density); badDensity[0] = Number.NaN;
-    const badMask = base.binaryMasks.map((mask) => new Uint8Array(mask)); badMask[2]![0] = 0;
+    const badMask = base.binaryMasks.map((mask) => new Uint8Array(mask)); badMask[1]![0] = 0;
     const badIteration = [...base.analyses];
     badIteration[1] = { ...badIteration[1]!, complianceJ: 91 };
     const badPost = { ...base.postAnalysis, displacementM: new Float32Array([Number.NaN]) };
@@ -221,7 +220,7 @@ describe("canonical topology artifact packaging", () => {
 
   it("rejects a discrete mask move beyond floor(moveLimit times source-domain cells)", async () => {
     const base = await canonicalEvidence();
-    const finalMask = new Uint8Array(base.binaryMasks[2]!);
+    const finalMask = new Uint8Array(base.binaryMasks[1]!);
     const baseline = new Uint8Array(16).fill(1); baseline[2] = 0;
     await expect(packInteractiveTopologyRunResult(await withMasks(
       base, [new Uint8Array(16).fill(1), baseline, finalMask],
@@ -230,22 +229,18 @@ describe("canonical topology artifact packaging", () => {
 
   it("rejects material-count increase even when the Hamming move is within budget", async () => {
     const base = await canonicalEvidence();
-    const finalMask = new Uint8Array(base.binaryMasks[2]!);
-    const initial = new Uint8Array(finalMask); initial[14] = 1;
-    const reduced = new Uint8Array(finalMask); reduced[9] = 0;
-    const initialDensity = Float32Array.from(initial);
-    const revised = {
-      ...base,
-      request: { ...base.request, input: { ...base.request.input, initialDensity } },
-    };
+    const full = new Uint8Array(base.binaryMasks[0]!);
+    const reduced = new Uint8Array(full); reduced[5] = 0; reduced[6] = 0; reduced[13] = 0;
+    const increased = new Uint8Array(full); increased[5] = 0; increased[6] = 0;
+    const density = Float32Array.from(increased, (value) => value === 1 ? 1 : 0.4);
     await expect(packInteractiveTopologyRunResult(await withMasks(
-      revised, [initial, reduced, finalMask],
+      base, [full, reduced, increased], density,
     ))).rejects.toThrow(/material count/i);
   });
 
   it("rejects a final analyzed and rerasterized mask that misses the rounded target count", async () => {
     const base = await canonicalEvidence();
-    const finalMask = new Uint8Array(base.binaryMasks[2]!); finalMask[5] = 1;
+    const finalMask = new Uint8Array(base.binaryMasks[1]!); finalMask[5] = 1;
     const density = new Float32Array(base.density); density[5] = 1;
     await expect(packInteractiveTopologyRunResult(await withMasks(
       base, [new Uint8Array(16).fill(1), new Uint8Array(finalMask), finalMask], density,
@@ -273,28 +268,50 @@ describe("canonical topology artifact packaging", () => {
 
   it("rejects a target-only history that omits the canonical full initial mask", async () => {
     const base = await canonicalEvidence();
-    const target = new Uint8Array(base.binaryMasks[2]!);
-    await expect(packInteractiveTopologyRunResult(await withMasks(
-      base, [target, new Uint8Array(target), new Uint8Array(target)],
-    ))).rejects.toThrow(/initial mask/i);
+    const target = new Uint8Array(base.binaryMasks[1]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(base, [target])))
+      .rejects.toThrow(/initial mask/i);
   });
 
-  it("rejects equal-count cell swaps that re-enter material after removal", async () => {
+  it("rejects material re-entry while descending to the target", async () => {
     const base = await canonicalEvidence();
     const full = new Uint8Array(base.binaryMasks[0]!);
-    const swapped = new Uint8Array([1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1]);
-    const target = new Uint8Array(base.binaryMasks[2]!);
+    const swapped = new Uint8Array([1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1]);
+    const target = new Uint8Array(base.binaryMasks[1]!);
     await expect(packInteractiveTopologyRunResult(await withMasks(
       base, [full, swapped, target],
     ))).rejects.toThrow(/re-enter/i);
   });
 
-  it("accepts the canonical initial mask followed only by material removal", async () => {
+  it("accepts the canonical initial mask followed only by its target mask", async () => {
     const base = await canonicalEvidence();
     const full = new Uint8Array(base.binaryMasks[0]!);
-    const target = new Uint8Array(base.binaryMasks[2]!);
+    const target = new Uint8Array(base.binaryMasks[1]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      base, [full, target],
+    ))).resolves.toMatchObject({ output: { materialFraction: 0.75 } });
+  });
+
+  it("requires topology history to stop at the first target mask", async () => {
+    const base = await canonicalEvidence();
+    const full = new Uint8Array(base.binaryMasks[0]!);
+    const target = new Uint8Array(base.binaryMasks[1]!);
+    await expect(packInteractiveTopologyRunResult(await withMasks(base, [full, target])))
+      .resolves.toMatchObject({ output: { materialFraction: 0.75 } });
     await expect(packInteractiveTopologyRunResult(await withMasks(
       base, [full, target, new Uint8Array(target)],
+    ))).rejects.toThrow(/target/i);
+
+    const initialDensity = Float32Array.from(target);
+    const targetBaseline = {
+      ...base,
+      request: { ...base.request, input: { ...base.request.input, initialDensity } },
+    };
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      targetBaseline, [target], Float32Array.from(target),
     ))).resolves.toMatchObject({ output: { materialFraction: 0.75 } });
+    await expect(packInteractiveTopologyRunResult(await withMasks(
+      targetBaseline, [target, new Uint8Array(target)], Float32Array.from(target),
+    ))).rejects.toThrow(/target/i);
   });
 });
