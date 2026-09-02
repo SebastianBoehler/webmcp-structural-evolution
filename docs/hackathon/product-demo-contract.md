@@ -1,6 +1,6 @@
 # Product/Demo Contract
 
-Deadline: 2026-09-03 13:00 PT / 2026-09-04 02:00 Europe/Amsterdam
+Deadline: 2026-09-03 13:00 PT / 2026-09-03 22:00 Europe/Berlin
 Internal feature freeze: 2026-09-02 18:00 Europe/Amsterdam
 Demo rehearsal window: 2026-09-02 18:00 through submission
 
