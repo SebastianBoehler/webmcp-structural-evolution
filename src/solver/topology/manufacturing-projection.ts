@@ -2,6 +2,9 @@ import type { RequiredTopologyInterface } from "./topology-contract";
 import {
   topologyMinimumFeatureOffenders, type TopologyCellDimensions,
 } from "./minimum-feature";
+import {
+  createTopologyMinimumFeatureLocalTracker, type TopologyMinimumFeatureLocalTracker,
+} from "./minimum-feature-local";
 
 export interface ManufacturingProjectionConstraints {
   readonly dimensions: TopologyCellDimensions;
@@ -22,6 +25,9 @@ interface ProjectionInput extends ManufacturingProjectionConstraints {
 
 const MAX_EXCHANGE_CLOSURES = 64;
 const MAX_SAFE_ADD_CANDIDATES = 4_096;
+const MAX_BACKTRACK_REMOVALS = 8;
+const MAX_BACKTRACK_SEEDS = 32;
+const MAX_BACKTRACK_STATES = 512;
 const count = (mask: Uint8Array) => mask.reduce((sum, value) => sum + value, 0);
 
 function interfacesConnected(
@@ -51,6 +57,7 @@ function deletionClosure(
   baseline: Uint8Array,
   seeds: readonly number[],
   input: ProjectionInput,
+  tracker: TopologyMinimumFeatureLocalTracker,
 ): Uint8Array | undefined {
   const mask = new Uint8Array(baseline), queued = new Uint8Array(mask.length);
   const queue = [...seeds].sort((left, right) => left - right);
@@ -60,9 +67,7 @@ function deletionClosure(
     if (mask[cell] === 0) continue;
     if (input.required.has(cell)) return undefined;
     mask[cell] = 0;
-    for (const offender of topologyMinimumFeatureOffenders(
-      mask, input.dimensions, input.minimumFeatureM, input.cellSizeM,
-    )) {
+    for (const offender of tracker.affectedOffenders(mask, cell)) {
       if (input.required.has(offender)) return undefined;
       if (queued[offender] === 0) { queued[offender] = 1; queue.push(offender); }
     }
@@ -76,6 +81,7 @@ function attemptSafeAddExchange(
   currentRemoved: number,
   closureRemoved: number,
   input: ProjectionInput,
+  tracker: TopologyMinimumFeatureLocalTracker,
 ): Uint8Array | undefined {
   let additionsNeeded = currentRemoved + closureRemoved - input.removalQuota;
   if (additionsNeeded <= 0 || additionsNeeded > currentRemoved) return undefined;
@@ -86,9 +92,7 @@ function attemptSafeAddExchange(
   const exchanged = new Uint8Array(closure);
   for (const cell of addable) {
     exchanged[cell] = 1;
-    const safe = topologyMinimumFeatureOffenders(
-      exchanged, input.dimensions, input.minimumFeatureM, input.cellSizeM,
-    ).length === 0 && interfacesConnected(exchanged, input.dimensions, input.requiredInterfaces);
+    const safe = !tracker.isOffender(exchanged, cell);
     if (safe) additionsNeeded -= 1;
     else exchanged[cell] = 0;
     if (additionsNeeded === 0) return exchanged;
@@ -96,19 +100,53 @@ function attemptSafeAddExchange(
   return undefined;
 }
 
-function assertFinal(mask: Uint8Array, input: ProjectionInput): void {
+function assertFinal(
+  mask: Uint8Array,
+  input: ProjectionInput,
+  tracker: TopologyMinimumFeatureLocalTracker,
+): void {
   const previousCount = count(input.previousMask), activeCount = count(mask);
   const removed = previousCount - activeCount;
+  const changed = [...mask.keys()].filter((cell) => mask[cell] !== input.previousMask[cell]);
   const valid = removed === input.removalQuota && removed <= input.moveBudget
     && mask.every((value, cell) => value === 0 || (input.previousMask[cell] === 1
       && input.designDomain[cell] === 1))
     && [...input.required].every((cell) => mask[cell] === 1)
     && [...input.protectedCells].every((cell) => mask[cell] === 0)
     && interfacesConnected(mask, input.dimensions, input.requiredInterfaces)
-    && topologyMinimumFeatureOffenders(
-      mask, input.dimensions, input.minimumFeatureM, input.cellSizeM,
-    ).length === 0;
+    && changed.every((cell) => tracker.affectedOffenders(mask, cell).length === 0);
   if (!valid) throw new Error("Topology manufacturing projection failed its final invariants");
+}
+
+function searchSmallClosureFrontier(
+  baseline: Uint8Array,
+  baselineRemoved: number,
+  ranked: readonly number[],
+  input: ProjectionInput,
+  tracker: TopologyMinimumFeatureLocalTracker,
+): Uint8Array | undefined {
+  const remaining = input.removalQuota - baselineRemoved;
+  if (remaining < 1 || remaining > MAX_BACKTRACK_REMOVALS) return undefined;
+  const frontier = ranked.filter((cell) => baseline[cell] === 1).slice(0, MAX_BACKTRACK_SEEDS);
+  let explored = 0;
+  const visit = (mask: Uint8Array, removed: number, start: number): Uint8Array | undefined => {
+    if (removed === input.removalQuota) return mask;
+    if (explored >= MAX_BACKTRACK_STATES) return undefined;
+    for (let index = start; index < frontier.length; index += 1) {
+      if (explored >= MAX_BACKTRACK_STATES) break;
+      const seed = frontier[index]!;
+      if (mask[seed] === 0) continue;
+      explored += 1;
+      const closure = deletionClosure(mask, [seed], input, tracker);
+      if (!closure) continue;
+      const nextRemoved = removed + count(mask) - count(closure);
+      if (nextRemoved > input.removalQuota || nextRemoved === removed) continue;
+      const result = visit(closure, nextRemoved, index + 1);
+      if (result) return result;
+    }
+    return undefined;
+  };
+  return visit(new Uint8Array(baseline), baselineRemoved, 0);
 }
 
 export function projectManufacturingMask(input: ProjectionInput): Uint8Array {
@@ -125,11 +163,14 @@ export function projectManufacturingMask(input: ProjectionInput): Uint8Array {
     || [...input.protectedCells].some((cell) => input.previousMask[cell] !== 0);
   if (invalid) throw new Error("Topology manufacturing projection input is invalid");
   let mask: Uint8Array<ArrayBufferLike> = new Uint8Array(input.previousMask);
+  const tracker = createTopologyMinimumFeatureLocalTracker(
+    input.dimensions, input.minimumFeatureM, input.cellSizeM, mask.length,
+  );
   const initial = topologyMinimumFeatureOffenders(
     mask, input.dimensions, input.minimumFeatureM, input.cellSizeM,
   );
   if (initial.length > 0) {
-    const peeled = deletionClosure(mask, [...initial], input);
+    const peeled = deletionClosure(mask, [...initial], input, tracker);
     if (!peeled || count(mask) - count(peeled) > input.removalQuota) {
       throw new Error("Topology manufacturing projection cannot peel its initial feature violations");
     }
@@ -139,10 +180,11 @@ export function projectManufacturingMask(input: ProjectionInput): Uint8Array {
   const ranked = [...input.scores.keys()].filter((cell) => input.previousMask[cell] === 1
     && !input.required.has(cell) && !input.protectedCells.has(cell))
     .sort((left, right) => input.scores[left]! - input.scores[right]! || left - right);
+  const searchBaseline = new Uint8Array(mask), baselineRemoved = removed;
   for (const seed of ranked) {
     if (removed === input.removalQuota) break;
     if (mask[seed] === 0) continue;
-    const closure = deletionClosure(mask, [seed], input);
+    const closure = deletionClosure(mask, [seed], input, tracker);
     if (!closure) continue;
     const closureRemoved = count(mask) - count(closure);
     if (removed + closureRemoved <= input.removalQuota) {
@@ -150,12 +192,20 @@ export function projectManufacturingMask(input: ProjectionInput): Uint8Array {
     }
     if (exchangeClosures >= MAX_EXCHANGE_CLOSURES) continue;
     exchangeClosures += 1;
-    const exchanged = attemptSafeAddExchange(mask, closure, removed, closureRemoved, input);
+    const exchanged = attemptSafeAddExchange(
+      mask, closure, removed, closureRemoved, input, tracker,
+    );
     if (exchanged) { mask = exchanged; removed = input.removalQuota; break; }
+  }
+  if (removed !== input.removalQuota) {
+    const searched = searchSmallClosureFrontier(
+      searchBaseline, baselineRemoved, ranked, input, tracker,
+    );
+    if (searched) { mask = searched; removed = input.removalQuota; }
   }
   if (removed !== input.removalQuota) {
     throw new Error("Topology manufacturing projection cannot satisfy the exact removal quota");
   }
-  assertFinal(mask, input);
+  assertFinal(mask, input, tracker);
   return mask;
 }

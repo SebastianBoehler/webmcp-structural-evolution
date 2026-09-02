@@ -6,6 +6,7 @@ import {
   projectTopologyDensity, topologyMask,
 } from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology } from "./extract-topology";
+import { projectManufacturingMask } from "./manufacturing-projection";
 import { validateInitialDensity } from "./topology-input";
 
 const grid = {
@@ -220,5 +221,30 @@ describe("canonical topology design domain", () => {
     expect([...mask.keys()].filter((cell) => previous[cell] === 1 && mask[cell] === 0))
       .toEqual([closurePartner, closureSeed]);
     expect(minimumFeatureOffenders(mask, dimensions, 2)).toEqual([]);
+  });
+
+  it("finds the reviewer's bounded feasible closure frontier instead of false-blocking", () => {
+    const dimensions = [3, 3, 2] as const, count = 18;
+    const rankedCells = [10, 17, 4, 15, 1, 11, 9, 7, 2, 16, 6, 13, 0, 14, 12, 5, 3, 8];
+    const scores = new Float32Array(count);
+    rankedCells.forEach((cell, rank) => { scores[cell] = rank / (count - 1); });
+    const requiredInterfaces = [
+      { id: "support", cellIndices: new Uint32Array([0]) },
+      { id: "load", cellIndices: new Uint32Array([16]) },
+    ];
+    const required = new Set([0, 16]);
+    const mask = projectManufacturingMask({
+      scores, previousMask: new Uint8Array(count).fill(1),
+      designDomain: new Uint32Array(count).fill(1), required,
+      protectedCells: new Set(), removalQuota: 4, moveBudget: 4,
+      dimensions, minimumFeatureM: .02, cellSizeM: .01, requiredInterfaces,
+    });
+
+    expect(mask.reduce((sum, value) => sum + value, 0)).toBe(14);
+    expect(mask[0]).toBe(1); expect(mask[16]).toBe(1);
+    expect(minimumFeatureOffenders(Uint32Array.from(mask), dimensions, 2)).toEqual([]);
+    expect(() => assertTopologyInterfacesConnected(
+      Uint32Array.from(mask), dimensions, requiredInterfaces,
+    )).not.toThrow();
   });
 });
