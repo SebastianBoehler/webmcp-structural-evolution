@@ -116,9 +116,9 @@ export async function canonicalTopologyEvidence(input: Readonly<{
       || system.activeCells[cell] === 0 && value !== 0)) {
     throw new Error("Topology final density is outside the canonical design domain");
   }
-  if (input.binaryMasks.length !== study.maxIterations + 1
+  if (input.binaryMasks.length < 1 || input.binaryMasks.length > study.maxIterations + 1
     || input.analyses.length !== input.binaryMasks.length) {
-    throw new Error("Topology evidence must contain one analysis per configured iteration");
+    throw new Error("Topology evidence must align every completed analysis with its binary mask");
   }
   validateProgression({
     density: input.density, initialDensity: input.request.input.initialDensity,

@@ -6,7 +6,7 @@ import {
 import { createWebGpuStructuralAdapter } from "../structural/webgpu-structural-adapter";
 import {
   assertTopologyInterfacesConnected, assertTopologyScheduleFeasible,
-  projectTopologyAnalysisDensity, projectTopologyDensity, topologyMask,
+  projectTopologyAnalysisDensity, projectTopologyDensity, topologyDiscreteLimits, topologyMask,
 } from "./density-constraints";
 import { extractTopologyMesh, rasterizeExtractedTopology, validateExtractedTopology } from "./extract-topology";
 import { createTopologyMeshArtifact, packInteractiveTopologyRunResult } from "./topology-artifacts";
@@ -83,6 +83,10 @@ export function createWebGpuTopologyAdapter(
           throw new Error("Topology filter radius cannot enforce the configured minimum feature");
         }
         const structural = createWebGpuStructuralAdapter(options);
+        const { targetCount } = topologyDiscreteLimits(
+          study.targetVolumeFraction, study.moveLimit, system.activeCells,
+          passive.requiredCells, passive.protectedCells,
+        );
         const samples: TopologyObjectiveSample[] = [];
         const binaryMasks: Uint8Array[] = [];
         const analyses: TopologyResult["postExtractionAnalysis"][] = [];
@@ -114,14 +118,16 @@ export function createWebGpuTopologyAdapter(
             progress: Math.min(0.8, 0.05 + 0.7 * (iteration + 1) / (study.maxIterations + 1)),
             partial: { kind: "topology-objective-history", samples: samples.slice(-16) },
           });
+          return active;
         };
         assertTopologyScheduleFeasible(
           topologyMask(density, study.extraction.isoValue, system.activeCells),
           study.maxIterations, study.targetVolumeFraction, study.moveLimit,
           passive.requiredCells, passive.protectedCells, system.activeCells,
         );
-        await analyze(0);
+        let active = await analyze(0);
         for (let iteration = 1; iteration <= study.maxIterations; iteration += 1) {
+          if (active.reduce((sum, value) => sum + value, 0) === targetCount) break;
           checkAbort(signal);
           const updated = await updateTopologyDensity(
             density, latestAnalysis!.displacementM, system, study.moveLimit, signal,
@@ -142,7 +148,7 @@ export function createWebGpuTopologyAdapter(
             study.targetVolumeFraction, study.moveLimit,
             passive.requiredCells, passive.protectedCells, system.activeCells,
           );
-          await analyze(iteration);
+          active = await analyze(iteration);
         }
         const mesh = extractTopologyMesh(system.grid, density, study.extraction, system.activeCells);
         const extraction = validateExtractedTopology(mesh, system.grid, {

@@ -67,6 +67,15 @@ describe("canonical topology design domain", () => {
       .toEqual(new Uint32Array([1, 0, 1, 0]));
   });
 
+  it("does not swap or reactivate cells once projection reaches its rounded target", () => {
+    const projected = projectTopologyAnalysisDensity(
+      new Float32Array([0.1, 0.9, 0.1, 0.9]), new Uint8Array([1, 0, 1, 0]),
+      0.5, 0.5, 0.5, new Set(), new Set(), new Uint32Array([1, 1, 1, 1]),
+    );
+    expect(topologyMask(projected, 0.5, new Uint32Array([1, 1, 1, 1])))
+      .toEqual(new Uint32Array([1, 0, 1, 0]));
+  });
+
   it("rejects an integer move schedule that cannot reach its rounded target", () => {
     const schedule = (densityConstraints as unknown as {
       assertTopologyScheduleFeasible?: (

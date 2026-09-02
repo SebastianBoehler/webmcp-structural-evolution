@@ -111,21 +111,20 @@ describe("WebGPU topology adapter", () => {
 
       expect(solved.truthLevel).toBe("interactive-estimate");
       expect(solved.output.density.every((value) => value >= 0 && value <= 1)).toBe(true);
-      expect(solved.output.objectiveHistory).toEqual([80, 90, 100]);
+      expect(solved.output.objectiveHistory).toEqual([80]);
       expect(solved.output.acceptance).toMatchObject({
         eligible: true, accepted: false, exportable: false,
         promotionRequired: "task-5-live-gate",
       });
       expect(solved.output.extraction).toMatchObject({ closed: true, oriented: true });
-      expect(dependencies.structuralRun).toHaveBeenCalledTimes(4);
-      expect(dependencies.update.mock.calls[0]?.[1]).toBeInstanceOf(Float32Array);
-      expect((dependencies.update.mock.calls[0]?.[1] as Float32Array).length).toBe(sourceSystem.fixedDofs.length);
+      expect(dependencies.structuralRun).toHaveBeenCalledTimes(2);
+      expect(dependencies.update).not.toHaveBeenCalled();
       expect(partial).toEqual(expect.arrayContaining([
         expect.objectContaining({ partial: expect.objectContaining({
           kind: "topology-objective-history", samples: [expect.objectContaining({ objectiveJ: 80 })],
         }) }),
         expect.objectContaining({ partial: expect.objectContaining({
-          samples: expect.arrayContaining([expect.objectContaining({ objectiveJ: 100 })]),
+          samples: expect.arrayContaining([expect.objectContaining({ objectiveJ: 80 })]),
         }) }),
       ]));
       expect(solved.artifacts).toHaveLength(6);
@@ -139,7 +138,7 @@ describe("WebGPU topology adapter", () => {
       const payload = history!.payload as Record<string, ArrayBufferView>;
       const shape = payload.maskShape as Uint32Array;
       const masks = payload.binaryMasks as Uint8Array;
-      expect(Array.from(shape)).toEqual([3, cellCount]);
+      expect(Array.from(shape)).toEqual([1, cellCount]);
       for (let sampleIndex = 0; sampleIndex < shape[0]!; sampleIndex += 1) {
         const start = sampleIndex * shape[1]!;
         const activeCells = Uint32Array.from(masks.slice(start, start + shape[1]!));
@@ -150,7 +149,7 @@ describe("WebGPU topology adapter", () => {
     },
   );
 
-  it("constructs a monotone mask history within the discrete move budget and rounded target", async () => {
+  it("stops structural analyses at the rounded discrete material target", async () => {
     const solved = await createWebGpuTopologyAdapter().run(
       await request("discrete-progression"), new AbortController().signal, () => undefined,
     );
@@ -168,8 +167,10 @@ describe("WebGPU topology adapter", () => {
       }
       return changed;
     };
-    expect(counts).toEqual([16, 12, 12]);
-    expect([hamming(0, 1), hamming(1, 2)]).toEqual([4, 0]);
+    expect(counts).toEqual([16, 12]);
+    expect([hamming(0, 1)]).toEqual([4]);
+    expect(solved.output.objectiveSamples).toHaveLength(shape[0]!);
+    expect(dependencies.structuralRun).toHaveBeenCalledTimes(3);
     expect(solved.output.materialFraction).toBe(0.75);
   });
 
@@ -210,7 +211,7 @@ describe("WebGPU topology adapter", () => {
       .mockImplementationOnce(async (source) => resultFor(source, 103));
     await expect(createWebGpuTopologyAdapter().run(
       await request("physical-compliance"), new AbortController().signal, () => undefined,
-    )).resolves.toMatchObject({ output: { objectiveHistory: [100, 101, 102] } });
+    )).resolves.toMatchObject({ output: { objectiveHistory: [100, 101] } });
   });
 
   it("cancels between completed iterations while preserving emitted objective history", async () => {
