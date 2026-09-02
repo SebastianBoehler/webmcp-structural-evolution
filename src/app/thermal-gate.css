@@ -1,7 +1,6 @@
 .thermal-gate { min-height: 100vh; padding: clamp(1rem, 2vw, 2rem); color: var(--text-primary); background: var(--surface-canvas); }
 .thermal-gate > header, .thermal-gate > [role="status"], .thermal-gate > [role="alert"] { max-width: 74rem; margin-inline: auto; }
 .thermal-gate h1 { margin: .25rem 0; font-size: clamp(1.65rem, 4vw, 2.7rem); }
-.thermal-gate__eyebrow { margin: 0; color: var(--accent); font: 600 .78rem/1.2 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
 .thermal-gate__buttons, .thermal-gate__layer { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: 1rem; }
 .thermal-gate button { min-height: 2.5rem; padding: .55rem .85rem; border: 1px solid var(--separator); border-radius: var(--radius-sm); color: var(--text-primary); background: var(--surface-raised); }
 .thermal-gate button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }

@@ -32,8 +32,7 @@ export function ThermalGateRoute({ runGate = runThermalBrowserGate }: ThermalGat
   }, [run, service]);
   const report = state.kind === "complete" ? state.session.report : undefined;
   return <main className="thermal-gate" aria-label="SE-6 cobot thermal browser gate">
-    <header><p className="thermal-gate__eyebrow">Exact CAD + WebGPU + independent Wasm</p>
-      <h1>SE-6 cobot steady-thermal gate</h1>
+    <header><h1>SE-6 cobot steady-thermal gate</h1>
       <p>80 W motor-interface heating through an exact aluminum upper-arm link to a 300 K mounting interface.</p>
       <div className="thermal-gate__buttons">
         <button type="button" onClick={() => setRun((value) => value + 1)}>Run gate again</button>

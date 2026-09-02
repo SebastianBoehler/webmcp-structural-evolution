@@ -109,8 +109,7 @@ export function MechanismGateRoute({ runGate = runMechanismBrowserGate }: Mechan
   const cancel = () => { controllerRef.current?.abort(); setState({ kind: "cancelled", run }); };
   const report = state.kind === "complete" ? state.session.report : undefined;
   return <main className="mechanism-gate" aria-label="SE-6 mechanism browser gate">
-    <header><p className="mechanism-gate__eyebrow">Exact CAD + deterministic browser dynamics</p>
-      <h1>SE-6 six-axis cobot mechanism gate</h1>
+    <header><h1>SE-6 six-axis cobot mechanism gate</h1>
       <p>Passive gravity and applied-force response in the production Rapier/Wasm worker. The semantic viewport uses WebGPU; this route does not claim WebGPU physics.</p>
       <div className="mechanism-gate__buttons">
         <button type="button" onClick={restart}>Run gate again</button>

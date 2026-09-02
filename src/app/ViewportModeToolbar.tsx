@@ -79,7 +79,6 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
           : { state: "ready", label: "Agent ready", detail: "Watching the shared engineering workspace" };
   return <header className="viewport-toolbar">
     <div className="viewport-heading">
-      <p className="eyebrow">Current step</p>
       <h2 id="viewport-title">{copy.title}</h2>
       <p>{copy.description}</p>
     </div>
