@@ -47,8 +47,8 @@ pnpm build
 
 1. Open the [public demo](https://webmcp-structural-evolution.vercel.app); no sign-in is required. Select **Reference FPV drone** if it is not already selected.
 2. In a WebMCP-enabled client, ask the agent to inspect the current design context for the already selected reference drone.
-3. Ask the agent to generate a balanced topology candidate from that exact current revision. Open **Review** to inspect the action receipt, estimate label, and the boundary between agent intent, the interactive estimate, and human authority.
-4. Confirm that the resulting branch is reviewable and that **Use this frame** remains disabled at the estimate stage. See the [paste-ready prompts and timed storyboard](docs/hackathon/demo-video-script.md).
+3. Ask the agent to generate a balanced topology candidate from that exact current revision. Open **Review → Branches** to inspect the Balanced frame estimate metrics, action receipt, and the boundary between agent intent, the interactive estimate, and human authority.
+4. Confirm that **Use this frame** remains disabled at the estimate stage; this estimate is not an accepted viewport result. See the [paste-ready prompts and timed storyboard](docs/hackathon/demo-video-script.md).
 
 The production screenshots show the actual shared dashboard states used in this flow: [assembly synchronized](docs/submission/screenshots/01-agent-synchronized-assembly.png), [agent-generated estimate](docs/submission/screenshots/04-agent-generated-estimate.png), and [human review with disabled promotion](docs/submission/screenshots/05-human-reviews-estimate.png).
 

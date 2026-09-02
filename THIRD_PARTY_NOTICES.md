@@ -13,6 +13,13 @@ The application loads this Wasm binary by URL through `OcctKernel.init({ wasm })
 It is emitted as a separate asset so recipients can replace the LGPL component
 without modifying the application source.
 
+## OpenDrone reference CAD
+
+The display assets in `public/reference-cad/` derive from OpenDrone hardware releases
+licensed under CERN-OHL-S-2.0. Their asset-level provenance, upstream release links,
+checksums, and corresponding-source notice are in
+[`public/reference-cad/OPEN-HARDWARE-NOTICE.md`](public/reference-cad/OPEN-HARDWARE-NOTICE.md).
+
 ## Siemens NX 8 STEP interoperability fixture
 
 `src/cad/kernel/fixtures/nx8-basic-cube.stp` is an unmodified AP214 test

@@ -225,8 +225,10 @@ test("shows cancellation as immutable evidence and ignores a late result", async
     new Promise<ProbeResult>((resolve) => { resolveProbe = resolve; }));
   renderJourney(compute);
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  expect(screen.getByText("Workspace ready")).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  expect(await screen.findByText("Optimization running")).toBeVisible();
   expect(await screen.findByText(/gray center: fixed assembly interface/i)).toBeVisible();
   fireEvent.click(await screen.findByRole("button", { name: /cancel optimization/i }));
   await screen.findByText(/topology optimization canceled by the user/i);

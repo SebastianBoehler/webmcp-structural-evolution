@@ -2,6 +2,8 @@
 
 Date: 2026-08-26
 
+> **Superseded for current readiness on 2026-09-02:** This historical in-app-browser result is retained below. The verified production in-app WebMCP inspection and timed rehearsal are recorded in [the product/demo contract](../hackathon/product-demo-contract.md).
+
 Verdict: **partially passed**. The real in-app browser passed the WebGPU/Wasm and judge-journey checks, but did not expose `document.modelContext`. The mandatory combined in-app-browser WebGPU + WebMCP gate therefore did not pass.
 
 ## Target browser facts

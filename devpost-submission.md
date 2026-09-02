@@ -43,7 +43,7 @@ The public release is a static Vite + React + TypeScript application rendered wi
 No credentials are required.
 
 1. Open <https://webmcp-structural-evolution.vercel.app> in a current desktop browser and choose **Reference FPV drone**.
-2. Check the shared 3D assembly and open **Review**. The evidence panel must state that agent prediction, output/evidence, and human authority are distinct.
+2. Check the shared 3D assembly and open **Review → Branches**. The Balanced frame estimate metrics must be visible and **Use this frame** must remain disabled; it is not an accepted viewport result.
 3. In ChatGPT/Codex in-app browser with WebMCP enabled, invoke the prompts in [the demo script](docs/hackathon/demo-video-script.md). Verify the visible assembly/receipt changes and that no automatic promotion occurs.
 4. For a local source verification, run `pnpm test:run` and `pnpm build` after `pnpm install` with the pinned Node and pnpm versions.
 

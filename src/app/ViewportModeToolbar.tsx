@@ -69,14 +69,14 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
     ? ["loads", "stress", "displacement"]
     : ["density", "stress", "displacement", "safety"];
   const workspaceStatus = props.operationStatus === "running"
-    ? { state: "working", label: "Agent working", detail: `Solving ${props.solverCellCount.toLocaleString()} cells` }
+    ? { state: "working", label: "Optimization running", detail: `Solving ${props.solverCellCount.toLocaleString()} cells` }
     : props.operationStatus === "canceling"
-      ? { state: "working", label: "Stopping agent", detail: "Waiting for the current operation to stop" }
+      ? { state: "working", label: "Stopping optimization", detail: "Waiting for the current operation to stop" }
       : props.reviewRequired
         ? { state: "review", label: "Your review is needed", detail: "A candidate is waiting for a human decision" }
         : props.latestAction
-          ? { state: "ready", label: "Workspace synchronized", detail: props.latestAction.replaceAll("_", " ") }
-          : { state: "ready", label: "Agent ready", detail: "Watching the shared engineering workspace" };
+          ? { state: "ready", label: "Workspace updated", detail: props.latestAction.replaceAll("_", " ") }
+          : { state: "ready", label: "Workspace ready", detail: "No optimization is running" };
   return <header className="viewport-toolbar">
     <div className="viewport-heading">
       <h2 id="viewport-title">{copy.title}</h2>
