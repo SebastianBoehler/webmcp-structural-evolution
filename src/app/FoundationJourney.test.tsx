@@ -203,8 +203,8 @@ test("reviews an interactive estimate without rendering it as an accepted topolo
   fireEvent.click(await screen.findByRole("button", { name: /review interactive estimate/i }));
 
   const branches = screen.getByRole("list", { name: /experiment branches/i });
-  expect(within(branches).getByText("material")).toBeVisible();
-  expect(within(branches).getByText("compliance")).toBeVisible();
+  expect(within(branches).getByText("50.0%")).toBeVisible();
+  expect(within(branches).getByText("2.000")).toBeVisible();
   expect(within(branches).getByRole("button", { name: /use this frame/i })).toBeDisabled();
   expect(screen.queryByRole("group", { name: /candidate comparison/i })).toBeNull();
   expect(screen.queryByLabelText("Topology result")).toBeNull();
