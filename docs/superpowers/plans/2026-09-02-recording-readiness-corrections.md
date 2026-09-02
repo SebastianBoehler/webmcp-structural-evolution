@@ -129,31 +129,32 @@ Commit: `fix(workbench): expose interactive estimate review`
 
 **Interfaces:**
 - Consumes: the existing f32 PCG recurrence and component planner settings.
-- Produces: one DOF-sized `xCompensation` GPU storage buffer and Kahan-style solution accumulation; `COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET = 2_048` while the analytical/default budget remains unchanged.
+- Produces: one DOF-sized compensation region in the tail of the existing solution GPU storage buffer and Kahan-style solution accumulation; `COMPONENT_STRUCTURAL_PCG_ITERATION_BUDGET = 2_048` while the analytical/default budget remains unchanged.
 
 - [ ] **Step 1: Write failing recording-device/resource tests**
 
-Assert a structural PCG run allocates, binds, initializes, and destroys `structural-x-compensation`; the vector bind-group has binding `9`; initialization zeros it; and solution updates preserve the existing residual/preconditioner dispatch order. Update the component metadata expectation to exactly `2_048` while keeping the default budget expectation unchanged.
+Assert a structural PCG run allocates `structural-x` with two DOF-sized regions while retaining the existing eight storage bindings; initialization addresses/zeros the compensation tail; and solution updates preserve the existing residual/preconditioner dispatch order. Make the shader-module recorder assert the exact initialization and compensated-update source so removing either fails the test. Update the component metadata expectation to exactly `2_048` while keeping the default budget expectation unchanged.
 
 - [ ] **Step 2: Verify RED**
 
 Run: `mise exec node@24.19.0 -- pnpm test:run src/solver/structural/webgpu-structural-adapter.test.ts src/solver/structural/structural-result-artifacts.test.ts`
 
-Expected: FAIL because binding `9`, the compensation buffer, and the `2_048` component envelope do not exist.
+Expected: FAIL because the solution allocation has no compensation tail, the shader has no compensated update, and the `2_048` component envelope does not exist.
 
-- [ ] **Step 3: Add owned compensation resources**
+- [ ] **Step 3: Add an owned compensation region without a ninth binding**
 
-Allocate a DOF-sized storage buffer labeled `structural-x-compensation`, include it in the owned resource list, bind it at vector binding `9`, and let the existing resource cleanup destroy it. Do not add a second compensation buffer for the recursive residual.
+Allocate `structural-x` at twice the DOF byte length. The first region remains the solution consumed by elasticity, dot products, and readback; the second region at element offset `params.count` is the x-only compensation vector. Keep the vector bind group at the WebGPU minimum of eight storage buffers. Do not add a compensation region for the recursive residual.
 
 - [ ] **Step 4: Implement x-only compensated accumulation in WGSL**
 
-Zero compensation beside `solution` in `initialize_pcg`. In `update_solution_residual`, replace `solution += alpha * direction` with:
+Zero `solution[params.count + dof]` beside `solution[dof]` in `initialize_pcg`. In `update_solution_residual`, replace `solution += alpha * direction` with:
 
 ```wgsl
 let increment = params.alpha * direction[id.x];
-let corrected = increment - solution_compensation[id.x];
+let compensation_index = params.count + id.x;
+let corrected = increment - solution[compensation_index];
 let next = solution[id.x] + corrected;
-solution_compensation[id.x] = (next - solution[id.x]) - corrected;
+solution[compensation_index] = (next - solution[id.x]) - corrected;
 solution[id.x] = next;
 ```
 
