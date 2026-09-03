@@ -19,6 +19,7 @@ export interface WebGpuPbrRuntime {
   ) => StandardNodeMaterial;
   readonly materialColor: unknown;
   readonly instanceColor: unknown;
+  readonly vertexColor: unknown;
 }
 
 function multiply(node: unknown, value: unknown): unknown {
@@ -33,8 +34,11 @@ export function createWebGpuPbrMaterialFactory(
 ): SemanticPbrMaterialFactory {
   return (role, parameters) => {
     const material = runtime.createMaterial(parameters);
-    const base = role === "field"
-      ? multiply(runtime.instanceColor, runtime.materialColor)
+    const fieldColor = role === "field"
+      ? runtime.instanceColor
+      : role === "field-surface" ? runtime.vertexColor : undefined;
+    const base = fieldColor
+      ? multiply(fieldColor, runtime.materialColor)
       : runtime.materialColor;
     material.emissiveNode = multiply(base, role === "surface" ? .45 : .7);
     material.userData.semanticPbrRole = role;

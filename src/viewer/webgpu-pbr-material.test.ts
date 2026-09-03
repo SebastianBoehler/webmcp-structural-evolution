@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { instanceColor } from "three/src/nodes/accessors/Instance.js";
-import { materialColor } from "three/tsl";
+import { materialColor, vertexColor } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { expect, it } from "vitest";
 
@@ -33,7 +33,7 @@ it("uses emissive-capable standard node PBR for legible materials and nonuniform
   };
   const pbr = createWebGpuPbrMaterialFactory({
     createMaterial: (parameters) => new MeshStandardNodeMaterial(parameters),
-    materialColor, instanceColor,
+    materialColor, instanceColor, vertexColor: vertexColor(),
   });
   addSemanticScene(THREE, scene, state, false, pbr);
 
@@ -64,7 +64,7 @@ it("uses vertex-colored node PBR for the smooth production topology surface", ()
   const scene = new THREE.Scene();
   const pbr = createWebGpuPbrMaterialFactory({
     createMaterial: (parameters) => new MeshStandardNodeMaterial(parameters),
-    materialColor, instanceColor,
+    materialColor, instanceColor, vertexColor: vertexColor(),
   });
   addSemanticScene(THREE, scene, {
     revision: "pbr", document, selection: undefined, measurements: [],
@@ -86,4 +86,25 @@ it("uses vertex-colored node PBR for the smooth production topology surface", ()
   expect(material.userData.semanticPbrRole).toBe("field-surface");
   expect(material.emissiveNode).toBeTruthy();
   expect(surface.geometry.getAttribute("color").count).toBeGreaterThan(0);
+});
+
+it("wires instance, vertex, and plain emissive colors to their semantic roles", () => {
+  const pbr = createWebGpuPbrMaterialFactory({
+    createMaterial: (parameters) => new MeshStandardNodeMaterial(parameters),
+    materialColor, instanceColor, vertexColor: vertexColor(),
+  });
+  const nodeTypes = (role: "field" | "field-surface" | "surface") => {
+    const material = pbr(role, {}) as MeshStandardNodeMaterial;
+    const graph = material.emissiveNode?.toJSON() as {
+      readonly nodes?: readonly { readonly type: string }[];
+    };
+    return graph.nodes?.map((node) => node.type) ?? [];
+  };
+
+  expect(nodeTypes("field")).toContain("PropertyNode");
+  expect(nodeTypes("field")).not.toContain("VertexColorNode");
+  expect(nodeTypes("field-surface")).toContain("VertexColorNode");
+  expect(nodeTypes("field-surface")).not.toContain("PropertyNode");
+  expect(nodeTypes("surface")).not.toContain("VertexColorNode");
+  expect(nodeTypes("surface")).not.toContain("PropertyNode");
 });

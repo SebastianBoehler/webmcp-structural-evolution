@@ -49,7 +49,7 @@ export async function createThreeWebGpuRenderer(
   canvas: HTMLCanvasElement,
 ): Promise<SemanticRenderer> {
   const [three, rendererModule, backendModule, libraryModule, materialModule,
-    materialNodeModule, instanceNodeModule] = await Promise.all([
+    materialNodeModule, instanceNodeModule, vertexColorNodeModule] = await Promise.all([
     import("three"),
     import("three/src/renderers/common/Renderer.js"),
     import("three/src/renderers/webgpu/WebGPUBackend.js"),
@@ -57,6 +57,7 @@ export async function createThreeWebGpuRenderer(
     import("three/src/materials/nodes/MeshStandardNodeMaterial.js"),
     import("three/src/nodes/accessors/MaterialNode.js"),
     import("three/src/nodes/accessors/Instance.js"),
+    import("three/src/nodes/accessors/VertexColorNode.js"),
   ]);
   const backend = new backendModule.default({
     canvas,
@@ -72,6 +73,7 @@ export async function createThreeWebGpuRenderer(
     createMaterial: (parameters) => new materialModule.default(parameters),
     materialColor: materialNodeModule.materialColor,
     instanceColor: instanceNodeModule.instanceColor,
+    vertexColor: vertexColorNodeModule.vertexColor(),
   });
   let release: () => void = () => undefined;
   let handlers: SemanticInteractionHandlers = {};
