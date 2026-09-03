@@ -92,6 +92,22 @@ test("stages an exact immutable branch and stores prediction before measured out
   });
 });
 
+test("rejects topology execution until the exact current layout is verified", async () => {
+  const { result } = renderHook(() => useProjectState({
+    contextRevision: revisionA,
+    context: testFoundationContext(),
+    acceptedBranchRevision: revisionA,
+    selection: { id: "motor-arm", label: "Motor arm" },
+    locks: ["body-mount"], capability: { status: "available", message: "ready" },
+    layoutAuthority: { revision: revisionA, version: 2, state: "changed" },
+  }));
+
+  await act(async () => { await expect(result.current.services.runProbe(runInput)).rejects.toThrow(/layout version 2 must be validated/i); });
+  expect(result.current.state.receipts.at(-1)).toMatchObject({
+    action: "generate_topology_candidate", outcome: { status: "failed" },
+  });
+});
+
 test("records an interactive estimate as succeeded evidence without verified truth", async () => {
   const compute = vi.fn(async (): Promise<ProbeResult> => ({
     status: "estimate",

@@ -7,6 +7,7 @@ import type { ExactCadGateResult } from "../cad/kernel/browser-cad-gate";
 import type { ExactCadProjectGateState } from "./use-exact-cad-project-gate";
 import type { EngineeringWorkspaceService } from "../workspace/engineering-workspace-service";
 import type { WorkspaceInspection } from "../workspace/workspace-inspection";
+import type { LayoutAuthority } from "../assembly/layout-validation";
 
 type ProbeRunner = (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>;
 
@@ -21,6 +22,7 @@ export interface ProjectStateOptions {
   readonly buildProbeInput?: (variant: import("../webmcp/schemas").ProbeVariant) => ProbeInput;
   readonly exactCadGate?: (signal: AbortSignal) => Promise<ExactCadGateResult>;
   readonly workspace?: EngineeringWorkspaceService;
+  readonly layoutAuthority?: LayoutAuthority;
 }
 
 export interface ExperimentRailApi {

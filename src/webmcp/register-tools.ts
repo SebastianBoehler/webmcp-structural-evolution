@@ -12,6 +12,7 @@ import {
 } from "./schemas";
 import { hasComparableBranches } from "./comparability";
 import type { ModelContextTool } from "./protocol";
+import type { LayoutAuthority } from "../assembly/layout-validation";
 
 export type FoundationToolDefinition = ModelContextTool & {
   readonly annotations: {
@@ -24,6 +25,7 @@ export type FoundationToolDefinition = ModelContextTool & {
 export function foundationToolDefinitions(
   services: FoundationServices,
   state: FoundationProjectState,
+  layoutAuthority?: LayoutAuthority,
 ): readonly [FoundationToolDefinition, FoundationToolDefinition, FoundationToolDefinition] {
   const untrustedContentHint = true as const;
   return [
@@ -41,7 +43,8 @@ export function foundationToolDefinitions(
       inputSchema: runInputJsonSchema,
       annotations: { readOnlyHint: false, untrustedContentHint },
       execute: (input, options) => runFoundationProbe(input, services, options?.signal),
-      enabled: state.capability.status === "available" && state.operationStatus === "idle",
+      enabled: state.capability.status === "available" && state.operationStatus === "idle"
+        && (layoutAuthority === undefined || (layoutAuthority.state === "verified" && layoutAuthority.revision === state.contextRevision)),
     },
     {
       name: "compare_topology_candidates",

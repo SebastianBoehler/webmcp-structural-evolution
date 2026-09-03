@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { defineComponent } from "../domain/component-model";
 import { referenceDroneAssembly } from "../samples/reference-drone-assembly";
@@ -106,11 +106,18 @@ describe("drone assembly workspace", () => {
     await expect(view.result.current.validateLayout(1)).rejects.toThrow(/layout is stale/i);
     expect(view.result.current.layoutState).toBe("changed");
 
-    let compiled: Awaited<ReturnType<typeof view.result.current.validateLayout>> | undefined;
-    await act(async () => { compiled = await view.result.current.validateLayout(2); });
+    let validation!: ReturnType<typeof view.result.current.validateLayout>;
+    act(() => { validation = view.result.current.validateLayout(2); });
+    await waitFor(() => expect(view.result.current.layoutState).toBe("validating"));
+    let compiled: Awaited<typeof validation> | undefined;
+    await act(async () => { compiled = await validation; });
 
     expect(compiled).toMatchObject({ revision: view.result.current.revision, conflicts: [] });
     expect(view.result.current.layoutState).toBe("verified");
+    expect(view.result.current.receipts.at(-1)).toMatchObject({
+      action: "validate_assembly_layout", affectedRevision: view.result.current.revision,
+      outcome: { status: "succeeded" }, validatedInputs: { expectedLayoutVersion: 2 },
+    });
   });
 
   it("keeps a changed layout blocked when compilation finds a conflict", async () => {
@@ -118,8 +125,9 @@ describe("drone assembly workspace", () => {
 
     await act(() => view.result.current.movePart("motor-east", [0, 0, 3]));
 
-    await expect(view.result.current.validateLayout(2)).rejects.toThrow(/blocking conflict/i);
+    await act(async () => { await expect(view.result.current.validateLayout(2)).rejects.toThrow(/blocking conflict/i); });
     expect(view.result.current.layoutState).toBe("changed");
+    expect(view.result.current.receipts.at(-1)).toMatchObject({ action: "validate_assembly_layout", outcome: { status: "failed" } });
   });
 
   it("renders the exact solver-facing protected world volumes", () => {

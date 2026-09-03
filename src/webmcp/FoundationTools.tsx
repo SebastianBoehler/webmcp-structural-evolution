@@ -5,16 +5,18 @@ import { foundationToolDefinitions } from "./register-tools";
 import type { FoundationProjectState } from "./schemas";
 import { hasComparableBranches } from "./comparability";
 import { useFoundationTools } from "./use-foundation-tools";
+import type { LayoutAuthority } from "../assembly/layout-validation";
 
 export interface FoundationToolsProps {
   readonly services: FoundationServices;
   readonly state: FoundationProjectState;
+  readonly layoutAuthority?: LayoutAuthority;
 }
 
-export function FoundationTools({ services, state }: FoundationToolsProps) {
-  const eligibility = `${state.capability.status}:${state.operationStatus}:${hasComparableBranches(state.stagedBranches)}`;
+export function FoundationTools({ services, state, layoutAuthority }: FoundationToolsProps) {
+  const eligibility = `${state.capability.status}:${state.operationStatus}:${hasComparableBranches(state.stagedBranches)}:${layoutAuthority?.state}:${layoutAuthority?.revision}`;
   const definitions = useMemo(
-    () => foundationToolDefinitions(services, state),
+    () => foundationToolDefinitions(services, state, layoutAuthority),
     [services, eligibility],
   );
   const { supported, registered, errors } = useFoundationTools(definitions);

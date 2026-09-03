@@ -5,6 +5,7 @@ import type { ComponentImport } from "../assembly/component-import";
 import { droneAssemblyVisuals, INITIAL_MOTORS } from "../assembly/drone-workspace";
 import { FakeModelContext, installFakeModelContext } from "../test/fake-model-context";
 import { ComponentImportTools } from "./component-tools";
+import { LayoutValidationError } from "../assembly/layout-validation";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -31,7 +32,7 @@ const stagedInput: ComponentImport = {
 test("registers structured component inspection, staging, and visible movement tools", async () => {
   const context = new FakeModelContext();
   cleanups.push(installFakeModelContext(context));
-  const onMove = vi.fn();
+  const onMove = vi.fn(async () => ({ revision: "m".repeat(64), layoutVersion: 8 }));
   const onStage = vi.fn((input: ComponentImport) => ({ ...input, id: "pending-1", stagedBy: "agent" as const }));
   const onValidate = vi.fn(async () => ({ revision: "r".repeat(64), conflicts: [] }));
   const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
@@ -70,7 +71,7 @@ test("registers structured component inspection, staging, and visible movement t
     expectedLayoutVersion: 7,
     xMm: 118,
     yMm: 14,
-  }))).toMatchObject({ status: "moved-visible-layout-stale" });
+  }))).toMatchObject({ status: "moved-visible-layout-stale", revision: "m".repeat(64), layoutVersion: 8 });
   expect(onMove).toHaveBeenCalledWith("motor-east", [118, 14, 3], 7);
 
   expect(readText(await context.execute("validate_assembly_layout", {
@@ -88,7 +89,7 @@ test("registers structured component inspection, staging, and visible movement t
 test("returns a tool error instead of moving unknown or stale components", async () => {
   const context = new FakeModelContext();
   cleanups.push(installFakeModelContext(context));
-  const onMove = vi.fn(() => { throw new Error("Layout is stale. Inspect version 4 before moving a component."); });
+  const onMove = vi.fn(async () => { throw new Error("Layout is stale. Inspect version 4 before moving a component."); });
   render(<ComponentImportTools
     imports={[]}
     parts={droneAssemblyVisuals(INITIAL_MOTORS, [])}
@@ -109,6 +110,31 @@ test("returns a tool error instead of moving unknown or stale components", async
   });
   expect(stale).toMatchObject({ isError: true });
   expect(readText(stale).error).toMatch(/layout is stale/i);
+});
+
+test("returns actionable compiler conflicts from failed layout validation", async () => {
+  const context = new FakeModelContext();
+  cleanups.push(installFakeModelContext(context));
+  render(<ComponentImportTools
+    imports={[]}
+    parts={droneAssemblyVisuals(INITIAL_MOTORS, [])}
+    layoutVersion={4}
+    layoutState="changed"
+    conflicts={[{ id: "collision:motor-east:battery", kind: "collision" }]}
+    onMove={vi.fn(async () => ({ revision: "m".repeat(64), layoutVersion: 5 }))}
+    onStage={(input) => ({ ...input, id: "pending-1", stagedBy: "agent" })}
+    onValidate={async () => { throw new LayoutValidationError([{ id: "collision:motor-east:battery", kind: "collision" }]); }}
+  />);
+  await waitFor(() => expect(context.active.has("validate_assembly_layout")).toBe(true));
+
+  const response = await context.execute("validate_assembly_layout", { expectedLayoutVersion: 4 });
+  expect(response).toMatchObject({ isError: true });
+  expect(readText(response)).toMatchObject({
+    conflicts: [{ id: "collision:motor-east:battery", kind: "collision" }], nextAction: "move_assembly_component",
+  });
+  expect(readText(await context.execute("inspect_component_library", {})).conflicts).toEqual([
+    { id: "collision:motor-east:battery", kind: "collision" },
+  ]);
 });
 
 test("does not advertise movement when the active assembly has no movable components", async () => {

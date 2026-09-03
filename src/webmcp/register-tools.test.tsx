@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -8,6 +8,8 @@ import { FoundationTools } from "./FoundationTools";
 import type { FoundationServices } from "./executors";
 import { foundationToolDefinitions } from "./register-tools";
 import type { FoundationProjectState } from "./schemas";
+import type { LayoutAuthority } from "../assembly/layout-validation";
+import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 
 const revisionA = "a".repeat(64);
 const cleanups: Array<() => void> = [];
@@ -104,6 +106,33 @@ test("run execution remains compatible when a pre-options browser omits callback
 
   expect(response.isError).toBeUndefined();
   expect(shared.runProbe).toHaveBeenCalledWith(expect.anything(), undefined);
+});
+
+test("withholds topology registration while a moved layout is unvalidated", async () => {
+  const context = new FakeModelContext();
+  cleanups.push(installFakeModelContext(context));
+  const state = projectState({ status: "available", message: "ready" });
+  const changed: LayoutAuthority = { revision: revisionA, version: 2, state: "changed" };
+  const view = render(<FoundationTools services={services(state)} state={state} layoutAuthority={changed} />);
+
+  await waitFor(() => expect([...context.active.keys()]).toEqual(["inspect_design_context"]));
+  view.rerender(<FoundationTools services={services(state)} state={state} layoutAuthority={{ ...changed, state: "verified" }} />);
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
+});
+
+test("removes topology authority after a real workspace move until that revision validates", async () => {
+  const context = new FakeModelContext();
+  cleanups.push(installFakeModelContext(context));
+  const workspace = renderHook(() => useAssemblyWorkspace());
+  await act(() => workspace.result.current.movePart("motor-east", [118, 14, 3]));
+  const state = { ...projectState({ status: "available", message: "ready" }), contextRevision: workspace.result.current.revision };
+  const authority = () => ({ revision: workspace.result.current.revision, version: workspace.result.current.layoutVersion, state: workspace.result.current.layoutState });
+  const view = render(<FoundationTools services={services(state)} state={state} layoutAuthority={authority()} />);
+
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(false));
+  await act(async () => { await workspace.result.current.validateLayout(workspace.result.current.layoutVersion); });
+  view.rerender(<FoundationTools services={services(state)} state={state} layoutAuthority={authority()} />);
+  await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
 });
 
 test("actual hook lifecycle enables state-valid tools and unregisters them", async () => {

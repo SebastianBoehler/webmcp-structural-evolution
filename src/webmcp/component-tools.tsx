@@ -12,6 +12,7 @@ import { useFoundationTools } from "./use-foundation-tools";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { CompiledAssembly } from "../assembly/assembly-compile";
 import type { LayoutState } from "../assembly/use-assembly-workspace";
+import { LayoutValidationError } from "../assembly/layout-validation";
 
 export interface ComponentImportToolsProps {
   readonly imports: readonly ImportedComponent[];
@@ -19,8 +20,9 @@ export interface ComponentImportToolsProps {
   readonly parts: readonly AssemblyVisualPart[];
   readonly layoutVersion: number;
   readonly layoutState?: LayoutState;
+  readonly conflicts?: readonly { readonly id: string; readonly kind: string }[];
   readonly onStage: (component: ComponentImport) => PendingComponentImport;
-  readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => void;
+  readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => Promise<{ readonly revision: string; readonly layoutVersion: number }>;
   readonly onValidate?: (expectedVersion: number) => Promise<Pick<CompiledAssembly, "revision" | "conflicts">>;
 }
 
@@ -28,8 +30,9 @@ const response = (value: unknown, isError = false) => Promise.resolve({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
   ...(isError ? { isError: true } : {}),
 });
+const NO_CONFLICTS: readonly { readonly id: string; readonly kind: string }[] = [];
 
-export function ComponentImportTools({ imports, pending, parts, layoutVersion, layoutState = "verified", onStage, onMove, onValidate }: ComponentImportToolsProps) {
+export function ComponentImportTools({ imports, pending, parts, layoutVersion, layoutState = "verified", conflicts = NO_CONFLICTS, onStage, onMove, onValidate }: ComponentImportToolsProps) {
   const movableParts = parts.filter(({ movable }) => movable);
   const hasMovableParts = movableParts.length > 0;
   const canValidateLayout = onValidate !== undefined;
@@ -55,6 +58,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, l
         layoutVersion,
         layoutState,
         topologyEvidence: layoutState === "verified" ? "current" : "stale",
+        conflicts: conflicts.slice(0, 10).map(({ id, kind }) => ({ id, kind })),
         movable: movableParts.map(({ selectionId, label, center }) => ({
           componentId: selectionId, label, centerMm: center,
         })),
@@ -81,7 +85,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, l
           const compiled = await onValidate!(expectedLayoutVersion as number);
           return response({ status: "layout-verified", layoutVersion: expectedLayoutVersion, revision: compiled.revision, conflictCount: compiled.conflicts.length, nextAction: "generate_topology_candidate" });
         } catch (error) {
-          return response({ error: error instanceof Error ? error.message : String(error), nextAction: "inspect_component_library" }, true);
+          return response({ error: error instanceof Error ? error.message : String(error), conflicts: error instanceof LayoutValidationError ? error.conflicts : [], nextAction: error instanceof LayoutValidationError ? "move_assembly_component" : "inspect_component_library" }, true);
         }
       },
     },
@@ -129,10 +133,12 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, l
           if (typeof value.xMm !== "number" || typeof value.yMm !== "number") throw new Error("xMm and yMm must be numbers");
           const part = parts.find(({ selectionId, movable }) => movable && selectionId === value.componentId);
           if (!part) throw new Error("Component is not movable in the current assembly");
-          onMove(part.selectionId, [value.xMm, value.yMm, part.center[2]], value.expectedLayoutVersion as number);
+          const committed = await onMove(part.selectionId, [value.xMm, value.yMm, part.center[2]], value.expectedLayoutVersion as number);
           return response({
             componentId: part.selectionId,
             status: "moved-visible-layout-stale",
+            revision: committed.revision,
+            layoutVersion: committed.layoutVersion,
             nextAction: "inspect_component_library",
           });
         } catch (error) {
@@ -140,7 +146,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, l
         }
       },
     },
-  ], [onMove, onStage, onValidate, signature]);
+  ], [onMove, onStage, onValidate, signature, conflicts]);
   const state = useFoundationTools(definitions);
   return (
     <section aria-labelledby="component-tool-status">

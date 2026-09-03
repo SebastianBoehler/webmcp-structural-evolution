@@ -37,6 +37,8 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   computeRef.current = options.compute ?? runTopologyProbe;
   const inputBuilderRef = useRef(options.buildProbeInput ?? buildProbeInput);
   inputBuilderRef.current = options.buildProbeInput ?? buildProbeInput;
+  const layoutAuthorityRef = useRef(options.layoutAuthority);
+  layoutAuthorityRef.current = options.layoutAuthority;
   const sequenceRef = useRef(0);
   const operationRef = useRef<ActiveProbeOperation | null>(null);
   const interventionGenerationRef = useRef(0);
@@ -113,6 +115,10 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         throw new Error(error);
       };
       if (current.capability.status !== "available") return reject("WebGPU capability is not available");
+      const layout = layoutAuthorityRef.current;
+      if (layout && (layout.state !== "verified" || layout.revision !== parsed.parentRevision)) {
+        return reject(`Layout version ${layout.version} must be validated for the exact current assembly before topology can run.`);
+      }
       if (operationRef.current || current.operationStatus !== "idle") {
         return reject("A topology optimization is already running");
       }

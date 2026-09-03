@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 import { runTopologyProbeInWorker } from "../optimization/topology-probe-client";
@@ -15,7 +15,7 @@ import { TopologyResultPanel } from "./TopologyResultPanel";
 import { useProjectState } from "./useProjectState";
 import { useTheme } from "./useTheme";
 import { WorkbenchHeader } from "./WorkbenchHeader";
-import { WorkbenchReviewDock } from "./WorkbenchReviewDock";
+import { FoundationJourneyReviewDock } from "./FoundationJourneyReviewDock";
 import { ViewportModeToolbar } from "./ViewportModeToolbar";
 import { foundationView } from "./foundation-view";
 import { FixtureSimulationDock } from "./FixtureSimulationDock";
@@ -56,6 +56,7 @@ export function FoundationJourney({
     capability,
     compute: compute ?? runTopologyProbeInWorker,
     buildProbeInput: (variant) => buildProbeInput(variant, liveTopology),
+    layoutAuthority: { revision: workspace.revision, version: workspace.layoutVersion, state: workspace.layoutState },
   });
   const { theme, setTheme } = useTheme();
   const {
@@ -138,13 +139,6 @@ export function FoundationJourney({
     const mount = liveTopology.input.motorMounts[index];
     return mount ? [{ id: motor.id, centerM: mount.centerM }] : [];
   }), [liveTopology, workspace.motors]);
-  const handleFlightFrame = useCallback((frame: Parameters<typeof flightFrameChannel.emit>[0]) => flightFrameChannel.emit(frame), [flightFrameChannel]);
-  const handlePartMove = useCallback((id: string, center: readonly [number, number, number]) => {
-    workspace.movePart(id, center);
-  }, [workspace.movePart]);
-  const handlePartDragState = useCallback((dragging: boolean) => {
-    workspace.setLayoutDragging(dragging);
-  }, [workspace.setLayoutDragging]);
   const { dockAvailable, dockOpen, receipts } = deriveResponsivePanelState(workspaceMode, dockVisible, viewerCurrent !== null, state.receipts, workspace.receipts);
 
   return (
@@ -226,8 +220,8 @@ export function FoundationJourney({
                 setSelectedPart(id);
                 if (workspaceMode === "assembly") setAssemblyPanel("inspector");
               }}
-              onPartMove={handlePartMove}
-              onPartDragState={handlePartDragState}
+              onPartMove={workspace.movePart}
+              onPartDragState={workspace.setLayoutDragging}
               />
               {workspace.pending && (
                 <ImportReview
@@ -256,13 +250,13 @@ export function FoundationJourney({
                 supportsFlightReplay={fixture.supportsFlightReplay}
                 topology={liveTopology.input}
                 motors={viewerCurrent?.result.status === "verified" ? flightMotors : []}
-                onFrame={handleFlightFrame}
+                onFrame={flightFrameChannel.emit}
                 onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
             />}
-            <aside className="review-dock" aria-label="Review evidence" hidden={workspaceMode !== "review" || !dockOpen}>
-              <WorkbenchReviewDock
+            <FoundationJourneyReviewDock
+                hidden={workspaceMode !== "review" || !dockOpen}
                 active={activeDrawer}
                 state={state}
                 services={services}
@@ -275,14 +269,15 @@ export function FoundationJourney({
                 parts={workspace.parts}
                 layoutVersion={workspace.layoutVersion}
                 layoutState={workspace.layoutState}
+                layoutAuthority={{ revision: workspace.revision, version: workspace.layoutVersion, state: workspace.layoutState }}
+                conflicts={workspace.conflicts}
                 fixtureId={fixtureId}
                 onGenerateFixture={onFixtureChange}
                 onStage={workspace.stageImport}
                 onMove={workspace.movePart}
                 onValidate={workspace.validateLayout}
                 onChange={setActiveDrawer}
-              />
-            </aside>
+            />
           </div>
         </section>
         <InspectorPanel

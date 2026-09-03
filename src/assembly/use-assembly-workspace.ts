@@ -15,7 +15,7 @@ import {
 import { assemblyActionReceipt, type ReceiptSpec } from "./assembly-workspace-actions";
 import { compileAssemblyState } from "./assembly-compile";
 import { inspectAssemblyConflicts } from "./assembly-conflicts";
-import type { ComponentImport, ImportedComponent, PendingComponentImport } from "./component-import";
+import type { ComponentImport, PendingComponentImport } from "./component-import";
 import { digestAsset, parseComponentPackage } from "./component-package";
 import {
   INITIAL_DRONE_INVENTORY,
@@ -30,11 +30,13 @@ import { decodeStepFile, type CadMesh } from "./step-import";
 import { defineImportedComponent, importedFileAsset } from "./workspace-component-import";
 import { REFERENCE_DISPLAY_RESOURCES } from "./reference-display-resources";
 import { resolvedAssemblyDraft } from "./resolved-assembly-draft";
+import { importedAssemblyView } from "./imported-assembly-view";
+import { LayoutValidationError, type LayoutState } from "./layout-validation";
 
 const identifier = (): string => globalThis.crypto?.randomUUID?.() ?? `component-${Date.now()}`;
 const m = (value: number) => ({ value: value / 1_000, unit: "m" as const });
 const rad = (value: number) => ({ value, unit: "rad" as const });
-export type LayoutState = "verified" | "dragging" | "changed" | "validating";
+export type { LayoutAuthority, LayoutState } from "./layout-validation";
 
 function envelopeSizeMm(definition: ComponentDefinition): [number, number, number] {
   const value = (length: { readonly value: number; readonly unit: "m" | "mm" }) =>
@@ -48,20 +50,6 @@ export interface AssemblyWorkspaceOptions {
   readonly initialState?: AssemblyAuthoringState;
   readonly inventory?: readonly InventoryItem[];
   readonly renderParts?: AssemblyVisualRenderer;
-}
-
-function importedView(state: AssemblyAuthoringState, resources: Readonly<Record<string, ComponentRenderResource>>): readonly ImportedComponent[] {
-  return state.draft.components.flatMap((instance) => {
-    const resource = resources[instance.componentRevision];
-    const definition = state.catalog.find(({ revision }) => revision === instance.componentRevision);
-    return resource && definition ? [{
-      id: instance.instanceId, name: resource.name, category: resource.category,
-      manufacturer: definition.manufacturer, partNumber: definition.partNumber,
-      assetUrl: resource.assetUrl, assetUnits: resource.assetUnits, sourceUrl: resource.sourceUrl,
-      massG: definition.mass.value * 1_000, sizeMm: resource.sizeMm, stagedBy: resource.stagedBy,
-      validation: resource.validation, ...(resource.mesh ? { mesh: resource.mesh } : {}),
-    }] : [];
-  });
 }
 
 export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
@@ -91,7 +79,7 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
     const mmValue = (value: typeof position.x) => value.unit === "m" ? value.value * 1_000 : value.value;
     return [{ id: instance.instanceId, label: definition.partNumber, anchor: [mmValue(position.x), mmValue(position.y), mmValue(position.z)], movable: true }];
   }), [draft.components, workspace.catalog]);
-  const imports = useMemo(() => importedView(workspace, resources), [resources, workspace]);
+  const imports = useMemo(() => importedAssemblyView(workspace, resources), [resources, workspace]);
   const conflicts = useMemo(() => Object.freeze([
     ...inspectAssemblyConflicts(draft, workspace.catalog, inventory),
     ...solveAssemblyConstraints(workspace).constraintConflicts,
@@ -153,20 +141,26 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
     return compiled;
   }, [inventory]);
   const validateLayout = useCallback((expectedVersion: number) => {
+    const started = performance.now();
+    const receipt = (outcome: ActionReceipt["outcome"], revision = stateRef.current.revision) => setReceipts((current) => [...current, defineActionReceipt({
+      id: identifier(), action: "validate_assembly_layout", validatedInputs: { expectedLayoutVersion: expectedVersion }, affectedRevision: revision,
+      outcome, duration: { value: performance.now() - started, unit: "ms" }, createdAt: new Date().toISOString(),
+    })]);
     if (expectedVersion !== versionRef.current) {
-      return Promise.reject(new Error(`Layout is stale. Inspect version ${versionRef.current} before validating.`));
+      const error = `Layout is stale. Inspect version ${versionRef.current} before validating.`;
+      receipt({ status: "failed", error }); return Promise.reject(new Error(error));
     }
     setLayoutState("validating");
     const validation = queue.current.then(() => {
       if (expectedVersion !== versionRef.current) throw new Error(`Layout is stale. Inspect version ${versionRef.current} before validating.`);
       const compiled = compileAssemblyState(stateRef.current, inventory);
-      if (compiled.conflicts.length > 0) throw new Error(`Assembly validation found ${compiled.conflicts.length} blocking conflict(s).`);
+      if (compiled.conflicts.length > 0) throw new LayoutValidationError(compiled.conflicts);
       return compiled;
     });
     queue.current = validation.then(() => undefined, () => undefined);
     return validation.then(
-      (compiled) => { setLayoutState("verified"); return compiled; },
-      (error: unknown) => { setLayoutState("changed"); throw error; },
+      (compiled) => { setLayoutState("verified"); receipt({ status: "succeeded", result: { revision: compiled.revision, conflictCount: compiled.conflicts.length } }, compiled.revision); return compiled; },
+      (error: unknown) => { setLayoutState("changed"); receipt({ status: "failed", error: error instanceof Error ? error.message : String(error) }); throw error; },
     );
   }, [inventory]);
 
@@ -194,7 +188,7 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
         });
       }
       return next;
-    }, { action: "move_assembly_component", inputs: { parentRevision, instanceId: id } });
+    }, { action: "move_assembly_component", inputs: { parentRevision, instanceId: id } }).then((next) => ({ revision: next.revision, layoutVersion: versionRef.current }));
   }, [parts, transact]);
 
   const installAsset = useCallback(async (definition: ComponentDefinition, resource: ComponentRenderResource, instanceId = identifier()) => {
