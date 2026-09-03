@@ -103,14 +103,14 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                     .any(|volume| volume_contains(volume, point));
                 let inside_domain = input.design_domain.iter().any(|volume| volume_contains(volume, point));
                 coordinates.push(point);
-                // Access and component keep-outs win over generated/required material.
-                // Loads are applied only to explicit retained structural interfaces.
-                let structural = !access && (supported || (required && inside_domain && !void));
-                let cell_void = access || (!supported && (void || !inside_domain));
+                // Authored access and protected voids win over every generated/retained class.
+                // Supports may cross the design-domain boundary, but never an authored void.
+                let structural = !access && !void && (supported || (required && inside_domain));
+                let cell_void = access || void || (!supported && !inside_domain);
                 passive_solid.push(structural);
                 passive_void.push(cell_void);
                 let index = x + width * (y + height * z);
-                if supported && !access {
+                if supported && structural {
                     support_nodes.push(index);
                 }
             }

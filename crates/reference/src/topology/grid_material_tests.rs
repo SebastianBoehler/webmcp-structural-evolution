@@ -84,3 +84,29 @@ fn loads_use_explicit_interfaces_without_retaining_their_full_footprint() {
                 && force.iter().any(|force| *force != 0.0))
     );
 }
+
+#[test]
+fn protected_voids_override_overlapping_support_cells() {
+    let mut input = load_interface_input();
+    input.supports.push(SolverVolume::Box {
+        center_m: [-0.1, 0.0, 0.0],
+        size_m: [0.01, 0.01, 0.006],
+        yaw_rad: 0.0,
+    });
+    input.protected_voids.push(SolverVolume::Box {
+        center_m: [0.09, 0.0, 0.0],
+        size_m: [0.02, 0.02, 0.008],
+        yaw_rad: 0.0,
+    });
+
+    let grid = assembly_grid(&input).expect("grid with protected support overlap");
+    let protected_support = grid.index(25, 15, 4);
+
+    assert!(grid.passive_void[protected_support]);
+    assert!(!grid.passive_solid[protected_support]);
+    assert!(grid
+        .passive_solid
+        .iter()
+        .zip(&grid.passive_void)
+        .all(|(solid, void)| !solid || !void));
+}

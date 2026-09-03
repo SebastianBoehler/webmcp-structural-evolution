@@ -132,6 +132,20 @@ fn reconstruction_is_deterministic_and_density_guided() {
 }
 
 #[test]
+fn ordinary_growth_prefers_density_within_the_same_frontier_layer() {
+    let grid = line_fixture(5, &[2], &[]);
+    let result = reconstruct_load_path_web(
+        &grid,
+        &[0.1, 0.9, 1.0, 0.2, 0.8],
+        &[false; 5],
+        0.412,
+    );
+
+    assert!(result[1] >= 0.32);
+    assert!(result[3] < 0.32);
+}
+
+#[test]
 fn reconstruction_targets_the_returned_density_fraction() {
     let mut grid = reconstruction_fixture();
     grid.dimensions = [10, 10, 1];

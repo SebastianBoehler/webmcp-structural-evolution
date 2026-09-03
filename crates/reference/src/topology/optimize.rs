@@ -45,15 +45,15 @@ fn filtered(grid: &Grid, values: &[f32]) -> Vec<f32> {
 }
 
 fn material_fraction(grid: &Grid, density: &[f32]) -> f32 {
-    let mut sum = 0.0;
-    let mut count = 0;
+    let mut sum = 0.0_f64;
+    let mut count = 0_u64;
     for (index, &value) in density.iter().enumerate() {
         if !grid.passive_void[index] {
-            sum += value;
+            sum += f64::from(value);
             count += 1;
         }
     }
-    sum / count as f32
+    (sum / count as f64) as f32
 }
 
 fn optimality_update(grid: &Grid, density: &mut [f32], sensitivity: &[f32], target: f32) {
