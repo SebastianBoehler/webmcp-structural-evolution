@@ -8,7 +8,16 @@ import { buildTopologyDistanceField } from "./topology-distance-field";
 export const TOPOLOGY_ISOLATION = 0.5;
 const DENSITY_ISOLATION = 0.32;
 const SURFACE_SAMPLING = 2;
-const surfaceCache = new WeakMap<Float32Array, Float32Array>();
+const surfaceCache = new WeakMap<Float32Array, Map<string, Float32Array>>();
+
+function surfaceCacheKey(grid: VoxelGrid): string {
+  const { width, height, depth } = grid.dimensions;
+  return [
+    width, height, depth, ...grid.cellSize,
+    DENSITY_ISOLATION, TOPOLOGY_ISOLATION, SURFACE_SAMPLING,
+  ].join(":");
+}
+
 function densityAt(
   density: Float32Array,
   dimensions: VoxelGrid["dimensions"],
@@ -34,7 +43,8 @@ function densityAt(
 }
 
 function extractSurfacePositions(grid: VoxelGrid, density: Float32Array): Float32Array {
-  const cached = surfaceCache.get(density);
+  const cacheKey = surfaceCacheKey(grid);
+  const cached = surfaceCache.get(density)?.get(cacheKey);
   if (cached) return cached;
   const { width, height, depth } = grid.dimensions;
   if (density.length !== width * height * depth) {
@@ -73,7 +83,9 @@ function extractSurfacePositions(grid: VoxelGrid, density: Float32Array): Float3
   positions.set(source.subarray(0, count * 3));
   surface.geometry.dispose();
   extractionMaterial.dispose();
-  surfaceCache.set(density, positions);
+  const cachedByGrid = surfaceCache.get(density) ?? new Map<string, Float32Array>();
+  cachedByGrid.set(cacheKey, positions);
+  surfaceCache.set(density, cachedByGrid);
   return positions;
 }
 

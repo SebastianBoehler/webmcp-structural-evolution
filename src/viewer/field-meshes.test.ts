@@ -42,7 +42,7 @@ describe("analysis field meshes", () => {
       new Uint32Array([0, 1]),
       [],
       { own: (release) => { releases.push(release); return { relinquish() {} }; }, attach() {} },
-      new Float32Array([1, 1]),
+      new Float32Array([1, 0]),
       { kind: "stress", values: new Float32Array([0, 10]), maximum: 10 },
     );
     const geometry = result.analysisSurfaces[0]!.geometry;
