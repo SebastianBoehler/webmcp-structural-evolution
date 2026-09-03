@@ -44,5 +44,18 @@ Inspect the current drone design, then generate one balanced topology candidate 
 
 Keep the prompt paste, tool invocation, start of optimization, and final result in
 real time. If the wait contains more than three seconds of no visible change,
-jump-cut or speed up only that middle portion and add a small `13 s solve` label.
+jump-cut or speed up only that middle portion and label it with the actual solve
+time shown by that take.
 Do not speed up the opening, result metrics, or human-approval boundary.
+
+## Measured rehearsal — September 3, 2026
+
+- Full clean Codex turn: `185.4 s`.
+- WebMCP portion, inspection start to first reviewable state: `61.8 s`.
+- Candidate timing reported by the live dashboard: `28.0–30.9 s`.
+- Manual intervention: none; generation was invoked exactly once.
+- A no-tool follow-up explaining the approval boundary completed in `3.7 s`.
+
+The uncut agent turn is too long for a three-minute submission. Record the full
+screen action, compress the quiet middle of inspection/generation to roughly
+`12–18 s`, and keep the final metrics and approval boundary at normal speed.
