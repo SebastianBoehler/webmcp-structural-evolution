@@ -39,6 +39,7 @@ function show(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, onEr
 }
 
 interface ReplayScales { readonly scalar: number; readonly deformation: number }
+const REPLAY_PRESENT_INTERVAL_MS = 50;
 
 function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel,
   solverCase?: string, replay?: ReplayScales) {
@@ -115,6 +116,9 @@ export async function mountSemanticFieldSession(
         presentPending = false;
         try { await viewport.present(); }
         catch (error) { if (!disposed) onError?.(error); }
+        if (presentPending && !disposed) {
+          await new Promise((resolve) => setTimeout(resolve, REPLAY_PRESENT_INTERVAL_MS));
+        }
       }
       presenting = false;
     })();

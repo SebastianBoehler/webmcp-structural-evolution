@@ -301,8 +301,7 @@ it("coalesces replay presentation while keeping the newest state", async () => {
   session.setFlightFrame({ ...frame, timeS: .75 });
   expect(viewport.present).toHaveBeenCalledOnce();
   release();
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 60));
   expect(viewport.present).toHaveBeenCalledTimes(2);
   session.dispose();
 });
