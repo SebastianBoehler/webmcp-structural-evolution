@@ -1,4 +1,4 @@
-import type { FlightFrame } from "../simulation/flight-scenarios";
+import { structuralReplayInterpolation, type FlightFrame } from "../simulation/flight-scenarios";
 import type { AssemblyVisualPart, ViewerRenderModel } from "./render-envelope";
 import { semanticArtifactFromViewerModel, type SemanticDocumentArtifact } from "./semantic-scene";
 import { componentIdForSourceSelection, sourceSelectionForSemantic } from "./semantic-picking";
@@ -7,6 +7,7 @@ import type { FieldRendererSession } from "./field-renderer";
 import type { PartInteractionHandlers } from "./assembly-interactions";
 import type { WebGpuDeviceLossInfo } from "./webgpu-renderer-types";
 import { materializeSemanticModelParts } from "./semantic-model-materializer";
+import { STRUCTURAL_DEFORMATION_EXAGGERATION } from "./replay-deformation";
 
 export class SemanticDeviceLostError extends Error {
   readonly name = "SemanticDeviceLostError";
@@ -37,15 +38,21 @@ function show(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, onEr
   void viewport.capture().catch((error) => { if (current()) onError?.(error); });
 }
 
+interface ReplayScales { readonly scalar: number; readonly deformation: number }
+
 function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel,
-  solverCase?: string) {
+  solverCase?: string, replay?: ReplayScales) {
   const { dimensions, cellSize, anchor } = model.grid;
   const grid = { dimensions: [dimensions.width, dimensions.height, dimensions.depth] as const, cellSize, origin: anchor.position, active: new Uint8Array(dimensions.width * dimensions.height * dimensions.depth).map((_value, index) => model.currentInstances.includes(index) ? 1 : 0) };
   if (model.densityField) viewport.setResultLayer("topology", { density: model.densityField, ...grid });
+  for (const layer of ["displacement", "displacementMagnitude", "stress", "temperature", "flux"] as const) {
+    viewport.setResultLayer(layer, undefined);
+  }
   const field = model.analysisField;
   if (!field) return;
   const active = solverCase ? field.cases?.[solverCase] : undefined;
-  const scalar = { values: active?.values ?? field.values, maximum: active?.maximum ?? field.maximum, ...grid };
+  const scalar = { values: active?.values ?? field.values, maximum: active?.maximum ?? field.maximum,
+    ...(replay ? { scalarScale: replay.scalar } : {}), ...grid };
   if (field.kind === "heat-flux") {
     if (!field.vectors || field.vectorUnit !== "W/m^2") {
       throw new Error("heat-flux fields require signed W/m^2 vectors");
@@ -61,6 +68,12 @@ function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewpo
   } else if (field.kind === "displacement-magnitude") {
     viewport.setResultLayer("displacementMagnitude", scalar);
   } else viewport.setResultLayer(field.kind === "safety" ? "stress" : field.kind, scalar);
+  if (active?.deformation) viewport.setResultLayer("displacement", {
+    ...grid, values: active.deformation.values, maximum: active.deformation.maximum,
+    vectors: active.deformation.vectors, displacementUnit: active.deformation.displacementUnit,
+    sourceDisplacementUnit: active.deformation.sourceDisplacementUnit,
+    deformationScale: replay?.deformation ?? 1,
+  });
 }
 
 export async function mountSemanticFieldSession(
@@ -89,9 +102,23 @@ export async function mountSemanticFieldSession(
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
   let flightFrameActive = false;
-  let activeSolverCase: string | undefined;
+  let presenting = false, presentPending = false;
   let generation = 0;
   const current = (request: number) => !disposed && generation === request;
+  const presentLatest = () => {
+    if (disposed) return;
+    presentPending = true;
+    if (presenting) return;
+    presenting = true;
+    void (async () => {
+      while (presentPending && !disposed) {
+        presentPending = false;
+        try { await viewport.present(); }
+        catch (error) { if (!disposed) onError?.(error); }
+      }
+      presenting = false;
+    })();
+  };
   const setDocument = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
     const parts = await materializeSemanticModelParts(source.assemblyParts ?? []);
     if (!current(request)) return false;
@@ -99,9 +126,8 @@ export async function mountSemanticFieldSession(
     const artifact = semanticArtifactFromViewerModel({ ...source, assemblyParts }, sourceRevision);
     currentArtifact = artifact;
     viewport.setDocument(artifact);
-    for (const layer of ["topology", "displacement", "displacementMagnitude", "stress", "temperature", "flux"] as const) viewport.setResultLayer(layer, undefined);
+    viewport.setResultLayer("topology", undefined);
     analysisLayers(viewport, source);
-    activeSolverCase = undefined;
     return true;
   };
   const captureRevision = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
@@ -185,19 +211,19 @@ export async function mountSemanticFieldSession(
       if (!frame) {
         if (!flightFrameActive) return;
         flightFrameActive = false;
-        activeSolverCase = undefined;
         analysisLayers(viewport, currentModel);
         viewport.setMechanismFrame(undefined);
-        show(viewport, onError);
+        presentLatest();
         return;
       }
       flightFrameActive = true;
-      if (activeSolverCase !== frame.solverCase) {
-        activeSolverCase = frame.solverCase;
-        analysisLayers(viewport, currentModel, frame.solverCase);
-      }
+      const interpolation = structuralReplayInterpolation(frame);
+      analysisLayers(viewport, currentModel, frame.solverCase, {
+        scalar: Math.abs(interpolation),
+        deformation: interpolation * STRUCTURAL_DEFORMATION_EXAGGERATION,
+      });
       viewport.setMechanismFrame({ componentId: "assembly:design", transform: flightFrameTransform(frame.attitudeRad) });
-      show(viewport, onError);
+      presentLatest();
     },
     setReferenceGridVisible(visible) { viewport.setGridVisible(visible); show(viewport, onError); },
     setView(view) { viewport.setView(view); show(viewport, onError); },

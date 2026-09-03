@@ -5,11 +5,13 @@ export interface FieldGrid {
   readonly origin: readonly [number, number, number];
   readonly active: Uint8Array;
 }
-interface ScalarField extends FieldGrid { readonly values: Float32Array; readonly maximum: number }
+interface ScalarField extends FieldGrid { readonly values: Float32Array; readonly maximum: number;
+  readonly scalarScale?: number }
 export interface ResultLayerPayloads {
   readonly topology: FieldGrid & { readonly density: Float32Array };
   readonly displacement: ScalarField & { readonly vectors: Float32Array;
-    readonly displacementUnit: "mm"; readonly sourceDisplacementUnit?: "m" | "mm" };
+    readonly displacementUnit: "mm"; readonly sourceDisplacementUnit?: "m" | "mm";
+    readonly deformationScale?: number };
   readonly displacementMagnitude: ScalarField;
   readonly stress: ScalarField;
   readonly temperature: ScalarField;
@@ -69,6 +71,9 @@ function validateField(layer: Exclude<ResultLayer, "mechanism">,
   if (!Number.isFinite(scalar.maximum) || scalar.maximum <= 0) {
     throw new RangeError(`${layer} maximum must be positive and finite`);
   }
+  if (scalar.scalarScale !== undefined && (!Number.isFinite(scalar.scalarScale) || scalar.scalarScale < 0)) {
+    throw new RangeError(`${layer} scalar scale must be non-negative and finite`);
+  }
   if (layer === "displacement") {
     const displacement = payload as ResultLayerPayloads["displacement"];
     if (displacement.displacementUnit !== "mm") {
@@ -79,6 +84,9 @@ function validateField(layer: Exclude<ResultLayer, "mechanism">,
       throw new Error("displacement source unit must be metres or millimetres");
     }
     finiteField(displacement.vectors, count * 3, "displacement vectors");
+    if (displacement.deformationScale !== undefined && !Number.isFinite(displacement.deformationScale)) {
+      throw new RangeError("displacement deformation scale must be finite");
+    }
   }
   if (layer === "flux") {
     const flux = payload as ResultLayerPayloads["flux"];

@@ -4,7 +4,8 @@ export interface FieldSample { readonly center: readonly [number, number, number
 export type SpatialVectorKind = "none" | "displacement" | "flux" | "displacement-and-flux";
 export interface SpatialRenderInput extends FieldDomain { readonly values: Float32Array;
   readonly maximum: number; readonly vectorKind: SpatialVectorKind;
-  readonly displacement?: Float32Array; readonly flux?: Float32Array }
+  readonly displacement?: Float32Array; readonly flux?: Float32Array;
+  readonly scalarScale?: number; readonly displacementScale?: number }
 export interface SpatialRenderSample { readonly center: readonly [number, number, number]; readonly colorValue: number; readonly fluxTo?: readonly [number, number, number] }
 
 function vector(values: Float32Array | undefined, cell: number): readonly [number, number, number] | undefined {
@@ -30,13 +31,17 @@ export function spatialRenderSamples(input: SpatialRenderInput): readonly Spatia
   const scale = Math.min(...input.cellSize) * .7;
   return fieldSamples(input, { scalar: input.values, displacement: input.displacement, flux: input.flux }).flatMap((sample) => {
     if (!sample.visible) return [];
+    const displacementScale = input.displacementScale ?? 1;
     const center: [number, number, number] = sample.displacement
-      ? [sample.center[0] + sample.displacement[0], sample.center[1] + sample.displacement[1],
-        sample.center[2] + sample.displacement[2]]
+      ? [sample.center[0] + sample.displacement[0] * displacementScale,
+        sample.center[1] + sample.displacement[1] * displacementScale,
+        sample.center[2] + sample.displacement[2] * displacementScale]
       : [...sample.center];
     const flux = sample.flux, magnitude = flux ? Math.hypot(...flux) : 0;
     const fluxTo: [number, number, number] | undefined = flux && magnitude > 0
       ? [center[0] + flux[0] / magnitude * scale, center[1] + flux[1] / magnitude * scale, center[2] + flux[2] / magnitude * scale] : undefined;
-    return [{ center, colorValue: Math.max(0, Math.min(1, (sample.scalar ?? 0) / Math.max(input.maximum, Number.EPSILON))), ...(fluxTo ? { fluxTo } : {}) }];
+    return [{ center, colorValue: Math.max(0, Math.min(1,
+      (sample.scalar ?? 0) * (input.scalarScale ?? 1) / Math.max(input.maximum, Number.EPSILON))),
+    ...(fluxTo ? { fluxTo } : {}) }];
   });
 }

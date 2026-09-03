@@ -22,7 +22,7 @@ function device() {
 }
 
 function renderer() {
-  return { render: vi.fn(async () => new Blob(["capture"])), dispose: vi.fn(),
+  return { render: vi.fn(async () => new Blob(["capture"])), present: vi.fn(async () => undefined), dispose: vi.fn(),
     onDeviceLost: vi.fn(), setInteractionHandlers: vi.fn() };
 }
 

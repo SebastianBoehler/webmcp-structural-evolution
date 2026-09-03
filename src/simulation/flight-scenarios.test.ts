@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { flightFrameAt, FLIGHT_SCENARIOS, structuralReplayScale } from "./flight-scenarios";
+import { flightFrameAt, FLIGHT_SCENARIOS, structuralReplayScale,
+  structuralReplayInterpolation, structuralReplaySignedScale } from "./flight-scenarios";
 
 const motors = [
   { id: "motor-east", centerM: [0.105, 0, 0] as const },
@@ -56,5 +57,16 @@ describe("flight scenario replay", () => {
       .toBeCloseTo(hoverN * 0.78 / (referenceMotorLoadN * 0.65), 12);
     expect(structuralReplayScale(flightFrameAt("yaw", 0.25, motors, massKg), referenceMotorLoadN))
       .toBeCloseTo(hoverN * 0.38 / (referenceMotorLoadN * 0.12), 12);
+    expect(structuralReplaySignedScale(flightFrameAt("roll", 0.25, motors, massKg), referenceMotorLoadN))
+      .toBeGreaterThan(0);
+    expect(structuralReplaySignedScale(flightFrameAt("roll", 0.75, motors, massKg), referenceMotorLoadN))
+      .toBeLessThan(0);
+  });
+
+  it("interpolates a visible signed cycle through each precomputed case", () => {
+    expect(structuralReplayInterpolation(flightFrameAt("hover", 0.5, motors, 0.495))).toBe(1);
+    expect(structuralReplayInterpolation(flightFrameAt("roll", 0, motors, 0.495))).toBeCloseTo(0);
+    expect(structuralReplayInterpolation(flightFrameAt("roll", 0.25, motors, 0.495))).toBeCloseTo(1);
+    expect(structuralReplayInterpolation(flightFrameAt("roll", 0.75, motors, 0.495))).toBeCloseTo(-1);
   });
 });

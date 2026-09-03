@@ -15,14 +15,18 @@ describe("FlightSimulationPanel", () => {
 
   it("exposes deterministic assembly load cases and their truthful boundary", () => {
     render(<FlightSimulationPanel motors={motors} massKg={0.515} componentCount={36} batteryMassKg={0.254}
-      onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()} />);
+      onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()}
+      caseMaximumDisplacementM={{ "collective-thrust": 0.000098 }} />);
     expect(screen.getByRole("button", { name: "Hover" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Aggressive roll" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Pitch brake" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Yaw burst" })).toBeVisible();
     expect(screen.getByText(/mass model: 515 g.*36 attached parts.*battery 254 g/i)).toBeVisible();
-    expect(screen.getByText(/shows the candidate's existing case estimate/i)).toBeVisible();
-    expect(screen.getByText(/does not re-solve, verify, or approve the design/i)).toBeVisible();
+    expect(screen.getByText("Hover")).toBeVisible();
+    expect(screen.getByText("0.098 mm")).toBeVisible();
+    expect(screen.getByText("1000× visual")).toBeVisible();
+    expect(screen.getByText(/color and deformation interpolate the precomputed linear-static case/i)).toBeVisible();
+    expect(screen.getByText(/no drone thermal field/i)).toBeVisible();
   });
 
   it("starts a selected replay and can isolate the drone", () => {

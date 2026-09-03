@@ -30,6 +30,7 @@ export function storeProbeResult(result: ProbeResult): ProbeResult {
         ...(result.analysis.cases ? { cases: Object.fromEntries(Object.entries(result.analysis.cases).map(
           ([loadCase, fields]) => [loadCase, fields ? {
             displacement: new Float32Array(fields.displacement),
+            displacementVectorsM: new Float32Array(fields.displacementVectorsM),
             stress: new Float32Array(fields.stress),
           } : undefined],
         )) } : {}),

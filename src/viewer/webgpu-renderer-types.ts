@@ -39,6 +39,7 @@ export type SemanticView = "isometric" | "top" | "front" | "right";
 
 export interface SemanticRenderer {
   render(state: SemanticRenderState): Promise<Blob>;
+  present(state: SemanticRenderState): Promise<void>;
   dispose(): void;
   onDeviceLost(info: { readonly reason: string; readonly message: string }): void;
   setInteractionHandlers?(handlers: SemanticInteractionHandlers): void;
@@ -74,6 +75,7 @@ export interface SemanticViewport {
   setGridVisible(visible: boolean): void;
   setTransformOptions(space: "world" | "local", snap: number | null): void;
   capture(signal?: AbortSignal): Promise<Blob>;
+  present(): Promise<void>;
   onDeviceLost(listener: (info: WebGpuDeviceLossInfo) => void): () => void;
   dispose(): void;
 }

@@ -21,6 +21,7 @@ describe("runTopologyProbe", () => {
       cases: {
         "collective-thrust": {
           displacement: new Float32Array(25 * 25 * 5).fill(0.1),
+          displacementVectorsM: new Float32Array(25 * 25 * 5 * 3).fill(-0.001),
           stress: new Float32Array(25 * 25 * 5).fill(2),
         },
       },
@@ -51,6 +52,8 @@ describe("runTopologyProbe", () => {
         iterations: 16,
       },
     });
+    expect(result.status === "estimate" && result.analysis?.cases?.["collective-thrust"])
+      .toMatchObject({ displacementVectorsM: expect.any(Float32Array) });
   });
 
   it("honors cancellation before entering Wasm", async () => {

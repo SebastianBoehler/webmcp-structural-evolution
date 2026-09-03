@@ -71,6 +71,29 @@ it("keeps topology result geometry in the replayed assembly frame", () => {
   )).toBeCloseTo(0, 6);
 });
 
+it("deforms topology cells and translates mounted components from the same signed field", () => {
+  const scene = new THREE.Scene();
+  addSemanticScene(THREE, scene, {
+    ...state,
+    resultLayers: { displacement: {
+      dimensions: [1, 1, 1], cellSize: [1, 1, 1], origin: [0, 0, 0],
+      active: new Uint8Array([1]), values: new Float32Array([.1]), maximum: .1,
+      vectors: new Float32Array([.1, -.2, .3]), displacementUnit: "mm",
+      sourceDisplacementUnit: "m", deformationScale: 10,
+    } },
+  }, false);
+
+  scene.getObjectByName("semantic:component:test")!.position.toArray().forEach((value, axis) => {
+    expect(value).toBeCloseTo([1, -2, 3][axis]!, 6);
+  });
+  const topology = scene.getObjectByProperty("isInstancedMesh", true) as THREE.InstancedMesh;
+  const matrix = new THREE.Matrix4();
+  topology.getMatrixAt(0, matrix);
+  new THREE.Vector3().setFromMatrixPosition(matrix).toArray().forEach((value, axis) => {
+    expect(value).toBeCloseTo([1.5, -1.5, 3.5][axis]!, 6);
+  });
+});
+
 it("highlights all component descendants but only the exact selected leaf", () => {
   const document = { ...state.document, nodes: [
     ...state.document.nodes,

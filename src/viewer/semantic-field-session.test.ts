@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 const viewport = vi.hoisted(() => ({
   capture: vi.fn(async () => new Blob()),
+  present: vi.fn<() => Promise<void>>(async () => undefined),
   dispose: vi.fn(),
   focus: vi.fn(),
   setDocument: vi.fn(),
@@ -58,6 +59,8 @@ beforeEach(() => {
   viewport.setDocument.mockReset();
   viewport.capture.mockReset();
   viewport.capture.mockResolvedValue(new Blob());
+  viewport.present.mockReset();
+  viewport.present.mockResolvedValue(undefined);
   materializer.materialize.mockReset();
   materializer.materialize.mockImplementation(async (parts) => parts);
 });
@@ -244,16 +247,22 @@ it("clears the mechanism layer and captures the baseline assembly pose when repl
     [{ componentId: "assembly:design", transform: expect.any(Array) }],
     [undefined],
   ]);
-  expect(viewport.capture).toHaveBeenCalledTimes(2);
+  expect(viewport.present).toHaveBeenCalledOnce();
+  expect(viewport.capture).not.toHaveBeenCalled();
   session.dispose();
 });
 
-it("shows one case field per replay selection and restores the envelope on pause", async () => {
+it("publishes signed case deformation and scalar load phase on every replay frame", async () => {
   const envelope = new Float32Array([40]);
   const roll = new Float32Array([12]);
+  const vectors = new Float32Array([1, -2, 3]);
   const replayModel = { ...(model as object), currentInstances: new Uint32Array([0]),
     densityField: new Float32Array([1]), analysisField: { kind: "stress", values: envelope,
-      maximum: 40, cases: { "roll-differential": { values: roll, maximum: 40 } } } } as never;
+      maximum: 40, cases: { "roll-differential": { values: roll, maximum: 40,
+        deformation: { values: new Float32Array([4]), vectors, maximum: 4,
+          displacementUnit: "mm", sourceDisplacementUnit: "m" } } } },
+    assemblyParts: [{ id: "east-load-vector", selectionId: "east", label: "load",
+      appearance: "generated", kind: "load-vector", center: [0, 0, 0], forceN: [0, 0, -18], length: 1 }] } as never;
   const session = await mountSemanticFieldSession(document.createElement("canvas"), replayModel, "replay:case");
   viewport.setResultLayer.mockClear();
   const frame = flightFrameAt("roll", 0.25, [
@@ -263,12 +272,38 @@ it("shows one case field per replay selection and restores the envelope on pause
 
   session.setFlightFrame(frame);
   session.setFlightFrame({ ...frame, timeS: 0.5 });
-  expect(viewport.setResultLayer.mock.calls.filter(([layer]) => layer === "stress")).toEqual([
-    ["stress", expect.objectContaining({ values: roll })],
-  ]);
+  expect(viewport.setResultLayer.mock.calls.filter(([layer, payload]) => layer === "stress" && payload))
+    .toHaveLength(2);
+  expect(viewport.setResultLayer).toHaveBeenCalledWith("displacement", expect.objectContaining({
+    vectors, deformationScale: expect.any(Number),
+  }));
+  expect(viewport.present).toHaveBeenCalled();
   session.setFlightFrame(undefined);
   expect(viewport.setResultLayer).toHaveBeenLastCalledWith("stress",
     expect.objectContaining({ values: envelope }));
+  session.dispose();
+});
+
+it("coalesces replay presentation while keeping the newest state", async () => {
+  let release!: () => void;
+  viewport.present.mockReturnValueOnce(new Promise<void>((resolve) => { release = resolve; }));
+  const replayModel = { ...(model as object), assemblyParts: [{ id: "east-load-vector",
+    selectionId: "east", label: "load", appearance: "generated", kind: "load-vector",
+    center: [0, 0, 0], forceN: [0, 0, -18], length: 1 }] } as never;
+  const session = await mountSemanticFieldSession(document.createElement("canvas"), replayModel, "replay:coalesce");
+  const frame = flightFrameAt("roll", 0.25, [
+    { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
+    { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },
+  ], 0.515);
+
+  session.setFlightFrame(frame);
+  session.setFlightFrame({ ...frame, timeS: .5 });
+  session.setFlightFrame({ ...frame, timeS: .75 });
+  expect(viewport.present).toHaveBeenCalledOnce();
+  release();
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(viewport.present).toHaveBeenCalledTimes(2);
   session.dispose();
 });
 

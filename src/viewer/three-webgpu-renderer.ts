@@ -131,36 +131,41 @@ export async function createThreeWebGpuRenderer(
     gizmo: () => gizmo,
   });
 
+  const present = async (state: Parameters<SemanticRenderer["render"]>[0]) => {
+    gizmo?.dispose();
+    gizmo = undefined;
+    release();
+    release = addSemanticScene(three, scene, state, gridVisible, pbr);
+    const bounds = semanticSceneBounds(three, scene);
+    const envelope = renderEnvelope(bounds.min.toArray(), bounds.max.toArray());
+    configureSemanticReferenceGrid(scene, bounds, envelope);
+    const selected = state.selection
+      ? scene.getObjectByName(`semantic:${state.selection}`)
+      : undefined;
+    gizmo = createSelectedSemanticGizmo(
+      three, scene, selected, transformSpace, Math.max(envelope.span * .3, .001),
+    );
+    const target = focused
+      ? new three.Box3()
+        .setFromObject(scene.getObjectByName(`semantic:${focused}`) ?? scene)
+        .getCenter(new three.Vector3())
+        .toArray()
+      : envelope.target;
+
+    const rect = (canvas.parentElement ?? canvas).getBoundingClientRect();
+    const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
+    frameData = { bounds, target };
+    navigation.frame(bounds, target, width / height);
+    sizeWebGpuCanvas(renderer, width, height);
+    await renderer.render(scene, camera);
+  };
+
   return {
     async render(state) {
-      gizmo?.dispose();
-      gizmo = undefined;
-      release();
-      release = addSemanticScene(three, scene, state, gridVisible, pbr);
-      const bounds = semanticSceneBounds(three, scene);
-      const envelope = renderEnvelope(bounds.min.toArray(), bounds.max.toArray());
-      configureSemanticReferenceGrid(scene, bounds, envelope);
-      const selected = state.selection
-        ? scene.getObjectByName(`semantic:${state.selection}`)
-        : undefined;
-      gizmo = createSelectedSemanticGizmo(
-        three, scene, selected, transformSpace, Math.max(envelope.span * .3, .001),
-      );
-      const target = focused
-        ? new three.Box3()
-          .setFromObject(scene.getObjectByName(`semantic:${focused}`) ?? scene)
-          .getCenter(new three.Vector3())
-          .toArray()
-        : envelope.target;
-
-      const rect = (canvas.parentElement ?? canvas).getBoundingClientRect();
-      const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
-      frameData = { bounds, target };
-      navigation.frame(bounds, target, width / height);
-      sizeWebGpuCanvas(renderer, width, height);
-      renderer.render(scene, camera);
+      await present(state);
       return blobFromCanvas(canvas);
     },
+    present,
     dispose() {
       if (disposed) return;
       disposed = true;

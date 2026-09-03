@@ -225,9 +225,10 @@ pub(crate) fn load_case_fields(
     grid: &Grid,
     springs: &[Spring],
     density: &[f32],
-) -> (Vec<f32>, Vec<f32>) {
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let mut displacement_fields = Vec::with_capacity(grid.load_cases.len() * density.len());
     let mut stress_fields = Vec::with_capacity(grid.load_cases.len() * density.len());
+    let mut displacement_vectors = Vec::with_capacity(grid.load_cases.len() * density.len() * 3);
     for load in &grid.load_cases {
         let displacement = solve(grid, springs, density, load);
         let mut displacement_field = vec![0.0_f32; density.len()];
@@ -256,6 +257,7 @@ pub(crate) fn load_case_fields(
         }
         displacement_fields.extend(displacement_field);
         stress_fields.extend(stress_field);
+        displacement_vectors.extend(displacement);
     }
-    (displacement_fields, stress_fields)
+    (displacement_fields, stress_fields, displacement_vectors)
 }

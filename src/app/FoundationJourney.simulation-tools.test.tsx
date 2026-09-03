@@ -34,6 +34,8 @@ test("an agent reviews successive candidate cases through the live Simulate dash
           "collective-thrust", "roll-differential", "pitch-differential", "yaw-torsion",
         ].map((id, index) => [id, {
           displacement: new Float32Array(input.values.length).fill((index + 1) / 1_000),
+          displacementVectorsM: new Float32Array(input.values.length * 3)
+            .fill((index + 1) / 1_000),
           stress: new Float32Array(input.values.length).fill((index + 1) * 4_000_000),
         }])),
       },
@@ -67,6 +69,9 @@ test("an agent reviews successive candidate cases through the live Simulate dash
   expect(screen.getByRole("button", { name: "Displacement" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("button", { name: "Frame only" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("button", { name: "Pause flight replay" })).toBeVisible();
+  expect(screen.getByText("Pitch brake")).toBeVisible();
+  expect(screen.getByText("3.00 mm")).toBeVisible();
+  expect(screen.getByText("1000× visual")).toBeVisible();
 
   await act(async () => {
     await context.execute("review_topology_case", {

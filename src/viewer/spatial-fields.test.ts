@@ -37,4 +37,16 @@ describe("spatial renderer inputs", () => {
     expect(displacement).toEqual(before);
     expect(values).toEqual(new Float32Array([1]));
   });
+
+  it("scales deformation with signed phase while color follows load magnitude", () => {
+    const base = { dimensions: [1, 1, 1] as const, cellSize: [2, 2, 2] as const,
+      origin: [0, 0, 0] as const, active: new Uint8Array([1]),
+      values: new Float32Array([4]), maximum: 8, vectorKind: "displacement" as const,
+      displacement: new Float32Array([1, -2, 0]) };
+
+    expect(spatialRenderSamples({ ...base, scalarScale: .5, displacementScale: 3 })[0])
+      .toMatchObject({ center: [4, -5, 1], colorValue: .25 });
+    expect(spatialRenderSamples({ ...base, scalarScale: .5, displacementScale: -3 })[0])
+      .toMatchObject({ center: [-2, 7, 1], colorValue: .25 });
+  });
 });

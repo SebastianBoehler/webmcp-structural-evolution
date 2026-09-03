@@ -65,6 +65,16 @@ export function structuralReplayScale(frame: FlightFrame, referenceMotorLoadN: n
   return differential / (referenceMotorLoadN * SOLVER_CASE_MOTOR_FACTOR[frame.solverCase]);
 }
 
+export function structuralReplaySignedScale(frame: FlightFrame, referenceMotorLoadN: number): number {
+  const magnitude = structuralReplayScale(frame, referenceMotorLoadN);
+  if (frame.scenario === "hover") return magnitude;
+  return Math.sign(wave(frame.timeS)) * magnitude;
+}
+
+export function structuralReplayInterpolation(frame: FlightFrame): number {
+  return frame.scenario === "hover" ? 1 : wave(frame.timeS);
+}
+
 export function flightFrameAt(
   scenario: FlightScenarioId,
   timeS: number,

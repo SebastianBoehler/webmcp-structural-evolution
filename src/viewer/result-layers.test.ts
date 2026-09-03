@@ -62,4 +62,17 @@ describe("result layers", () => {
       origin: [0, 0, 0], active: new Uint8Array([1, 1]),
       density: new Float32Array([.2, NaN]) })).toThrow("finite");
   });
+
+  it("accepts signed deformation phase but rejects invalid replay scales", () => {
+    const layers = createResultLayers();
+    const base = { dimensions: [1, 1, 1] as const, cellSize: [1, 1, 1] as const,
+      origin: [0, 0, 0] as const, active: new Uint8Array([1]),
+      values: new Float32Array([1]), maximum: 1 };
+    layers.set("displacement", { ...base, vectors: new Float32Array([1, 0, 0]),
+      displacementUnit: "mm", scalarScale: .5, deformationScale: -100 });
+    expect(layers.snapshot().displacement).toMatchObject({ scalarScale: .5, deformationScale: -100 });
+    expect(() => layers.set("stress", { ...base, scalarScale: -1 })).toThrow("scalar scale");
+    expect(() => layers.set("displacement", { ...base, vectors: new Float32Array(3),
+      displacementUnit: "mm", deformationScale: Number.NaN })).toThrow("deformation scale");
+  });
 });

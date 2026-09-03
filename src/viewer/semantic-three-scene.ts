@@ -6,6 +6,7 @@ import { spatialRenderSamples } from "./spatial-fields";
 import type { SemanticRenderState } from "./webgpu-renderer-types";
 import type { RenderEnvelope } from "./webgpu-renderer-helpers";
 import { addSemanticFluxArrows } from "./semantic-flux-arrows";
+import { sampleReplayDisplacement } from "./replay-deformation";
 
 export type SemanticPbrRole = "surface" | "field";
 export type SemanticPbrMaterial = THREE.Material & { readonly color: THREE.Color };
@@ -41,16 +42,19 @@ function addField(
   state: SemanticRenderState,
   pbr: SemanticPbrMaterialFactory,
 ) {
-  const layer = state.resultLayers.displacement ?? state.resultLayers.displacementMagnitude ?? state.resultLayers.stress
-    ?? state.resultLayers.temperature ?? state.resultLayers.flux ?? state.resultLayers.topology;
+  const layer = state.resultLayers.stress ?? state.resultLayers.temperature ?? state.resultLayers.flux
+    ?? state.resultLayers.displacementMagnitude ?? state.resultLayers.displacement ?? state.resultLayers.topology;
   if (!layer?.dimensions || !layer.cellSize || !layer.origin || !layer.active) return;
   const values = "values" in layer ? layer.values : layer.density;
   const maximum = "maximum" in layer ? Math.max(layer.maximum, Number.EPSILON) : 1;
   const samples = spatialRenderSamples({
     dimensions: layer.dimensions, cellSize: layer.cellSize, origin: layer.origin,
     active: layer.active, values, maximum,
-    vectorKind: layer === state.resultLayers.displacement ? "displacement"
-      : layer === state.resultLayers.flux ? "flux" : "none",
+    scalarScale: "scalarScale" in layer ? layer.scalarScale : undefined,
+    displacementScale: state.resultLayers.displacement?.deformationScale,
+    vectorKind: state.resultLayers.displacement && state.resultLayers.flux
+      ? "displacement-and-flux" : state.resultLayers.displacement ? "displacement"
+        : state.resultLayers.flux ? "flux" : "none",
     ...(state.resultLayers.displacement?.vectors ? { displacement: state.resultLayers.displacement.vectors } : {}),
     ...(state.resultLayers.flux?.vectors ? { flux: state.resultLayers.flux.vectors } : {}),
   });
@@ -142,6 +146,16 @@ export function addSemanticScene(three: typeof THREE, scene: THREE.Scene, state:
     addNode(three, group, node, selected.has(node.id), state, pbr);
   }
   const frame = state.resultLayers.mechanism;
+  const deformation = state.resultLayers.displacement;
+  if (deformation?.deformationScale) for (const node of state.document.nodes) {
+    if (node.kind !== "component") continue;
+    const group = groups.get(node.id);
+    if (!group) continue;
+    group.position.add(new three.Vector3(...sampleReplayDisplacement(
+      deformation, deformation.vectors, group.position.toArray() as [number, number, number],
+      deformation.deformationScale,
+    )));
+  }
   if (frame) groups.get(frame.componentId)?.matrix.fromArray(frame.transform).decompose(
     groups.get(frame.componentId)!.position, groups.get(frame.componentId)!.quaternion, groups.get(frame.componentId)!.scale,
   );

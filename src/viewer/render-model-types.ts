@@ -25,6 +25,7 @@ export interface ScalarAnalysisField {
 export interface ScalarAnalysisCaseField {
   readonly values: Float32Array;
   readonly maximum: number;
+  readonly deformation?: import("./replay-deformation").ReplayDeformation;
 }
 
 export type AssemblyMaterialToken =

@@ -136,6 +136,7 @@ pub struct TopologyResult {
     pub stress: Vec<f32>,
     pub case_displacement: Vec<f32>,
     pub case_stress: Vec<f32>,
+    pub case_displacement_vectors_m: Vec<f32>,
     pub passive_solid_indices: Vec<usize>,
     pub passive_void_indices: Vec<usize>,
     pub initial_compliance: f32,
@@ -189,6 +190,10 @@ impl WasmTopologyResult {
     #[wasm_bindgen(getter)]
     pub fn case_stress(&self) -> Vec<f32> {
         self.inner.case_stress.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn case_displacement_vectors_m(&self) -> Vec<f32> {
+        self.inner.case_displacement_vectors_m.clone()
     }
     #[wasm_bindgen(getter)]
     pub fn initial_compliance(&self) -> f32 {

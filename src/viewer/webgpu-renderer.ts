@@ -119,6 +119,22 @@ export async function createSemanticViewport(
       if (signal?.aborted) throw abortError();
       return output;
     },
+    async present() {
+      if (disposed) {
+        throw new Error("WebGPU viewport is unavailable after disposal or device loss.");
+      }
+      if (!document) {
+        throw new Error("A semantic document artifact is required before presentation.");
+      }
+      await renderer.present({
+        document,
+        revision: document.revision,
+        selection,
+        resultLayers: layers.snapshot(),
+        sectionPlane,
+        measurements,
+      });
+    },
     onDeviceLost(listener) {
       if (disposed) return () => undefined;
       lossListeners.add(listener);

@@ -42,6 +42,7 @@ export interface TopologyOptimizationResult {
   readonly stress: Float32Array;
   readonly cases: Readonly<Record<string, {
     readonly displacement: Float32Array;
+    readonly displacementVectorsM: Float32Array;
     readonly stress: Float32Array;
   }>>;
   readonly metrics: {
@@ -106,6 +107,7 @@ export async function optimizeTopology(
   const stress = result.stress;
   const caseIds = result.case_ids;
   const caseDisplacement = result.case_displacement;
+  const caseDisplacementVectorsM = result.case_displacement_vectors_m;
   const caseStress = result.case_stress;
   const metrics = {
     initialCompliance: result.initial_compliance,
@@ -133,11 +135,19 @@ export async function optimizeTopology(
   const validCaseAnalysis = validCaseIds && [caseDisplacement, caseStress].every((field) => field instanceof Float32Array
     && field.length === expectedLength * caseCount
     && field.every((value) => finite(value) && value >= 0));
-  if (!validDimensions || !validMetrics || !validDensity || !validAnalysis || !validCaseIds || !validCaseAnalysis) {
+  const validCaseVectors = caseDisplacementVectorsM instanceof Float32Array
+    && caseDisplacementVectorsM.length === expectedLength * caseCount * 3
+    && caseDisplacementVectorsM.every(finite);
+  if (!validDimensions || !validMetrics || !validDensity || !validAnalysis || !validCaseIds
+    || !validCaseAnalysis || !validCaseVectors) {
     throw new Error("Invalid topology result returned by the Wasm solver.");
   }
   const cases = Object.fromEntries((caseIds as string[]).map((loadCase, index) => [loadCase, {
     displacement: new Float32Array(caseDisplacement.slice(index * expectedLength, (index + 1) * expectedLength)),
+    displacementVectorsM: new Float32Array(caseDisplacementVectorsM.slice(
+      index * expectedLength * 3,
+      (index + 1) * expectedLength * 3,
+    )),
     stress: new Float32Array(caseStress.slice(index * expectedLength, (index + 1) * expectedLength)),
   }]));
   return {

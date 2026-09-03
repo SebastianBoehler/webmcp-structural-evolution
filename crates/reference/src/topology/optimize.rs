@@ -442,7 +442,8 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
     }
     let (final_compliance, max_displacement, _, max_stress, displacement, stress) =
         compliance_and_sensitivity(&grid, &springs, &density);
-    let (case_displacement, case_stress) = load_case_fields(&grid, &springs, &density);
+    let (case_displacement, case_stress, case_displacement_vectors_m) =
+        load_case_fields(&grid, &springs, &density);
     TopologyResult {
         dimensions: grid.dimensions,
         case_ids: grid.load_case_ids.clone(),
@@ -464,6 +465,7 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
         stress,
         case_displacement,
         case_stress,
+        case_displacement_vectors_m,
         initial_compliance,
         final_compliance,
         max_displacement,

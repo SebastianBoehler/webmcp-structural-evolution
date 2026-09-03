@@ -1,5 +1,6 @@
 import type { StructuralAnalysisFields, TopologyMetrics } from "../gpu/compute-probe";
 import type { ScalarAnalysisCaseField, ScalarAnalysisField } from "./render-envelope";
+import type { ReplayDeformation } from "./replay-deformation";
 
 type AnalysisLayer = "displacement" | "stress" | "safety";
 
@@ -13,7 +14,20 @@ function cases(
   return Object.fromEntries(Object.entries(analysis.cases).flatMap(([loadCase, value]) => {
     if (!value) return [];
     const values = convert(value[field]);
-    const result: ScalarAnalysisCaseField = { values, maximum };
+    const vectorsM = value.displacementVectorsM;
+    let deformation: ReplayDeformation | undefined;
+    if (vectorsM) {
+      const vectors = Float32Array.from(vectorsM, (entry) => entry * 1_000);
+      let peak = 0;
+      for (let index = 0; index < vectors.length; index += 3) {
+        peak = Math.max(peak, Math.hypot(vectors[index]!, vectors[index + 1]!, vectors[index + 2]!));
+      }
+      deformation = { values: Float32Array.from(value.displacement, (entry) => entry * 1_000),
+        vectors, maximum: Math.max(peak, Number.EPSILON),
+        displacementUnit: "mm", sourceDisplacementUnit: "m" };
+    }
+    const result: ScalarAnalysisCaseField = { values, maximum,
+      ...(deformation ? { deformation } : {}) };
     return [[loadCase, result]];
   })) as ScalarAnalysisField["cases"];
 }

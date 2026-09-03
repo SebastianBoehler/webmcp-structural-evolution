@@ -25,6 +25,7 @@ import { probeCopy } from "./probe-copy";
 import { useVisibleAssemblyParts } from "./use-visible-assembly-parts";
 import { deriveResponsivePanelState, useWorkbenchUiState } from "./use-workbench-ui-state";
 import { useAgentSimulation } from "./use-agent-simulation";
+import { simulationCaseMaximumDisplacementM, simulationViewerStatus } from "./simulation-view-copy";
 export function FoundationJourney({
   capability,
   compute,
@@ -73,6 +74,9 @@ export function FoundationJourney({
   const [error, setError] = useState<string>();
 
   const { accepted, preview, alternatives, viewerCurrent, viewerAlternatives, currentVerified, currentBranches } = foundationView(state);
+  const caseMaximumDisplacementM = useMemo(
+    () => simulationCaseMaximumDisplacementM(viewerCurrent), [viewerCurrent],
+  );
   const { nextVariant, pendingPromotion, pendingEstimate, readyToCompare, primaryLabel, primaryDisabled } = deriveOptimizationNavigation(
     state, currentBranches, accepted !== undefined, currentVerified.length, workspace.layoutState === "verified",
     fixture.topologySubject,
@@ -210,8 +214,10 @@ export function FoundationJourney({
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
               analysisLayer={analysisLayer}
-              statusText={workspaceMode === "simulate" ? undefined : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
-                pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
+              statusText={workspaceMode === "simulate"
+                ? simulationViewerStatus(simulationActive, fixture.supportsFlightReplay, pendingEstimate !== undefined)
+                : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
+                  pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
               flightFrameSource={simulation.frameChannel}
               editingEnabled={workspaceMode === "assembly"}
               environment={viewerEnvironment}
@@ -254,6 +260,7 @@ export function FoundationJourney({
                 onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
+                caseMaximumDisplacementM={caseMaximumDisplacementM}
                 command={simulation.command}
             />}
             <FoundationJourneyReviewDock

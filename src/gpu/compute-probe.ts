@@ -52,6 +52,7 @@ export interface StructuralAnalysisFields {
 
 export interface StructuralAnalysisCaseFields {
   readonly displacement: Float32Array;
+  readonly displacementVectorsM: Float32Array;
   readonly stress: Float32Array;
 }
 

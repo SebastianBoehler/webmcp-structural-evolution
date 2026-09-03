@@ -7,6 +7,7 @@ import {
   type FlightMotor,
   type FlightScenarioId,
 } from "./flight-scenarios";
+import { STRUCTURAL_DEFORMATION_EXAGGERATION } from "../viewer/replay-deformation";
 import "./flight-simulation-panel.css";
 
 export interface FlightSimulationPanelProps {
@@ -18,6 +19,7 @@ export interface FlightSimulationPanelProps {
   readonly onActiveChange?: (active: boolean) => void;
   readonly componentsVisible: boolean;
   readonly onComponentsVisibleChange: (visible: boolean) => void;
+  readonly caseMaximumDisplacementM?: Readonly<Record<string, number | undefined>>;
   readonly command?: FlightReplayCommand;
 }
 
@@ -37,6 +39,7 @@ export function FlightSimulationPanel({
   onActiveChange,
   componentsVisible,
   onComponentsVisibleChange,
+  caseMaximumDisplacementM,
   command,
 }: FlightSimulationPanelProps) {
   const [scenario, setScenario] = useState<FlightScenarioId>("hover");
@@ -79,6 +82,8 @@ export function FlightSimulationPanel({
   }, [massKg, motors, running, scenario]);
 
   const toggleRunning = () => setRunning((active) => !active);
+  const activeCase = FLIGHT_SCENARIOS.find(({ id }) => id === scenario)!;
+  const physicalPeakM = caseMaximumDisplacementM?.[activeCase.solverCase];
 
   if (motors.length !== 4) return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
@@ -115,7 +120,15 @@ export function FlightSimulationPanel({
           >{item.label}</button>
         ))}
       </div>
-      <p>{FLIGHT_SCENARIOS.find(({ id }) => id === scenario)!.description}{scenario === "yaw" && " Displayed vectors are tangential X/Y loads producing torque about Z."}</p>
+      <p>{activeCase.description}{scenario === "yaw" && " Displayed vectors are tangential X/Y loads producing torque about Z."}</p>
+      <dl className="flight-simulation__field-basis" aria-label="Replay field basis">
+        <div><dt>Active case</dt><dd>{activeCase.label} · {activeCase.solverCase}</dd></div>
+        {physicalPeakM !== undefined && Number.isFinite(physicalPeakM) && <div>
+          <dt>Physical peak</dt><dd>{physicalPeakM * 1_000 > 0 && physicalPeakM * 1_000 < 0.1
+            ? (physicalPeakM * 1_000).toFixed(3) : number(physicalPeakM * 1_000)} mm</dd>
+        </div>}
+        <div><dt>Deformation</dt><dd>{STRUCTURAL_DEFORMATION_EXAGGERATION}× visual</dd></div>
+      </dl>
       {frame && <dl className="flight-simulation__metrics">
         <div><dt>Load factor</dt><dd>{number(frame.loadFactorG)} g</dd></div>
         <div><dt>Thrust</dt><dd>{number(frame.resultantForceN[2])} N</dd></div>
@@ -129,7 +142,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>Shows the candidate's existing case estimate. Replay follows the current assembly; it does not re-solve, verify, or approve the design.</small>
+      <small>Color and deformation interpolate the precomputed linear-static case; replay does not re-solve, verify, or approve it. Structural only—no drone thermal field.</small>
     </aside>
   );
 }

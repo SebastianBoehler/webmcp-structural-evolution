@@ -15,7 +15,8 @@ const documentArtifact = Object.freeze({
 
 interface TestEnvironment extends SemanticViewportEnvironment {
   readonly loseDevice: (info: { reason: string; message: string }) => void;
-  readonly renderer: { readonly render: ReturnType<typeof vi.fn>; readonly dispose: ReturnType<typeof vi.fn>; readonly onDeviceLost: ReturnType<typeof vi.fn> };
+  readonly renderer: { readonly render: ReturnType<typeof vi.fn>; readonly present: ReturnType<typeof vi.fn>;
+    readonly dispose: ReturnType<typeof vi.fn>; readonly onDeviceLost: ReturnType<typeof vi.fn> };
   readonly destroy: ReturnType<typeof vi.fn>;
 }
 
@@ -24,6 +25,7 @@ function environment(): TestEnvironment {
   const lost = new Promise<{ reason: string; message: string }>((resolve) => { loseDevice = resolve; });
   const renderer = {
     render: vi.fn(async () => new Blob(["capture"], { type: "image/png" })),
+    present: vi.fn(async () => undefined),
     dispose: vi.fn(), onDeviceLost: vi.fn(),
   };
   const destroy = vi.fn();
@@ -76,6 +78,10 @@ describe("createSemanticViewport", () => {
     expect(runtime.renderer.render).toHaveBeenCalledWith(expect.objectContaining({
       revision: "rev-1", selection: "face:top", resultLayers: expect.objectContaining({ stress: expect.any(Object) }),
       sectionPlane: { normal: [0, 0, 1], constant: 2 }, measurements: [{ from: [0, 0, 0], to: [3, 4, 0] }],
+    }));
+    await viewport.present();
+    expect(runtime.renderer.present).toHaveBeenCalledWith(expect.objectContaining({
+      revision: "rev-1", selection: "face:top",
     }));
     viewport.setDocument({ ...documentArtifact, revision: "rev-2" });
     await viewport.capture();

@@ -33,6 +33,10 @@ describe("relativeL2", () => {
       displacement: new Float32Array([0, 0.1, 0.2, 0.3, 0.4, 0.42]),
       stress: new Float32Array([1, 2, 3, 4, 5, 12]),
       case_displacement: new Float32Array(24).fill(0.2),
+      case_displacement_vectors_m: Float32Array.from(
+        { length: 72 },
+        (_value, index) => index % 3 === 0 ? -(index + 1) / 1_000 : 0,
+      ),
       case_stress: new Float32Array(24).fill(3),
       initial_compliance: 18,
       final_compliance: 7,
@@ -133,6 +137,8 @@ describe("relativeL2", () => {
     expect(result.displacement).toHaveLength(6);
     expect(result.stress).toHaveLength(6);
     expect(result.cases["roll-differential"].stress).toEqual(new Float32Array(6).fill(3));
+    expect(result.cases["roll-differential"].displacementVectorsM[0]).toBeLessThan(0);
+    expect(result.cases["roll-differential"].displacementVectorsM).toHaveLength(18);
     expect(result.metrics).toEqual({
       initialCompliance: 18,
       finalCompliance: 7,
@@ -149,6 +155,7 @@ describe("relativeL2", () => {
       ...wasm.optimize(),
       case_ids: ["payload-down", "emergency-side"],
       case_displacement: new Float32Array(12).fill(0.2),
+      case_displacement_vectors_m: new Float32Array(36).fill(-0.001),
       case_stress: new Float32Array(12).fill(3),
     });
     const { optimizeTopology } = await import("./index");
@@ -157,6 +164,9 @@ describe("relativeL2", () => {
 
     expect(Object.keys(result.cases)).toEqual(["payload-down", "emergency-side"]);
     expect(result.cases["emergency-side"]?.stress).toEqual(new Float32Array(6).fill(3));
+    expect(result.cases["emergency-side"]?.displacementVectorsM).toEqual(
+      new Float32Array(18).fill(-0.001),
+    );
   });
 
   it("rejects invalid Wasm topology output instead of rendering it", async () => {
@@ -169,6 +179,7 @@ describe("relativeL2", () => {
       displacement: new Float32Array([1]),
       stress: new Float32Array([1]),
       case_displacement: new Float32Array([1]),
+      case_displacement_vectors_m: new Float32Array([1]),
       case_stress: new Float32Array([1]),
       initial_compliance: 18,
       final_compliance: Number.NaN,

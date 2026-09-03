@@ -101,9 +101,18 @@ describe("full live assembly Wasm solve", () => {
         "rated-payload-gravity", "emergency-stop", "lateral-disturbance",
       ]);
       expect(result.density).toHaveLength(fieldLength);
-      expect(result.case_displacement).toHaveLength(fieldLength * 3);
+      const caseDisplacement = result.case_displacement;
+      const caseVectors = result.case_displacement_vectors_m;
+      expect(caseDisplacement).toHaveLength(fieldLength * 3);
+      expect(caseVectors).toHaveLength(fieldLength * 3 * 3);
       expect(result.case_stress).toHaveLength(fieldLength * 3);
       expect(result.final_compliance).toBeGreaterThan(0);
+      expect(caseVectors.some((value) => value !== 0)).toBe(true);
+      for (let node = 0; node < fieldLength; node += 997) {
+        const offset = node * 3;
+        expect(Math.hypot(caseVectors[offset]!, caseVectors[offset + 1]!, caseVectors[offset + 2]!))
+          .toBeCloseTo(caseDisplacement[node]!, 6);
+      }
       const [width, height, depth] = [48, 32, 16] as const;
       const region = (xCenter: number) => Array.from({ length: fieldLength }, (_, index) => index).filter((index) => {
         const z = Math.floor(index / (width * height));

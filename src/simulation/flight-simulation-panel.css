@@ -33,10 +33,16 @@
 .flight-simulation__scenarios button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 .flight-simulation__view { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
 .flight-simulation__scenarios { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem; }
+.flight-simulation__field-basis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.25rem; margin: 0; }
+.flight-simulation__field-basis div { min-width: 0; padding: 0.35rem 0.4rem; border-radius: var(--radius-sm); background: var(--surface-canvas); }
+.flight-simulation__field-basis dt { color: var(--text-secondary); font-size: var(--text-caption); }
+.flight-simulation__field-basis dd { margin: 0.12rem 0 0; color: var(--text-primary); font-size: var(--text-caption); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .flight-simulation__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 0.8rem; }
 .flight-simulation__metrics dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .flight-simulation__run { width: 100%; min-height: 2.25rem; color: var(--accent-ink); background: var(--accent); box-shadow: none; }
 @container (max-width: 26rem) {
   .flight-simulation__scenarios { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .flight-simulation__field-basis { grid-template-columns: 1fr 1fr; }
+  .flight-simulation__field-basis div:first-child { grid-column: 1 / -1; }
   .flight-simulation__metrics { grid-template-columns: 1fr; }
 }

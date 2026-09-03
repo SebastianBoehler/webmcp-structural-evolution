@@ -95,15 +95,27 @@ fn near_void_stabilization_springs_do_not_define_printed_peak_stress() {
 #[test]
 fn exports_one_structural_field_per_load_case() {
     let mut grid = two_node_grid();
-    grid.load_cases.push(vec![0.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
-    let (displacement, stress) = load_case_fields(&grid, &springs(&grid), &[1.0, 1.0]);
+    grid.load_cases.push(vec![0.0, 0.0, 0.0, -2.0, 0.0, 0.0]);
+    let (displacement, stress, vectors) = load_case_fields(&grid, &springs(&grid), &[1.0, 1.0]);
 
     assert_eq!(displacement.len(), grid.node_count() * 2);
     assert_eq!(stress.len(), grid.node_count() * 2);
+    assert_eq!(vectors.len(), grid.node_count() * 2 * 3);
+    assert_eq!(&vectors[..3], &[0.0, 0.0, 0.0]);
+    assert_eq!(
+        &vectors[grid.node_count() * 3..grid.node_count() * 3 + 3],
+        &[0.0, 0.0, 0.0]
+    );
+    assert!(vectors[3] > 0.0);
+    assert!(vectors[grid.node_count() * 3 + 3] < 0.0);
     assert!(
         displacement[grid.node_count()..].iter().sum::<f32>()
             > displacement[..grid.node_count()].iter().sum::<f32>()
     );
+    for (magnitude, vector) in displacement.iter().zip(vectors.chunks_exact(3)) {
+        let recomputed = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        assert!((magnitude - recomputed).abs() <= f32::EPSILON);
+    }
 }
 
 #[test]
