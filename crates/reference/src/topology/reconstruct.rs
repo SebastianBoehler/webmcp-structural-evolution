@@ -23,6 +23,100 @@ fn occupied_face_neighbor_count(grid: &Grid, occupied: &[bool], index: usize) ->
         .count()
 }
 
+fn connected_retained_component(grid: &Grid, occupied: &[bool]) -> Vec<bool> {
+    let mut connected = vec![false; occupied.len()];
+    let Some(start) = occupied.iter().position(|occupied| *occupied) else {
+        return connected;
+    };
+    let mut queue = std::collections::VecDeque::from([start]);
+    connected[start] = true;
+    while let Some(index) = queue.pop_front() {
+        for neighbor in face_neighbors(grid, index).into_iter().flatten() {
+            if occupied[neighbor] && !connected[neighbor] {
+                connected[neighbor] = true;
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    connected
+}
+
+fn density_guided_connector(
+    grid: &Grid,
+    solved_density: &[f32],
+    connected: &[bool],
+    occupied: &[bool],
+) -> Option<Vec<usize>> {
+    let mut seen = connected.to_vec();
+    let mut previous = vec![usize::MAX; occupied.len()];
+    let mut frontier = connected
+        .iter()
+        .enumerate()
+        .filter_map(|(index, connected)| connected.then_some(index))
+        .collect::<Vec<_>>();
+    while !frontier.is_empty() {
+        frontier.sort_by(|left, right| {
+            solved_density[*right]
+                .total_cmp(&solved_density[*left])
+                .then_with(|| left.cmp(right))
+        });
+        let mut next_previous = vec![usize::MAX; occupied.len()];
+        for parent in frontier {
+            for neighbor in face_neighbors(grid, parent).into_iter().flatten() {
+                if !seen[neighbor]
+                    && !grid.passive_void[neighbor]
+                    && next_previous[neighbor] == usize::MAX
+                {
+                    next_previous[neighbor] = parent;
+                }
+            }
+        }
+        let mut next = next_previous
+            .iter()
+            .enumerate()
+            .filter_map(|(index, parent)| (*parent != usize::MAX).then_some(index))
+            .collect::<Vec<_>>();
+        next.sort_by(|left, right| {
+            solved_density[*right]
+                .total_cmp(&solved_density[*left])
+                .then_with(|| left.cmp(right))
+        });
+        for &index in &next {
+            previous[index] = next_previous[index];
+        }
+        if let Some(goal) = next.iter().copied().find(|index| occupied[*index]) {
+            let mut path = vec![goal];
+            while previous[*path.last().expect("connector path has a goal")] != usize::MAX {
+                path.push(previous[*path.last().expect("connector path has a predecessor")]);
+            }
+            return Some(path);
+        }
+        for &index in &next {
+            seen[index] = true;
+        }
+        frontier = next;
+    }
+    None
+}
+
+fn connect_retained_components(grid: &Grid, solved_density: &[f32], occupied: &mut [bool]) {
+    loop {
+        let connected = connected_retained_component(grid, occupied);
+        if occupied
+            .iter()
+            .enumerate()
+            .all(|(index, occupied)| !occupied || connected[index])
+        {
+            return;
+        }
+        let connector = density_guided_connector(grid, solved_density, &connected, occupied)
+            .expect("cannot connect retained seeds through non-void cells");
+        for index in connector {
+            occupied[index] = true;
+        }
+    }
+}
+
 fn grow_face_connected_by_density(
     grid: &Grid,
     solved_density: &[f32],
@@ -87,6 +181,7 @@ pub(crate) fn reconstruct_load_path_web(
         .zip(&grid.passive_void)
         .map(|((path, solid), void)| !void && (*path || *solid))
         .collect::<Vec<_>>();
+    connect_retained_components(grid, solved_density, &mut occupied);
     grow_face_connected_by_density(grid, solved_density, &mut occupied, target);
     occupied
         .iter()
@@ -104,139 +199,5 @@ pub(crate) fn reconstruct_load_path_web(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::reconstruct_load_path_web;
-    use crate::topology::grid::Grid;
-
-    fn reconstruction_fixture() -> Grid {
-        Grid {
-            dimensions: [4, 3, 1],
-            coordinates: (0..12).map(|index| [index as f32, 0.0, 0.0]).collect(),
-            passive_solid: vec![
-                true, false, false, false, false, false, false, false, false, false, false, false,
-            ],
-            passive_void: vec![
-                false, false, false, false, false, true, false, false, false, false, false, false,
-            ],
-            fixed_dofs: vec![false; 36],
-            load_case_ids: vec![],
-            load_cases: vec![],
-            cell_size_m: [1.0, 1.0, 1.0],
-            youngs_modulus_pa: 1.0,
-            failure_stress_pa: 1.0,
-            minimum_load_path_width_m: 1.0,
-            minimum_frame_thickness_m: 1.0,
-            load_path_guides: vec![],
-        }
-    }
-
-    fn fixture_density() -> Vec<f32> {
-        vec![
-            1.0, 1.0, 0.95, 0.1, 0.6, 0.0, 0.8, 0.2, 0.15, 0.1, 0.01, 0.05,
-        ]
-    }
-
-    fn fixture_required_path() -> Vec<bool> {
-        vec![
-            false, true, false, false, false, false, false, false, false, false, false, false,
-        ]
-    }
-
-    fn non_void_count(grid: &Grid) -> usize {
-        grid.passive_void.iter().filter(|void| !**void).count()
-    }
-
-    fn material_fraction(grid: &Grid, density: &[f32]) -> f32 {
-        density
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !grid.passive_void[*index])
-            .map(|(_, density)| density)
-            .sum::<f32>()
-            / non_void_count(grid) as f32
-    }
-
-    fn occupied_cells_are_face_connected(grid: &Grid, density: &[f32], threshold: f32) -> bool {
-        let Some(start) = density.iter().position(|density| *density >= threshold) else {
-            return true;
-        };
-        let [width, height, depth] = grid.dimensions;
-        let mut seen = vec![false; density.len()];
-        let mut queue = std::collections::VecDeque::from([start]);
-        seen[start] = true;
-        while let Some(index) = queue.pop_front() {
-            let x = index % width;
-            let y = (index / width) % height;
-            let z = index / (width * height);
-            for [nx, ny, nz] in [
-                [x.wrapping_sub(1), y, z],
-                [x + 1, y, z],
-                [x, y.wrapping_sub(1), z],
-                [x, y + 1, z],
-                [x, y, z.wrapping_sub(1)],
-                [x, y, z + 1],
-            ] {
-                if nx >= width || ny >= height || nz >= depth {
-                    continue;
-                }
-                let neighbor = grid.index(nx, ny, nz);
-                if !seen[neighbor] && density[neighbor] >= threshold {
-                    seen[neighbor] = true;
-                    queue.push_back(neighbor);
-                }
-            }
-        }
-        density
-            .iter()
-            .enumerate()
-            .all(|(index, density)| *density < threshold || seen[index])
-    }
-
-    #[test]
-    fn reconstructed_web_preserves_seeds_voids_connectivity_and_target() {
-        let grid = reconstruction_fixture();
-        let solved = fixture_density();
-        let path = fixture_required_path();
-        let result = reconstruct_load_path_web(&grid, &solved, &path, 0.35);
-        assert!(path
-            .iter()
-            .enumerate()
-            .all(|(i, keep)| !keep || result[i] >= 0.32));
-        assert!(grid
-            .passive_void
-            .iter()
-            .enumerate()
-            .all(|(i, void)| !void || result[i] == 0.0));
-        assert!(occupied_cells_are_face_connected(&grid, &result, 0.32));
-        assert!(
-            (material_fraction(&grid, &result) - 0.35).abs() <= 1.0 / non_void_count(&grid) as f32
-        );
-    }
-
-    #[test]
-    fn reconstruction_is_deterministic_and_density_guided() {
-        let grid = reconstruction_fixture();
-        let solved = fixture_density();
-        let path = fixture_required_path();
-        let first = reconstruct_load_path_web(&grid, &solved, &path, 0.35);
-        let second = reconstruct_load_path_web(&grid, &solved, &path, 0.35);
-        assert_eq!(first, second);
-        assert!(first[2] > first[10]);
-    }
-
-    #[test]
-    fn reconstruction_targets_the_returned_density_fraction() {
-        let mut grid = reconstruction_fixture();
-        grid.dimensions = [10, 10, 1];
-        grid.coordinates = (0..100).map(|index| [index as f32, 0.0, 0.0]).collect();
-        grid.passive_solid = vec![true; 1];
-        grid.passive_solid.resize(100, false);
-        grid.passive_void = vec![false; 100];
-        grid.fixed_dofs = vec![false; 300];
-        let mut path = vec![false; 100];
-        path[1] = true;
-        let result = reconstruct_load_path_web(&grid, &vec![0.5; 100], &path, 0.26);
-
-        assert!((material_fraction(&grid, &result) - 0.26).abs() <= 1.0 / 100.0);
-    }
-}
+#[path = "reconstruct_tests.rs"]
+mod tests;
