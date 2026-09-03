@@ -106,10 +106,18 @@ function prepareViewer(
       current, alternatives, region, threshold, mode, selectedAlternative,
     );
     let currentInstances = visibleInstances(current.result.output, current.grid, threshold);
+    let densityField = current.result.output;
     let notice: string | undefined;
     if (mode === "audition") {
       const audition = extraction.layers.find((layer) => layer.branchRevision === selectedAlternative);
-      if (audition) currentInstances = audition.auditionInstances!;
+      if (audition) {
+        currentInstances = audition.auditionInstances!;
+        const selectedBranch = alternatives.find((branch) => branch.branchRevision === audition.branchRevision);
+        if (!selectedBranch || selectedBranch.result.status !== "verified") {
+          throw new Error("audition branch lost verified status");
+        }
+        densityField = selectedBranch.result.output;
+      }
       else notice = "Choose a verified alternative to audition. The accepted field remains visible.";
     }
     let analysisField: ScalarAnalysisField | undefined;
@@ -121,11 +129,7 @@ function prepareViewer(
       model: {
         grid: current.grid,
         currentInstances,
-        densityField: mode === "audition"
-          ? alternatives.find((branch) => branch.branchRevision === selectedAlternative)?.result.status === "verified"
-            ? (alternatives.find((branch) => branch.branchRevision === selectedAlternative)!.result as { output: Float32Array }).output
-            : current.result.output
-          : current.result.output,
+        densityField,
         ...(analysisField ? { analysisField } : {}),
         alternativeLayers: mode === "audition" ? [] : extraction.layers,
         assemblyParts,

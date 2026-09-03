@@ -7,10 +7,10 @@ import type { SemanticRenderState } from "./webgpu-renderer-types";
 
 function state(document: SemanticRenderState["document"], scale: number, scalarScale = 1): SemanticRenderState {
   const grid = { dimensions: [2, 1, 1] as const, cellSize: [1, 1, 1] as const,
-    origin: [0, 0, 0] as const, active: new Uint8Array([1, 1]) };
+    origin: [0, 0, 0] as const, active: new Uint8Array([1, 0]) };
   return { document, revision: document.revision, measurements: [], resultLayers: {
-    topology: { ...grid, density: new Float32Array([1, 1]) },
-    stress: { ...grid, values: new Float32Array([0, 10]), maximum: 10, scalarScale },
+    topology: { ...grid, density: new Float32Array([1, 0]) },
+    stress: { ...grid, values: new Float32Array([10, 0]), maximum: 10, scalarScale },
     displacement: { ...grid, values: new Float32Array([1, 2]), maximum: 2,
       vectors: new Float32Array([.1, 0, 0, .2, 0, 0]), displacementUnit: "mm",
       deformationScale: scale },
@@ -19,7 +19,7 @@ function state(document: SemanticRenderState["document"], scale: number, scalarS
   } };
 }
 
-it("updates replay matrices, colors, and mounted roots without replacing retained objects", () => {
+it("deforms and recolors retained topology surface vertices with replay fields", () => {
   const document = { revision: "retained", frame: { lengthUnit: "mm" as const,
     angleUnit: "radian" as const }, nodes: [
     { id: "assembly:design", kind: "assembly" as const },
@@ -28,22 +28,19 @@ it("updates replay matrices, colors, and mounted roots without replacing retaine
   ] };
   const scene = new THREE.Scene(), initial = state(document, 0, 0);
   addSemanticScene(THREE, scene, initial, false);
-  const field = scene.getObjectByName("semantic-result-field") as THREE.InstancedMesh;
+  const field = scene.getObjectByName("verified-topology-surface") as THREE.Mesh;
   const geometry = field.geometry, material = field.material;
-  const beforeColor = new THREE.Color();
-  field.getColorAt(1, beforeColor);
+  const beforePositions = Array.from(field.geometry.getAttribute("position").array);
+  const beforeColors = Array.from(field.geometry.getAttribute("color").array);
 
   expect(updateRetainedSemanticReplay(THREE, scene, initial, state(document, 10, 1))).toBe(true);
-  expect(scene.getObjectByName("semantic-result-field")).toBe(field);
+  expect(scene.getObjectByName("verified-topology-surface")).toBe(field);
   expect(field.geometry).toBe(geometry);
   expect(field.material).toBe(material);
-  const matrix = new THREE.Matrix4();
-  field.getMatrixAt(1, matrix);
-  expect(new THREE.Vector3().setFromMatrixPosition(matrix).x).toBeCloseTo(3.5);
+  expect(Array.from(field.geometry.getAttribute("position").array)).not.toEqual(beforePositions);
+  expect(Array.from(field.geometry.getAttribute("color").array)).not.toEqual(beforeColors);
+  expect(field.userData.deformationScale).toBe(10);
   expect(scene.getObjectByName("semantic:component:motor")!.position.x).toBeCloseTo(1.25);
-  const afterColor = new THREE.Color();
-  field.getColorAt(1, afterColor);
-  expect(afterColor.getHex()).not.toBe(beforeColor.getHex());
 });
 
 it("restores baseline transforms and rejects a changed semantic document", () => {

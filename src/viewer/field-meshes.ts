@@ -5,6 +5,12 @@ import type { CleanupLedger } from "./cleanup-ledger";
 import type { PackedInstances, VoxelGrid } from "./field-instances";
 import { createTopologySurface } from "./topology-surface";
 import type { ScalarAnalysisField } from "./render-envelope";
+import type { ReplayDeformation } from "./replay-deformation";
+import {
+  bindTopologySurfaceField,
+  colorTopologySurfaceField,
+  deformTopologySurface,
+} from "./topology-surface-field";
 
 export interface FieldMeshSet {
   readonly meshes: readonly THREE.InstancedMesh[];
@@ -13,27 +19,20 @@ export interface FieldMeshSet {
 }
 
 interface AnalysisSurface {
+  readonly mesh: THREE.Mesh;
   readonly geometry: THREE.BufferGeometry;
-  readonly fieldIndices: Uint32Array;
-  readonly envelopeUtilization: Float32Array;
-  utilization: Float32Array;
+  readonly envelopeValues: Float32Array;
+  readonly envelopeMaximum: number;
+  values: Float32Array;
+  maximum: number;
 }
 
 interface MeshOwnership extends Pick<CleanupLedger, "own"> {
   attach(mesh: THREE.Object3D): void;
 }
 
-const cold = new THREE.Color(0x16b9ff);
-const hot = new THREE.Color(0xff2d55);
-
 function colorAnalysisSurface(surface: AnalysisSurface, loadFactor = 1): void {
-  const colors = new Float32Array(surface.utilization.length * 3);
-  surface.utilization.forEach((value, index) => {
-    const color = cold.clone().lerp(hot, Math.min(1, value * loadFactor));
-    colors.set([color.r, color.g, color.b], index * 3);
-  });
-  surface.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  surface.geometry.getAttribute("color").needsUpdate = true;
+  colorTopologySurfaceField(surface.mesh, surface.values, surface.maximum, loadFactor);
 }
 
 export function updateAnalysisSurfaceLoadFactor(surfaces: readonly AnalysisSurface[], loadFactor: number): void {
@@ -42,7 +41,8 @@ export function updateAnalysisSurfaceLoadFactor(surfaces: readonly AnalysisSurfa
 
 export function restoreAnalysisSurfaceField(surfaces: readonly AnalysisSurface[]): void {
   for (const surface of surfaces) {
-    surface.utilization = surface.envelopeUtilization;
+    surface.values = surface.envelopeValues;
+    surface.maximum = surface.envelopeMaximum;
     colorAnalysisSurface(surface);
   }
 }
@@ -54,11 +54,23 @@ export function updateAnalysisSurfaceField(
   loadFactor: number,
 ): void {
   for (const surface of surfaces) {
-    surface.utilization = Float32Array.from(surface.fieldIndices, (fieldIndex) => (
-      Math.max(0, Math.min(1, values[fieldIndex]! / Math.max(maximum, 1e-12)))
-    ));
+    surface.values = values;
+    surface.maximum = maximum;
     colorAnalysisSurface(surface, loadFactor);
   }
+}
+
+export function updateAnalysisSurfaceDeformation(
+  surfaces: readonly AnalysisSurface[],
+  deformation: ReplayDeformation | undefined,
+  scale: number,
+): void {
+  for (const surface of surfaces) deformTopologySurface(surface.mesh, deformation ? {
+    vectors: deformation.vectors,
+    scale,
+    displacementUnit: deformation.displacementUnit,
+    sourceDisplacementUnit: deformation.sourceDisplacementUnit,
+  } : undefined);
 }
 
 function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshOwnership, analysis?: ScalarAnalysisField, ghosted = false) {
@@ -73,30 +85,21 @@ function densitySurface(grid: VoxelGrid, density: Float32Array, ownership: MeshO
   });
   ownership.own(() => material.dispose());
   const surface = createTopologySurface(grid, density, material);
+  const surfaceGrid = {
+    dimensions: [grid.dimensions.width, grid.dimensions.height, grid.dimensions.depth] as const,
+    cellSize: grid.cellSize,
+    origin: grid.anchor.position,
+  };
+  bindTopologySurfaceField(surface, surfaceGrid);
   let analysisSurface: AnalysisSurface | undefined;
   if (analysis) {
-    const position = surface.geometry.getAttribute("position");
-    const utilization = new Float32Array(position.count);
-    const fieldIndices = new Uint32Array(position.count);
-    const world = new THREE.Vector3();
-    const gridLocal = new THREE.Vector3();
-    const inverseAnchor = new THREE.Quaternion(...grid.anchor.orientation).invert();
-    for (let index = 0; index < position.count; index += 1) {
-      world.fromBufferAttribute(position, index);
-      surface.localToWorld(world);
-      gridLocal.copy(world).sub(new THREE.Vector3(...grid.anchor.position)).applyQuaternion(inverseAnchor);
-      const x = Math.max(0, Math.min(grid.dimensions.width - 1, Math.floor(gridLocal.x / grid.cellSize[0])));
-      const y = Math.max(0, Math.min(grid.dimensions.height - 1, Math.floor(gridLocal.y / grid.cellSize[1])));
-      const z = Math.max(0, Math.min(grid.dimensions.depth - 1, Math.floor(gridLocal.z / grid.cellSize[2])));
-      const fieldIndex = x + grid.dimensions.width * (y + grid.dimensions.height * z);
-      fieldIndices[index] = fieldIndex;
-      utilization[index] = Math.max(0, Math.min(1, analysis.values[fieldIndex]! / Math.max(analysis.maximum, 1e-12)));
-    }
     analysisSurface = {
+      mesh: surface,
       geometry: surface.geometry,
-      fieldIndices,
-      envelopeUtilization: utilization,
-      utilization,
+      envelopeValues: analysis.values,
+      envelopeMaximum: analysis.maximum,
+      values: analysis.values,
+      maximum: analysis.maximum,
     };
     colorAnalysisSurface(analysisSurface);
   }

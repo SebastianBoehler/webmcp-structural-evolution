@@ -115,6 +115,9 @@ describe("FieldViewer flight replay", () => {
           displacement: new Float32Array(4), stress: new Float32Array(4),
           cases: { "roll-differential": {
             displacement: new Float32Array([0, 0.2, 0, 1]), stress: new Float32Array([0, 10, 0, 2]),
+            displacementVectorsM: new Float32Array([
+              .001, 0, 0, .002, 0, 0, .001, 0, 0, .002, 0, 0,
+            ]),
           } },
         },
       },
@@ -128,15 +131,19 @@ describe("FieldViewer flight replay", () => {
     const geometry = surface.geometry;
     const material = surface.material;
     const before = Array.from(surface.geometry.getAttribute("color").array);
+    const beforePositions = Array.from(surface.geometry.getAttribute("position").array);
 
     channel.emit(flightFrameAt("roll", 0.25, [
       { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
       { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },
     ], 0.495));
     expect(Array.from(surface.geometry.getAttribute("color").array)).not.toEqual(before);
+    expect(Array.from(surface.geometry.getAttribute("position").array)).not.toEqual(beforePositions);
+    expect(surface.userData.deformationScale).not.toBe(0);
 
     channel.emit(undefined);
     expect(Array.from(surface.geometry.getAttribute("color").array)).toEqual(before);
+    expect(Array.from(surface.geometry.getAttribute("position").array)).toEqual(beforePositions);
     channel.emit(flightFrameAt("roll", 0, [
       { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
       { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },

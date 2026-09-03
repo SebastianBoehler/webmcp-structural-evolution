@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import * as THREE from "three";
 
-import { TOPOLOGY_ISOLATION, createTopologySurface } from "./topology-surface";
+import {
+  TOPOLOGY_ISOLATION,
+  createTopologySurface,
+  topologyExtractionLayout,
+} from "./topology-surface";
 
 function grid(cellSize: readonly [number, number, number]) {
   return {
@@ -63,5 +67,17 @@ describe("topology surface preparation", () => {
         (surface.material as THREE.Material).dispose();
       });
     }
+  });
+
+  it("budgets the live rectangular grid without cubic padding", () => {
+    const layout = topologyExtractionLayout({
+      dimensions: { width: 128, height: 128, depth: 16 }, cellSize: [1, 1, 1],
+      anchor: { position: [0, 0, 0], orientation: [0, 0, 0, 1] },
+    });
+
+    expect(layout.sampleDimensions).toEqual([258, 258, 34]);
+    expect(layout.scalarBytes).toBe(258 * 258 * 34 * Float32Array.BYTES_PER_ELEMENT);
+    expect(layout.scalarBytes).toBeLessThan(16 * 1024 * 1024);
+    expect(layout.scalarBytes + layout.triangleBytes).toBeLessThan(48 * 1024 * 1024);
   });
 });

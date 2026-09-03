@@ -36,7 +36,7 @@ export function createWebGpuPbrMaterialFactory(
     const base = role === "field"
       ? multiply(runtime.instanceColor, runtime.materialColor)
       : runtime.materialColor;
-    material.emissiveNode = multiply(base, role === "field" ? .7 : .45);
+    material.emissiveNode = multiply(base, role === "surface" ? .45 : .7);
     material.userData.semanticPbrRole = role;
     return material;
   };

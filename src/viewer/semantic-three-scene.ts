@@ -7,8 +7,13 @@ import type { SemanticRenderState } from "./webgpu-renderer-types";
 import type { RenderEnvelope } from "./webgpu-renderer-helpers";
 import { addSemanticFluxArrows } from "./semantic-flux-arrows";
 import { sampleReplayDisplacement } from "./replay-deformation";
+import { createTopologySurface } from "./topology-surface";
+import {
+  bindTopologySurfaceField,
+  updateTopologySurfaceField,
+} from "./topology-surface-field";
 
-export type SemanticPbrRole = "surface" | "field";
+export type SemanticPbrRole = "surface" | "field" | "field-surface";
 export type SemanticPbrMaterial = THREE.Material & { readonly color: THREE.Color };
 export type SemanticPbrMaterialFactory = (
   role: SemanticPbrRole,
@@ -58,6 +63,30 @@ function addField(
     ...(state.resultLayers.displacement?.vectors ? { displacement: state.resultLayers.displacement.vectors } : {}),
     ...(state.resultLayers.flux?.vectors ? { flux: state.resultLayers.flux.vectors } : {}),
   });
+  const topology = state.resultLayers.topology;
+  if (topology) {
+    const material = pbr("field-surface", { vertexColors: true, roughness: .55,
+      metalness: .05, transparent: true, opacity: .86, side: three.DoubleSide });
+    const surface = createTopologySurface({
+      dimensions: { width: topology.dimensions[0], height: topology.dimensions[1],
+        depth: topology.dimensions[2] },
+      cellSize: topology.cellSize,
+      anchor: { position: topology.origin, orientation: [0, 0, 0, 1] },
+    }, topology.density, material);
+    bindTopologySurfaceField(surface, topology);
+    const scalar = "values" in layer ? layer
+      : { ...topology, values: topology.density, maximum: 1 };
+    const deformation = state.resultLayers.displacement;
+    if (!updateTopologySurfaceField(surface, scalar, deformation ? {
+      vectors: deformation.vectors,
+      scale: deformation.deformationScale ?? 0,
+      displacementUnit: deformation.displacementUnit,
+      sourceDisplacementUnit: deformation.sourceDisplacementUnit,
+    } : undefined)) throw new Error("Topology result layers do not share one grid.");
+    root.add(surface);
+    addSemanticFluxArrows(three, root, samples);
+    return;
+  }
   const geometry = new three.BoxGeometry(...layer.cellSize.map((value) => value * .94));
   const material = pbr("field", { vertexColors: true, roughness: .55,
     metalness: .05, transparent: true, opacity: .72 });

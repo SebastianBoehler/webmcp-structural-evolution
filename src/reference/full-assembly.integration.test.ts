@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { readFileSync } from "node:fs";
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { initialDroneWorkspace } from "../assembly/drone-workspace";
@@ -8,6 +9,7 @@ import { compileLiveTopologyContext } from "../optimization/assembly-topology-in
 import { compileAssemblyTopologyContext } from "../optimization/assembly-study-compiler";
 import type { AssemblyTopologyInput, SolverVolume } from "../optimization/topology-contract";
 import { SE6_COBOT_FIXTURE } from "../samples/cobot/cobot-fixture";
+import { createTopologySurface } from "../viewer/topology-surface";
 import { initSync, optimize_assembly_frame } from "./pkg/webmcp_reference.js";
 
 function thresholdPathExists(
@@ -72,7 +74,16 @@ describe("full live assembly Wasm solve", () => {
       expect({ width: result.width, height: result.height, depth: result.depth }).toEqual(
         context.grid.dimensions,
       );
-      expect(result.density).toHaveLength(128 * 128 * 16);
+      const density = result.density;
+      expect(density).toHaveLength(128 * 128 * 16);
+      const nonVoidDensity = density.filter((value) => value !== 0);
+      const returnedMean = nonVoidDensity.reduce((sum, value) => sum + value, 0)
+        / nonVoidDensity.length;
+      expect(Math.abs(result.material_fraction - returnedMean)).toBeLessThan(5e-8);
+      const authoredVoidIndices = [...context.input.protectedVoids, ...context.input.accessVoids]
+        .flatMap((volume) => voxelIndicesInside(volume, context.input.grid));
+      expect(authoredVoidIndices.length).toBeGreaterThan(0);
+      expect(Math.max(...authoredVoidIndices.map((index) => density[index]!))).toBe(0);
       const caseStress = result.case_stress;
       const fieldLength = 128 * 128 * 16;
       expect(caseStress).toHaveLength(fieldLength * 4);
@@ -82,6 +93,22 @@ describe("full live assembly Wasm solve", () => {
       expect(new Set(casePeaks.map((value) => value.toPrecision(6))).size).toBeGreaterThan(1);
       expect(residentGrowth).toBeLessThan(256 * 1024 * 1024);
       expect(elapsedMs).toBeLessThan(60_000);
+      const surfaceResidentBefore = process.memoryUsage.rss();
+      const surfaceStartedAt = performance.now();
+      const material = new THREE.MeshBasicMaterial();
+      const surface = createTopologySurface(context.grid, density, material);
+      const surfaceElapsedMs = performance.now() - surfaceStartedAt;
+      try {
+        expect(surface.geometry.getAttribute("position").count).toBeGreaterThan(0);
+        expect(surface.userData.extractionLayout.sampleDimensions).toEqual([258, 258, 34]);
+        expect(surface.userData.extractionLayout.scalarBytes
+          + surface.userData.extractionLayout.triangleBytes).toBeLessThan(48 * 1024 * 1024);
+        expect(process.memoryUsage.rss() - surfaceResidentBefore).toBeLessThan(256 * 1024 * 1024);
+        expect(surfaceElapsedMs).toBeLessThan(30_000);
+      } finally {
+        surface.geometry.dispose();
+        material.dispose();
+      }
     } finally {
       result.free();
     }

@@ -3,6 +3,7 @@ import type * as THREE from "three";
 import { sampleReplayDisplacement } from "./replay-deformation";
 import type { FieldGrid, ResultLayerPayloads } from "./result-layers";
 import type { SemanticRenderState } from "./webgpu-renderer-types";
+import { updateTopologySurfaceField } from "./topology-surface-field";
 
 type ScalarLayer = FieldGrid & { readonly values: Float32Array; readonly maximum: number;
   readonly scalarScale?: number };
@@ -78,6 +79,16 @@ function updateField(three: typeof THREE, mesh: THREE.InstancedMesh,
   return true;
 }
 
+function updateSurface(mesh: THREE.Mesh, layer: ScalarLayer,
+  deformation: ResultLayerPayloads["displacement"] | undefined): boolean {
+  return updateTopologySurfaceField(mesh, layer, deformation ? {
+    vectors: deformation.vectors,
+    scale: deformation.deformationScale ?? 0,
+    displacementUnit: deformation.displacementUnit,
+    sourceDisplacementUnit: deformation.sourceDisplacementUnit,
+  } : undefined);
+}
+
 export function updateRetainedSemanticReplay(
   three: typeof THREE,
   scene: THREE.Scene,
@@ -86,11 +97,15 @@ export function updateRetainedSemanticReplay(
 ): boolean {
   if (previous.document !== next.document || previous.revision !== next.revision
     || previous.selection !== next.selection || previous.resultLayers.flux || next.resultLayers.flux) return false;
-  const field = scene.getObjectByName("semantic-result-field");
+  const field = scene.getObjectByName("verified-topology-surface")
+    ?? scene.getObjectByName("semantic-result-field");
   const layer = scalarLayer(next);
-  if (!(field instanceof three.InstancedMesh) || !layer) return false;
+  if (!(field instanceof three.Mesh) || !layer) return false;
   restoreGroups(three, scene);
-  if (!updateField(three, field, layer, next.resultLayers.displacement)) return false;
+  const updated = field instanceof three.InstancedMesh
+    ? updateField(three, field, layer, next.resultLayers.displacement)
+    : updateSurface(field, layer, next.resultLayers.displacement);
+  if (!updated) return false;
   updateComponents(three, scene, next.resultLayers.displacement);
   const frame = next.resultLayers.mechanism;
   const frameGroup = frame ? scene.getObjectByName(`semantic:${frame.componentId}`) : undefined;

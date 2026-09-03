@@ -1,9 +1,19 @@
 import * as THREE from "three";
 
-import { structuralReplayScale, type FlightFrame } from "../simulation/flight-scenarios";
-import { restoreAnalysisSurfaceField, updateAnalysisSurfaceField, type FieldMeshSet } from "./field-meshes";
+import {
+  structuralReplayScale,
+  structuralReplaySignedScale,
+  type FlightFrame,
+} from "../simulation/flight-scenarios";
+import {
+  restoreAnalysisSurfaceField,
+  updateAnalysisSurfaceDeformation,
+  updateAnalysisSurfaceField,
+  type FieldMeshSet,
+} from "./field-meshes";
 import type { AssemblyMeshSet } from "./assembly-meshes";
 import type { ViewerRenderModel } from "./render-envelope";
+import { STRUCTURAL_DEFORMATION_EXAGGERATION } from "./replay-deformation";
 
 export interface FlightReplayTargets {
   readonly flightGroup: THREE.Group;
@@ -18,6 +28,9 @@ export function updateFlightReplay(frame: FlightFrame | undefined, targets: Flig
   flightGroup.rotation.set(...(frame?.attitudeRad ?? [0, 0, 0]));
   const structuralScale = frame && referenceMotorLoadN !== undefined
     ? structuralReplayScale(frame, referenceMotorLoadN) : frame ? 0 : 1;
+  const deformationScale = frame && referenceMotorLoadN !== undefined
+    ? structuralReplaySignedScale(frame, referenceMotorLoadN) * STRUCTURAL_DEFORMATION_EXAGGERATION
+    : 0;
   const loadVectors = frame?.motorLoadVectorsN ?? [];
   const meanLoad = Math.max(.001, loadVectors.reduce(
     (sum, vector) => sum + Math.hypot(...vector), 0,
@@ -48,4 +61,7 @@ export function updateFlightReplay(frame: FlightFrame | undefined, targets: Flig
     meshSet?.analysisSurfaces ?? [], activeField.values, activeField.maximum, structuralScale,
   );
   else restoreAnalysisSurfaceField(meshSet?.analysisSurfaces ?? []);
+  updateAnalysisSurfaceDeformation(
+    meshSet?.analysisSurfaces ?? [], activeField?.deformation, deformationScale,
+  );
 }

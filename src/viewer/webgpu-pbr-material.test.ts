@@ -59,3 +59,31 @@ it("uses emissive-capable standard node PBR for legible materials and nonuniform
   expect(second.getHex()).not.toBe(0x000000);
   expect(first.getHex()).not.toBe(second.getHex());
 });
+
+it("uses vertex-colored node PBR for the smooth production topology surface", () => {
+  const scene = new THREE.Scene();
+  const pbr = createWebGpuPbrMaterialFactory({
+    createMaterial: (parameters) => new MeshStandardNodeMaterial(parameters),
+    materialColor, instanceColor,
+  });
+  addSemanticScene(THREE, scene, {
+    revision: "pbr", document, selection: undefined, measurements: [],
+    resultLayers: {
+      topology: {
+        dimensions: [2, 1, 1], cellSize: [1, 1, 1], origin: [0, 0, 0],
+        active: new Uint8Array([1, 0]), density: new Float32Array([1, 0]),
+      },
+      stress: {
+        dimensions: [2, 1, 1], cellSize: [1, 1, 1], origin: [0, 0, 0],
+        active: new Uint8Array([1, 0]), values: new Float32Array([10, 0]), maximum: 10,
+      },
+    },
+  }, false, pbr);
+
+  const surface = scene.getObjectByName("verified-topology-surface") as THREE.Mesh;
+  const material = surface.material as MeshStandardNodeMaterial;
+  expect(scene.getObjectByName("semantic-result-field")).toBeUndefined();
+  expect(material.userData.semanticPbrRole).toBe("field-surface");
+  expect(material.emissiveNode).toBeTruthy();
+  expect(surface.geometry.getAttribute("color").count).toBeGreaterThan(0);
+});
