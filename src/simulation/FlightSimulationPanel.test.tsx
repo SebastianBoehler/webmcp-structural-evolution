@@ -13,7 +13,7 @@ const motors = [
 describe("FlightSimulationPanel", () => {
   afterEach(cleanup);
 
-  it("exposes the four structural cases and their fidelity boundary", () => {
+  it("exposes deterministic assembly load cases and their truthful boundary", () => {
     render(<FlightSimulationPanel motors={motors} massKg={0.515} componentCount={36} batteryMassKg={0.254}
       onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Hover" })).toBeVisible();
@@ -21,7 +21,7 @@ describe("FlightSimulationPanel", () => {
     expect(screen.getByRole("button", { name: "Pitch brake" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Yaw burst" })).toBeVisible();
     expect(screen.getByText(/mass model: 515 g.*36 attached parts.*battery 254 g/i)).toBeVisible();
-    expect(screen.getByText(/rigid-body replay.*not cfd.*transient.*fea/i)).toBeVisible();
+    expect(screen.getByText(/assembly-load and rigid-body replay only.*does not verify topology.*solve structural stress.*flight approval/i)).toBeVisible();
   });
 
   it("starts a selected replay and can isolate the drone", () => {

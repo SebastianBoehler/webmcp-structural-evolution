@@ -29,7 +29,7 @@ export function useVisibleAssemblyParts(
       (showConstraints || part.appearance !== "constraint")
       && (showComponents || part.appearance !== "component")
       && (!topologyVisible || part.appearance !== "design-region"));
-    if (!topologyVisible || (analysisLayer !== "loads" && !simulationActive)) return visible;
+    if ((!topologyVisible && !simulationActive) || (analysisLayer !== "loads" && !simulationActive)) return visible;
     return [...visible, ...motors.map((motor): AssemblyVisualPart => ({
       id: `${motor.id}-load-vector`, selectionId: motor.id, label: `${motor.label} 18 N thrust load`,
       appearance: "generated", kind: "load-vector", center: motor.anchor, forceN: [0, 0, -18], length: 28,

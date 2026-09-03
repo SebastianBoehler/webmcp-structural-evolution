@@ -68,7 +68,7 @@ export function FlightSimulationPanel({
   if (motors.length !== 4) return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">
-        <div><strong>Flight load replay</strong><span>4 optimizer cases</span></div>
+        <div><strong>Current assembly replay</strong><span>4 deterministic load cases</span></div>
       </div>
       <p className="flight-simulation__empty" role="status">
         Generate a verified topology before replaying flight loads.
@@ -82,7 +82,7 @@ export function FlightSimulationPanel({
   return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">
-        <div><strong>Flight load replay</strong><span>4 optimizer cases</span></div>
+        <div><strong>Current assembly replay</strong><span>4 deterministic load cases</span></div>
       </div>
       <div className="flight-simulation__view" role="group" aria-label="Replay geometry">
         <button type="button" aria-pressed={!componentsVisible} onClick={() => onComponentsVisibleChange(false)}>Frame only</button>
@@ -114,7 +114,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>Rigid-body replay with the selected structural load-case colors. Component mass and inertia transfer into the frame at their mounts; component-internal stress is not solved. Not CFD, thermal analysis, or transient continuum FEA.</small>
+      <small>Assembly-load and rigid-body replay only. It uses the current assembly mass and motor mounts; it does not verify topology, solve structural stress, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
     </aside>
   );
 }

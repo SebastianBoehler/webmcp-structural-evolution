@@ -62,7 +62,7 @@ export function ViewportModeToolbar(props: ViewportModeToolbarProps) {
   const copy = props.mode === "assembly" ? { title: "Assemble", description: "Place parts and verify physical clearances." }
     : props.mode === "optimize" ? { title: "Optimize", description: `Generate a connected ${props.topologySubject} for the current assembly.` }
       : props.mode === "simulate" ? { title: "Simulate", description: props.supportsFlightReplay
-        ? `Replay flight loads on the ${props.topologySubject} and attached mass.`
+        ? "Replay current assembly loads and rigid-body motion."
         : `Inspect named structural load cases on the ${props.topologySubject}.` }
         : { title: "Review", description: "Compare evidence and accept a verified candidate." };
   const layers: readonly AnalysisLayer[] = props.mode === "simulate"

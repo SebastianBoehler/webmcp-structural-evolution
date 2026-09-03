@@ -249,7 +249,7 @@ export function FoundationJourney({
             {workspaceMode === "simulate" && dockOpen && <FixtureSimulationDock
                 supportsFlightReplay={fixture.supportsFlightReplay}
                 topology={liveTopology.input}
-                motors={viewerCurrent?.result.status === "verified" ? flightMotors : []}
+                motors={fixture.supportsFlightReplay ? flightMotors : []}
                 onFrame={flightFrameChannel.emit}
                 onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}

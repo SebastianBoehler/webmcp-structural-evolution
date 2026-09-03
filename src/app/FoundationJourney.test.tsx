@@ -53,8 +53,10 @@ test("reveals only controls that belong to the current engineering step", () => 
   expect(screen.queryByRole("button", { name: /^parts$/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
-  expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
-  expect(screen.getByText(/generate a verified topology before replaying flight loads/i)).toBeVisible();
+  expect(screen.getByRole("button", { name: /run flight replay/i })).not.toBeDisabled();
+  expect(screen.getByText(/assembly-load and rigid-body replay only.*does not verify topology.*solve structural stress.*flight approval/i)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /run flight replay/i }));
+  expect(screen.getByRole("button", { name: /pause flight replay/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /hide panel/i }));
   expect(screen.queryByRole("button", { name: /run flight replay/i })).toBeNull();
 
@@ -188,7 +190,7 @@ test("recovers from failures without erasing their evidence", async () => {
   expect(compute).toHaveBeenCalledTimes(4);
 }, 30_000);
 
-test("renders an interactive estimate preview while keeping engineering actions gated", async () => {
+test("renders an interactive estimate preview while keeping topology actions gated", async () => {
   renderJourney(async (input) => ({
     status: "estimate",
     truthLevel: "interactive-estimate",
@@ -220,7 +222,7 @@ test("renders an interactive estimate preview while keeping engineering actions 
   expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
-  expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /run flight replay/i })).not.toBeDisabled();
 
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /review interactive estimate/i }));
