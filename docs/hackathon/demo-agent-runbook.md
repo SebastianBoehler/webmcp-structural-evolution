@@ -2,7 +2,23 @@
 
 Use this runbook to record the under-three-minute Structural Evolution story on
 the deployed dashboard. It demonstrates the human supervising one shared,
-visible engineering state while the agent makes bounded WebMCP requests.
+visible engineering state while the agent makes bounded WebMCP requests. This
+is the authoritative agent sequence; the user-visible conversation uses only
+the two natural requests below.
+
+## Natural Codex dialogue
+
+Opening request:
+
+```text
+Can we work on the reference drone? Set it up so I can inspect it before we try to reduce the frame weight.
+```
+
+After the reference drone is visible and you have inspected it, continue with:
+
+```text
+That setup looks right. Find a balanced way to reduce the frame material and walk me through the result. Leave the final decision to me.
+```
 
 ## Recording setup
 
@@ -11,73 +27,57 @@ visible engineering state while the agent makes bounded WebMCP requests.
 - Refresh the deployed dashboard, select **SE-6 six-axis cobot**, leave the
   workbench in **Assemble** with **Safety zones** off, and confirm no topology
   operation is already running.
-- Open **Review → Agents**, confirm the SE-6 tool status is registered, and send
-  Prompt 1. Do not turn on Safety zones until the reference-drone remount is
-  visibly complete.
+- Open **Review → Agents**, confirm the starting assembly registrations are
+  healthy, and send the opening request. Keep Safety zones off until the
+  reference-drone remount is visibly complete.
 - Do not open a raw gate URL, show raw JSON, or use a precomputed result.
 - Never move or import a component, edit geometry, or invoke layout validation.
   Camera orbit, mode navigation, and the **Safety zones** visibility toggle do
   not change the assembly layout or its revision.
 
-## Prompt 1 — approved assembly only
+## Authoritative agent choreography
 
-```text
-Call generate_approved_assembly once with templateId "reference-drone" only.
-```
+When the opening request above, or a clearly equivalent reference-drone
+recording request, arrives:
 
-## Remount checkpoint — presenter wait, not an agent prompt
+1. Begin from the visible SE-6 world when it is present. Select the approved
+   reference-drone assembly by calling `generate_approved_assembly` once with
+   `templateId: "reference-drone"`.
+2. Treat the returned keyed-remount checkpoint as a turn boundary. Stop using
+   every SE-6 handle and finish with a short confirmation that the reference
+   drone is ready for inspection. The next user turn must use the remounted
+   workbench's fresh registrations.
 
-Changing the fixture remounts the workbench and disposes the SE-6 tool handles.
-After the visible world switches to **Reference FPV drone**, wait for all of the
-following before sending Prompt 2:
+After the presenter has inspected the drone and sends the continuation request:
 
-1. The reference-drone workbench has visibly finished loading.
-2. **Review → Agents** shows the replacement assembly, structural, and component
-   tool registration statuses without an error.
-3. Codex has refetched the available WebMCP tool set and can see those newly
-   registered reference-drone tools. Do not reuse an SE-6 tool handle.
+3. Confirm **Reference FPV drone** is visibly loaded and **Review → Agents**
+   shows fresh assembly, structural, and component registrations without error.
+   Refetch the available tool set and use only those fresh registrations. Call
+   `inspect_component_library` once with `{}` to read the exact layout state and
+   movable-component centers. Then call `inspect_design_context` once with
+   `scope: "current"`.
+4. Use the design-context inspection's exact returned `contextRevision` as
+   `parentRevision` for one `generate_topology_candidate` call with
+   `variant: "balanced"`, hypothesis
+   `Explore a connected frame candidate`, and prediction
+   `The bounded field completes within the browser budget`.
+5. Leave the returned branch unverified and unaccepted. Make no component move,
+   import, geometry edit, layout validation, comparison, promotion, acceptance,
+   or export. Do not claim topology verification, stress FEA, manufacturing
+   readiness, or flight approval. Stop after a concise summary of the returned
+   estimate and the human review boundary.
 
-During this wait, return to **Assemble**, turn **Safety zones** on, and orbit the
-reference drone to expose protected geometry and mounted parts. Do not imply that
-the zones show load vectors; vectors are shown later only during replay.
-
-## Prompt 2 — inspect, then one candidate
-
-```text
-Using the fresh reference-drone WebMCP tools, call inspect_component_library with
-{}. Use its returned layout state and movable component centers. Then call
-inspect_design_context with scope "current". From that exact returned
-contextRevision, generate exactly one balanced topology candidate with hypothesis
-"Explore a connected frame candidate" and prediction "The bounded field completes
-within the browser budget". Leave it as an interactive, unverified review branch:
-do not move or import components, validate a layout, promote, export, compare, or
-claim topology verification, stress FEA, manufacturing readiness, or flight approval.
-Briefly summarize only the returned review boundary when it finishes.
-```
-
-## Required live action sequence
-
-1. Prompt 1 calls `generate_approved_assembly` once with
-   `templateId: "reference-drone"`; the visible SE-6 world changes to
-   **Reference FPV drone**.
-2. The presenter waits for the keyed remount, fresh tool registration, and Codex
-   tool-set refetch described above.
-3. Prompt 2 calls `inspect_component_library` once with `{}` to read layout
-   state and actual movable-component centers, then calls
-   `inspect_design_context` once with `scope: "current"`.
-4. Prompt 2 calls `generate_topology_candidate` once with the exact returned
-   `contextRevision` as `parentRevision`, `variant: "balanced"`, and the stated
-   hypothesis and prediction.
-5. Leave the result as the interactive estimate. Do not promote, accept, export,
-   compare, or validate it. The disabled **Use this frame** control is the
-   visible human-review boundary.
+Between requests, the presenter returns to **Assemble**, toggles **Safety zones**
+on, and orbits the camera. Those display actions do not alter layout authority.
+Safety zones expose protected geometry and mounted parts; load vectors appear
+only during replay.
 
 ## Presenter choreography
 
 1. Orbit SE-6 in the opening. After its visible replacement and fresh tool
    registration, return to **Assemble**, turn **Safety zones** on, and orbit the
-   reference drone while Prompt 2 inspects and starts the candidate. Do not drag
-   or select a component for movement.
+   reference drone. Do not drag or select a component for movement. Send the
+   continuation request only after this supervision beat is visible.
 2. When optimization switches the workbench to **Optimize**, leave the safety
    geometry visible at the start of the solve. Do not claim its display includes
    load vectors.
@@ -105,9 +105,10 @@ Briefly summarize only the returned review boundary when it finishes.
 
 ## Recording edit rule
 
-The planned edited runtime is **2:46**. Keep the SE-6 opening, Prompt 1,
-reference-drone switch, remount/re-registration proof, Prompt 2, safety-zone
-supervision, estimate truth label, review boundary, and replay at normal speed.
+The planned edited runtime is **2:46**. Keep the SE-6 opening, natural setup
+request, reference-drone switch, remount/re-registration proof, safety-zone
+inspection, natural continuation request, estimate truth label, review boundary,
+and replay at normal speed.
 If more than three seconds pass with no visible dashboard change, speed up or
 jump-cut only that quiet middle and label it with the actual elapsed solve time
 from this take. Do not fabricate timing or compress the tool-registration proof,

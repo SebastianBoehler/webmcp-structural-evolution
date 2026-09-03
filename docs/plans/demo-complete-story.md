@@ -66,8 +66,9 @@ flight-load replay.
 
 ## Task 5 — Recording choreography
 
-- Use a concise agent prompt to generate/select the approved reference drone,
-  inspect its layout, optimize, and summarize the review boundary.
+- Use concise natural dialogue to select the approved reference drone, pause for
+  human inspection at the remount boundary, then inspect its layout, optimize,
+  and summarize the review boundary.
 - Update the runbook and timed storyboard with explicit manual or browser
   actions: begin on SE-6, generate the reference drone, orbit the camera while
   the agent works, toggle Safety zones, then show the topology preview,
