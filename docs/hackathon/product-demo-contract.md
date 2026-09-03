@@ -71,12 +71,14 @@ interface; solver code must not branch on fixture or component IDs.
 
 Given: the reference drone is open and the agent can inspect the current revision.
 
-When: the presenter asks the agent to inspect the current context and then generate a
-balanced topology candidate from that exact current revision.
+When: the presenter asks the agent to inspect the current context, generate a
+balanced topology candidate from that exact current revision, and review its four
+named flight-load cases in the shared viewport.
 
-Then: the agent returns a reviewable estimate branch in the shared dashboard, the
-human opens review/evidence/history, and promotion remains unavailable until a human
-selects an eligible verified branch.
+Then: the agent returns a reviewable estimate branch, displays its load, stress, and
+displacement-magnitude fields with and without mounted components, identifies the
+returned case extrema, and stops for human review. Promotion remains unavailable
+until a human selects an eligible verified branch.
 
 Must not result in: arbitrary code execution, hidden mock geometry, a drone-specific
 solver branch, unsupported engineering claims, or automatic manufacturing approval.
@@ -118,7 +120,8 @@ Critical seam check: one public compiler contract test invokes both fixtures.
 
 Deployed demo check: in the deployed target browser, inspect the current
 reference-drone context, generate one balanced candidate, inspect the resulting
-estimate/evidence, and confirm the human-only promotion boundary.
+estimate/evidence, display all four named cases, and confirm the human-only promotion
+boundary.
 
 Fallback: ship the deterministic reference-drone request path plus a backup recording
 of the same deployed revision. Never substitute precomputed fields for a claimed live
@@ -132,7 +135,8 @@ browser estimate.
 | Generic study compiler | Verified | Compiler contract tests plus named-case Rust and real-Wasm integration tests |
 | SE-6 secondary proof | Verified | SE-6 upper-arm and mechanism routes remain covered by the existing component/integration test surface |
 | Deployment | Verified | Public demo is live at `https://webmcp-structural-evolution.vercel.app` |
-| In-app WebMCP inspection | Verified | Production in-app browser registered six tools, inspection ran on the deployed reference drone, and the shared review flow remained available |
+| In-app WebMCP inspection | Verified | Production in-app browser registered seven tools, inspection ran on the deployed reference drone, and the shared review flow remained available |
+| Deployed topology case review | Verified | Production commit `bc346dc` generated the balanced estimate in `15,218 ms`; `review_topology_case` then displayed hover/load/full-assembly, roll/stress/frame-only, pitch/displacement/frame-only, and yaw/stress/full-assembly with returned case extrema while keeping the branch unverified and unaccepted |
 | Timed production rehearsal | Verified | On 2026-09-02 the deployed `generate_topology_candidate` run completed in `13,211 ms` with status `estimate`, material `33.5%`, compliance `0.001348`, and a reviewable Balanced frame branch while `Use this frame` remained disabled |
 | Deployed complete-story rehearsal | Verified | One continuous Codex in-app-browser automated deployed Vercel preview rehearsal of `9d4e921` started on SE-6, switched to the reference drone, refetched six fresh tools without registration error, then completed live inspection/candidate/review/replay beats in `71.230 s` of automated UI/tool-path time. No saved video capture exists; see the Task 5 report for exact dimensions and timing boundaries. |
 | Final public video | Open | Only the single public video URL remains to be recorded/published |
