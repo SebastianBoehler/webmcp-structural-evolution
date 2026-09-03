@@ -29,8 +29,9 @@ it("tracks a 1280-to-364 parent shrink without writing a self-sized canvas CSS w
     canvas.height = nextHeight;
     if (updateStyle !== false) canvas.style.width = `${nextWidth}px`;
   });
+  const setPixelRatio = vi.fn();
   const callback = vi.fn((nextWidth: number, nextHeight: number) =>
-    sizeWebGpuCanvas({ setSize }, nextWidth, nextHeight));
+    sizeWebGpuCanvas({ setSize, setPixelRatio }, nextWidth, nextHeight));
   const observation = observeWebGpuCanvasContainer(canvas, callback, Observer as never);
 
   expect(observed).toBe(parent);
@@ -43,3 +44,44 @@ it("tracks a 1280-to-364 parent shrink without writing a self-sized canvas CSS w
   observation.disconnect();
   expect(disconnect).toHaveBeenCalledOnce();
 });
+
+it("uses a normal device pixel ratio for the drawing buffer without changing CSS size", () => {
+  const setPixelRatio = vi.fn();
+  const setSize = vi.fn();
+
+  sizeWebGpuCanvas({ setPixelRatio, setSize }, 640, 360, 1);
+
+  expect(setPixelRatio).toHaveBeenCalledWith(1);
+  expect(setSize).toHaveBeenCalledWith(640, 360, false);
+});
+
+it("uses a Retina device pixel ratio for the drawing buffer", () => {
+  const setPixelRatio = vi.fn();
+  const setSize = vi.fn();
+
+  sizeWebGpuCanvas({ setPixelRatio, setSize }, 640, 360, 1.5);
+
+  expect(setPixelRatio).toHaveBeenCalledWith(1.5);
+  expect(setSize).toHaveBeenCalledWith(640, 360, false);
+});
+
+it("clamps an oversized device pixel ratio at the rendering budget", () => {
+  const setPixelRatio = vi.fn();
+  const setSize = vi.fn();
+
+  sizeWebGpuCanvas({ setPixelRatio, setSize }, 640, 360, 3);
+
+  expect(setPixelRatio).toHaveBeenCalledWith(2);
+  expect(setSize).toHaveBeenCalledWith(640, 360, false);
+});
+
+it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1])
+  ("falls back to one for an invalid device pixel ratio (%s)", (devicePixelRatio) => {
+    const setPixelRatio = vi.fn();
+    const setSize = vi.fn();
+
+    sizeWebGpuCanvas({ setPixelRatio, setSize }, 640, 360, devicePixelRatio);
+
+    expect(setPixelRatio).toHaveBeenCalledWith(1);
+    expect(setSize).toHaveBeenCalledWith(640, 360, false);
+  });

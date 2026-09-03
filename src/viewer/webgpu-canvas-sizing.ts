@@ -1,5 +1,8 @@
+import { normalizeRenderDpr } from "./render-resolution";
+
 interface RendererSizeTarget {
   setSize(width: number, height: number, updateStyle?: boolean): void;
+  setPixelRatio(value: number): void;
 }
 
 type ObserverConstructor = new (
@@ -10,7 +13,9 @@ export function sizeWebGpuCanvas(
   renderer: RendererSizeTarget,
   width: number,
   height: number,
+  devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio,
 ): void {
+  renderer.setPixelRatio(normalizeRenderDpr(devicePixelRatio));
   renderer.setSize(Math.max(1, width), Math.max(1, height), false);
 }
 

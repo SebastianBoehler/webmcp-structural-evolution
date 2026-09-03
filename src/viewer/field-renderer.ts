@@ -28,13 +28,14 @@ import {
   type RendererLike,
   type ResizeEntryLike,
 } from "./field-renderer-environment";
+import { normalizeRenderDpr } from "./render-resolution";
 
 export type { ViewerRenderModel } from "./render-envelope";
 export type { SemanticViewport } from "./webgpu-renderer";
 export { FieldRendererMountError } from "./field-renderer-error";
 
 // A 2x DPR ceiling is a rendering-budget decision: voxel comparisons favor legibility over 3x pixels.
-export const MAX_RENDER_DPR = 2;
+export { MAX_RENDER_DPR } from "./render-resolution";
 
 export type { FieldViewerEnvironment, ResizeEntryLike } from "./field-renderer-environment";
 
@@ -257,7 +258,7 @@ export function mountFieldRenderer(
       const rawDpr = environment.devicePixelRatio();
       const validDpr = Number.isFinite(rawDpr) && rawDpr > 0;
       const actualDpr = validDpr ? rawDpr : 1;
-      const renderDpr = Math.min(MAX_RENDER_DPR, Math.max(1, actualDpr));
+      const renderDpr = normalizeRenderDpr(rawDpr);
       const deviceSize = validDpr ? entry.devicePixelContentBoxSize?.[0] : undefined;
       width = Math.max(1, deviceSize ? deviceSize.inlineSize / actualDpr : entry.contentRect.width);
       height = Math.max(1, deviceSize ? deviceSize.blockSize / actualDpr : entry.contentRect.height);
