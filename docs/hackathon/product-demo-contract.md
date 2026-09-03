@@ -134,7 +134,7 @@ browser estimate.
 | Deployment | Verified | Public demo is live at `https://webmcp-structural-evolution.vercel.app` |
 | In-app WebMCP inspection | Verified | Production in-app browser registered six tools, inspection ran on the deployed reference drone, and the shared review flow remained available |
 | Timed production rehearsal | Verified | On 2026-09-02 the deployed `generate_topology_candidate` run completed in `13,211 ms` with status `estimate`, material `33.5%`, compliance `0.001348`, and a reviewable Balanced frame branch while `Use this frame` remained disabled |
-| Deployed complete-story rehearsal | Verified | One continuous Codex in-app-browser Vercel preview take of `9d4e921` started on SE-6, switched through Prompt 1 to the reference drone, refetched six fresh tools without registration error, then completed live inspection/candidate/review/replay beats in `71.230 s` of automated UI/tool-path time. See the Task 5 report for exact dimensions and timing boundaries. |
+| Deployed complete-story rehearsal | Verified | One continuous Codex in-app-browser automated deployed Vercel preview rehearsal of `9d4e921` started on SE-6, switched through Prompt 1 to the reference drone, refetched six fresh tools without registration error, then completed live inspection/candidate/review/replay beats in `71.230 s` of automated UI/tool-path time. No saved video capture exists; see the Task 5 report for exact dimensions and timing boundaries. |
 | Final public video | Open | Only the single public video URL remains to be recorded/published |
 | Final Devpost action | Open | Drafting is complete locally; the final Devpost submission step remains intentionally undone |
 
