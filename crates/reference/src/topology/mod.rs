@@ -4,6 +4,7 @@ mod grid_tests;
 mod inertial_relief;
 mod optimize;
 mod raster;
+mod reconstruct;
 mod solver;
 #[cfg(test)]
 mod solver_tests;

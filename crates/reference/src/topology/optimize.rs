@@ -1,4 +1,5 @@
 use super::grid::{assembly_grid, drone_grid, Grid};
+use super::reconstruct::reconstruct_load_path_web;
 use super::solver::{compliance_and_sensitivity, load_case_fields, springs};
 use super::{AssemblySolverInput, OptimizationPreset, TopologyResult};
 use std::sync::OnceLock;
@@ -439,6 +440,9 @@ fn optimize_grid(preset: OptimizationPreset, grid: Grid, prune_islands: bool) ->
     let path = enforce_connectivity(&grid, &mut density, target);
     if prune_islands {
         remove_floating_material(&grid, &mut density, &path, target);
+    }
+    if !grid.load_path_guides.is_empty() {
+        density = reconstruct_load_path_web(&grid, &density, &path, target);
     }
     let (final_compliance, max_displacement, _, max_stress, displacement, stress) =
         compliance_and_sensitivity(&grid, &springs, &density);

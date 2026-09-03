@@ -169,6 +169,21 @@ describe("relativeL2", () => {
     );
   });
 
+  it("keeps reconstructed assembly density, metrics, and case fields aligned", async () => {
+    wasm.optimize.mockReturnValueOnce({ ...wasm.optimize(), material_fraction: 3.2 / 5 });
+    const { optimizeTopology } = await import("./index");
+
+    const result = await optimizeTopology("balanced", {} as never);
+    const nonVoidDensity = result.density.filter((value) => value !== 0);
+    const meanDensity = nonVoidDensity.reduce((sum, value) => sum + value, 0) / nonVoidDensity.length;
+
+    expect(result.metrics.materialFraction).toBeCloseTo(meanDensity, 5);
+    for (const fields of Object.values(result.cases)) {
+      expect(fields.stress).toHaveLength(result.density.length);
+      expect(fields.displacementVectorsM).toHaveLength(result.density.length * 3);
+    }
+  });
+
   it("rejects invalid Wasm topology output instead of rendering it", async () => {
     const { optimizeTopology } = await import("./index");
     wasm.optimize.mockReturnValueOnce({
