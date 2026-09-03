@@ -183,6 +183,9 @@ export function compileLiveTopologyContext(state: AssemblyAuthoringState): LiveT
         centerM: plateCenterM, radiusM: mountRadiusM,
         loadN: [load?.x.value ?? 0, load?.y.value ?? 0, load?.z.value ?? -18],
       });
+      requiredSolids.push({
+        kind: "cylinder", centerM: plateCenterM, radiusM: mountRadiusM, heightM: 0.005, yawRad,
+      });
       for (const mount of definition.mountInterfaces) {
         const localCenter = point(mount.position);
         accessVoids.push({

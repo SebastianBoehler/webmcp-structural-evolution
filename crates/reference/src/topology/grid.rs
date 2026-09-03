@@ -85,8 +85,6 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                     input.grid.origin_m[1] + (y as f32 + 0.5) * input.grid.cell_size_m[1],
                     input.grid.origin_m[2] + (z as f32 + 0.5) * input.grid.cell_size_m[2],
                 ];
-                let loaded = input.load_cases.iter().flat_map(|case| &case.loads)
-                    .any(|load| volume_overlaps_cell(&load.region, point, input.grid.cell_size_m));
                 let supported = input
                     .supports
                     .iter()
@@ -106,11 +104,9 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                 let inside_domain = input.design_domain.iter().any(|volume| volume_contains(volume, point));
                 coordinates.push(point);
                 // Access and component keep-outs win over generated/required material.
-                // Loaded regions and supports remain non-negotiable structural interfaces.
-                passive_solid.push(!access && (loaded || supported || (required && !void)));
-                passive_void.push(
-                    access || (!loaded && !supported && (void || (!inside_domain && !required))),
-                );
+                // Loads are applied only to explicit retained structural interfaces.
+                passive_solid.push(!access && (supported || (required && !void)));
+                passive_void.push(access || (!supported && (void || !inside_domain)));
                 let index = x + width * (y + height * z);
                 if supported && !access {
                     support_nodes.push(index);

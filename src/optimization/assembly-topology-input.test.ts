@@ -26,6 +26,12 @@ describe("compileLiveTopologyContext", () => {
       volume.kind === "cylinder" && volume.radiusM === 0.00334 && volume.heightM === 0.024,
     )).toBe(true);
     expect(context.input.motorMounts.map(({ centerM }) => centerM)).toContainEqual([0.105, 0, 0]);
+    const motorInterfaces = context.input.requiredSolids.filter((volume) =>
+      volume.kind === "cylinder" && volume.heightM === 0.005
+      && context.input.motorMounts.some((mount) => mount.centerM.every((value, axis) =>
+        value === volume.centerM[axis] && mount.radiusM === volume.radiusM)),
+    );
+    expect(motorInterfaces).toHaveLength(4);
     expect(context.input.material).toEqual({ youngsModulusPa: 3_500_000_000, failureStressPa: 50_000_000 });
     expect(context.input.minimumLoadPathWidthM).toBe(0.005);
     expect(context.input.minimumFrameThicknessM).toBe(0.005);
@@ -71,7 +77,7 @@ describe("compileLiveTopologyContext", () => {
     }));
     expect(context.input.requiredSolids.filter((volume) =>
       volume.kind === "box" && volume.sizeM?.[0] === 0.012 && volume.sizeM[1] === 0.003,
-    )).toHaveLength(2);
+    )).toHaveLength(0);
     const cameraMountRails = context.input.requiredSolids.filter((volume) =>
       volume.kind === "box" && volume.sizeM?.[0] === 0.046 && volume.sizeM[2] === 0.020,
     );

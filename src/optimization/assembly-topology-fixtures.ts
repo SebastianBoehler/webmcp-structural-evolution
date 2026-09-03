@@ -69,15 +69,5 @@ export function componentFixtureVolumes(
     solids.push({ kind: "box", centerM: add(centerM, rotateZ([0, 0, -0.004], yawRad)), sizeM: [0.021, 0.021, 0.001], yawRad });
     return { solids, access: [] };
   }
-  if (definition.id === "video-antenna") {
-    const mate = definition.interfaces.find(({ id }) => id === "frame-antenna-clip");
-    if (!mate) throw new Error("Video antenna clip interface is missing.");
-    const clip = point(mate.position);
-    const solids: SolverVolume[] = [-1, 1].map((side) => ({
-      kind: "box", centerM: add(centerM, rotateZ([clip[0], side * 0.009, -0.00375], yawRad)), sizeM: [0.012, 0.003, 0.0075], yawRad,
-    }));
-    solids.push({ kind: "box", centerM: add(centerM, rotateZ([clip[0], 0, -0.0075], yawRad)), sizeM: [0.012, 0.021, 0.001], yawRad });
-    return { solids, access: [] };
-  }
   return { solids: [], access: [] };
 }

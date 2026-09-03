@@ -37,7 +37,7 @@ fn generic_grid_accepts_one_named_robot_link_load_case() {
         }],
         load_cases: vec![LoadCaseInput {
             id: "payload-down".into(),
-            loads: vec![LoadInput { region: load_region, force_n: [0.0, 0.0, -120.0] }],
+            loads: vec![LoadInput { region: load_region.clone(), force_n: [0.0, 0.0, -120.0] }],
         }],
         supports: vec![SolverVolume::Cylinder {
             center_m: [0.01, 0.0, 0.0],
@@ -45,7 +45,7 @@ fn generic_grid_accepts_one_named_robot_link_load_case() {
             height_m: 0.01,
             yaw_rad: 0.0,
         }],
-        required_solids: vec![],
+        required_solids: vec![load_region],
         protected_voids: vec![],
         access_voids: vec![],
         load_path_guides: vec![],
@@ -87,6 +87,13 @@ fn live_fpv_grid_contains_four_nonzero_physical_load_cases() {
             }).to_vec(),
         },
     ];
+    let mut required_solids = vec![
+        SolverVolume::Box { center_m: [0.045, 0.005, -0.001], size_m: [0.01, 0.01, 0.006], yaw_rad: 0.0 },
+        SolverVolume::Box { center_m: [0.08, 0.0, -0.00025], size_m: [0.01, 0.01, 0.0005], yaw_rad: 0.0 },
+    ];
+    required_solids.extend(motors.map(|[x, y]| SolverVolume::Cylinder {
+        center_m: [x, y, 0.0], radius_m: 0.0175, height_m: 0.005, yaw_rad: 0.0,
+    }));
     let input = AssemblySolverInput {
         grid: SolverGridInput {
             dimensions: SolverDimensions {
@@ -109,18 +116,7 @@ fn live_fpv_grid_contains_four_nonzero_physical_load_cases() {
             size_m: [0.04, 0.04, 0.006],
             yaw_rad: 0.0,
         }],
-        required_solids: vec![
-            SolverVolume::Box {
-                center_m: [0.045, 0.005, -0.001],
-                size_m: [0.01, 0.01, 0.006],
-                yaw_rad: 0.0,
-            },
-            SolverVolume::Box {
-                center_m: [0.08, 0.0, -0.00025],
-                size_m: [0.01, 0.01, 0.0005],
-                yaw_rad: 0.0,
-            },
-        ],
+        required_solids,
         protected_voids: vec![SolverVolume::Box {
             center_m: [0.045, 0.005, -0.001],
             size_m: [0.01, 0.01, 0.006],

@@ -1,5 +1,7 @@
 mod grid;
 #[cfg(test)]
+mod grid_material_tests;
+#[cfg(test)]
 mod grid_tests;
 mod inertial_relief;
 mod optimize;
