@@ -50,7 +50,7 @@ export function TopologyResultPanel({
         <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(result.elapsedMs)} ms</dd></div>
       </dl>
       <p className="topology-result__export">{estimate
-        ? "Interactive estimate only. Candidate comparison, promotion, manufacturing export, and flight simulation remain unavailable."
+        ? "Interactive estimate only. The estimate is not an input to the current-assembly replay. Candidate comparison, promotion, and manufacturing export remain unavailable."
         : "Manufacturing export requires promoted post-extraction evidence."}</p>
     </section>
   );

@@ -1,10 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
+import * as THREE from "three";
 import { expect, test } from "vitest";
 
 import { defineComponent } from "../domain/component-model";
 import { defineAssemblyDraft, defineInventory } from "../domain/design";
 import { referenceComponent } from "../samples/reference-drone-catalog";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import { createWebGpuTransformDrag } from "../viewer/webgpu-transform-drag";
 import { createAssemblyAuthoringState } from "./assembly-authoring";
 import type { AssemblyVisualRenderer } from "./assembly-workspace-model";
 import { useAssemblyWorkspace } from "./use-assembly-workspace";
@@ -153,4 +155,43 @@ test("renders the solved transform after a constraint action", async () => {
   }, result.current.revision));
 
   expect(result.current.parts.find(({ selectionId }) => selectionId === "payload-interface-1")?.center).toEqual([-400, 0, 3]);
+});
+
+test("commits one authoritative final workspace position after continuous WebGPU drag updates", async () => {
+  const { result } = renderHook(() => useAssemblyWorkspace());
+  const selected = result.current.parts.find(({ selectionId }) => selectionId === "motor-east")!;
+  const object = new THREE.Group();
+  object.position.set(...selected.center);
+  object.updateMatrixWorld(true);
+  const committed: Promise<unknown>[] = [];
+  const errors: unknown[] = [];
+  const down = (x: number, y: number) => new THREE.Ray(
+    new THREE.Vector3(x, y, selected.center[2] + 100),
+    new THREE.Vector3(0, 0, -1),
+  );
+  const drag = createWebGpuTransformDrag({
+    orbitEnabled: () => true,
+    setOrbitEnabled: () => undefined,
+    onPreview: () => undefined,
+    onMove: (id, position) => {
+      const pending = result.current.movePart(id, position).catch((error) => { errors.push(error); });
+      committed.push(pending);
+      return pending;
+    },
+    onMoveError: (error) => errors.push(error),
+    onDragState: () => undefined,
+  });
+
+  expect(drag.begin("motor-east", object, "x", down(selected.center[0], selected.center[1]))).toBe(true);
+  drag.move(down(selected.center[0] + 10, selected.center[1]));
+  drag.move(down(selected.center[0] + 20, selected.center[1]));
+  drag.end();
+  await act(async () => { await Promise.all(committed); });
+
+  expect(result.current.parts.find(({ selectionId }) => selectionId === "motor-east")?.center)
+    .toEqual([selected.center[0] + 20, selected.center[1], selected.center[2]]);
+  expect(result.current.layoutVersion).toBe(2);
+  expect(result.current.receipts.filter(({ action }) => action === "move_assembly_component"))
+    .toEqual([expect.objectContaining({ outcome: expect.objectContaining({ status: "succeeded" }) })]);
+  expect(errors).toEqual([]);
 });

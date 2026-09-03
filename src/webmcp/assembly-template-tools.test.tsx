@@ -28,7 +28,17 @@ test("registers a bounded agent action that replaces the world with an approved 
   expect(context.active.get("generate_approved_assembly")?.description).not.toMatch(/robot arm link/i);
 
   const result = readText(await context.execute("generate_approved_assembly", { templateId: "se6-cobot" }));
-  expect(result).toMatchObject({ templateId: "se6-cobot", status: "generated-visible-assembly" });
+  expect(result).toMatchObject({
+    templateId: "se6-cobot",
+    status: "remount-requested",
+    nextAction: "wait_for_assembly_remount_and_refetch_tools",
+    registrationCheckpoint: {
+      expectedTemplateId: "se6-cobot",
+      waitFor: "visible-keyed-remount",
+      refetchTools: true,
+      inspectInOrder: ["inspect_component_library", "inspect_design_context"],
+    },
+  });
   expect(onGenerate).toHaveBeenCalledWith("se6-cobot");
 });
 

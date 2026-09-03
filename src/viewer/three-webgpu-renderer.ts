@@ -93,11 +93,12 @@ export async function createThreeWebGpuRenderer(
   const transform = createWebGpuTransformDrag({
     orbitEnabled: navigation.isEnabled,
     setOrbitEnabled: navigation.setEnabled,
-    onMove: (semanticId, position) => {
-      handlers.onMove?.(semanticId, position);
+    onMove: (semanticId, position) => handlers.onMove?.(semanticId, position),
+    onPreview: () => {
       gizmo?.sync();
       if (!disposed) renderer.render(scene, camera);
     },
+    onMoveError: (error) => handlers.onMoveError?.(error),
     onDragState: (dragging, semanticId) => {
       handlers.onDragState?.(dragging, semanticId);
     },

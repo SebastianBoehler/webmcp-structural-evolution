@@ -37,9 +37,14 @@ export function FlightSimulationPanel({
   const [frame, setFrame] = useState<FlightFrame>();
   const startedAt = useRef(0);
   const lastReadoutAt = useRef(0);
+  const onFrameRef = useRef(onFrame);
+  const onActiveChangeRef = useRef(onActiveChange);
+  onFrameRef.current = onFrame;
+  onActiveChangeRef.current = onActiveChange;
 
   useEffect(() => {
     if (!running || motors.length !== 4) return;
+    onActiveChangeRef.current?.(true);
     startedAt.current = performance.now();
     let handle = 0;
     const update = (now: number) => {
@@ -48,22 +53,19 @@ export function FlightSimulationPanel({
         lastReadoutAt.current = now;
         setFrame(next);
       }
-      onFrame(next);
+      onFrameRef.current(next);
       handle = requestAnimationFrame(update);
     };
     handle = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(handle);
-  }, [massKg, motors, onFrame, running, scenario]);
-
-  const toggleRunning = () => {
-    const next = !running;
-    setRunning(next);
-    onActiveChange?.(next);
-    if (!next) {
+    return () => {
+      cancelAnimationFrame(handle);
       setFrame(undefined);
-      onFrame(undefined);
-    }
-  };
+      onFrameRef.current(undefined);
+      onActiveChangeRef.current?.(false);
+    };
+  }, [massKg, motors, running, scenario]);
+
+  const toggleRunning = () => setRunning((active) => !active);
 
   if (motors.length !== 4) return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
@@ -114,7 +116,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>Assembly-load and rigid-body replay only. It uses the current assembly mass and motor mounts; it does not verify topology, solve structural stress, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
+      <small>Assembly-load and rigid-body replay only. A topology estimate is not an input to this current-assembly replay. It uses the current assembly mass and motor mounts; it does not verify topology, solve structural stress, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
     </aside>
   );
 }

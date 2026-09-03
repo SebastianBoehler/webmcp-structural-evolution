@@ -24,12 +24,14 @@ export function useVisibleAssemblyParts(
 ) {
   const { mode, analysisLayer, showComponents, showConstraints, simulationActive, hasTopology } = options;
   return useMemo(() => {
-    const topologyVisible = mode !== "assembly" && hasTopology;
+    const topologyVisible = (mode === "optimize" || mode === "review") && hasTopology;
     const visible = parts.filter((part) =>
       (showConstraints || part.appearance !== "constraint")
       && (showComponents || part.appearance !== "component")
       && (!topologyVisible || part.appearance !== "design-region"));
-    if ((!topologyVisible && !simulationActive) || (analysisLayer !== "loads" && !simulationActive)) return visible;
+    const loadsVisible = mode === "simulate" ? simulationActive
+      : mode === "optimize" && topologyVisible && analysisLayer === "loads";
+    if (!loadsVisible) return visible;
     return [...visible, ...motors.map((motor): AssemblyVisualPart => ({
       id: `${motor.id}-load-vector`, selectionId: motor.id, label: `${motor.label} 18 N thrust load`,
       appearance: "generated", kind: "load-vector", center: motor.anchor, forceN: [0, 0, -18], length: 28,

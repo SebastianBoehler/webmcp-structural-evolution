@@ -46,8 +46,14 @@ export function AssemblyTemplateTools({ current, onGenerate }: AssemblyTemplateT
         return response({
           previousTemplateId: current,
           templateId,
-          status: "generated-visible-assembly",
-          nextAction: "inspect_design_context",
+          status: "remount-requested",
+          nextAction: "wait_for_assembly_remount_and_refetch_tools",
+          registrationCheckpoint: {
+            expectedTemplateId: templateId,
+            waitFor: "visible-keyed-remount",
+            refetchTools: true,
+            inspectInOrder: ["inspect_component_library", "inspect_design_context"],
+          },
         });
       } catch (error) {
         return response({ error: error instanceof Error ? error.message : String(error) }, true);

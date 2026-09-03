@@ -22,17 +22,19 @@ describe("FlightSimulationPanel", () => {
     expect(screen.getByRole("button", { name: "Yaw burst" })).toBeVisible();
     expect(screen.getByText(/mass model: 515 g.*36 attached parts.*battery 254 g/i)).toBeVisible();
     expect(screen.getByText(/assembly-load and rigid-body replay only.*does not verify topology.*solve structural stress.*flight approval/i)).toBeVisible();
+    expect(screen.getByText(/topology estimate is not an input to this current-assembly replay/i)).toBeVisible();
   });
 
   it("starts a selected replay and can isolate the drone", () => {
     const onActiveChange = vi.fn();
     const onComponentsVisibleChange = vi.fn();
+    const onFrame = vi.fn();
     render(<FlightSimulationPanel
       motors={motors}
       massKg={0.515}
       componentCount={36}
       batteryMassKg={0.254}
-      onFrame={vi.fn()}
+      onFrame={onFrame}
       onActiveChange={onActiveChange}
       componentsVisible
       onComponentsVisibleChange={onComponentsVisibleChange}
@@ -42,6 +44,30 @@ describe("FlightSimulationPanel", () => {
     expect(onActiveChange).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole("button", { name: "Frame only" }));
     expect(onComponentsVisibleChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Pause flight replay" }));
+    expect(onFrame).toHaveBeenLastCalledWith(undefined);
+    expect(onActiveChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears the replay frame and parent activity when unmounted while running", () => {
+    const onFrame = vi.fn();
+    const onActiveChange = vi.fn();
+    const view = render(<FlightSimulationPanel
+      motors={motors}
+      massKg={0.515}
+      componentCount={36}
+      batteryMassKg={0.254}
+      onFrame={onFrame}
+      onActiveChange={onActiveChange}
+      componentsVisible
+      onComponentsVisibleChange={vi.fn()}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "Run flight replay" }));
+
+    view.unmount();
+
+    expect(onFrame).toHaveBeenLastCalledWith(undefined);
+    expect(onActiveChange).toHaveBeenLastCalledWith(false);
   });
 
   it("shows one clear prerequisite instead of unusable scenario controls", () => {

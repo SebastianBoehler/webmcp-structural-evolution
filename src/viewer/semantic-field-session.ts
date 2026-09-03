@@ -84,6 +84,7 @@ export async function mountSemanticFieldSession(
   let pendingControlledEcho: string | undefined;
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
+  let flightFrameActive = false;
   let generation = 0;
   const current = (request: number) => !disposed && generation === request;
   const setDocument = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
@@ -121,8 +122,9 @@ export async function mountSemanticFieldSession(
       },
       onMove: (semanticId, position) => {
         const source = sourceSelectionForSemantic(currentArtifact, semanticId);
-        if (source) interactions.onMove?.(source, position);
+        return source ? interactions.onMove?.(source, position) : undefined;
       },
+      onMoveError: (error) => onError?.(error),
       onDragState: (dragging, semanticId) => {
         const source = sourceSelectionForSemantic(currentArtifact, semanticId);
         if (source) interactions.onDragState?.(dragging, source);
@@ -167,7 +169,14 @@ export async function mountSemanticFieldSession(
     },
     focusSelectedPart() { viewport.focus(selectedComponent); show(viewport, onError); },
     setFlightFrame(frame: FlightFrame | undefined) {
-      if (!frame) return;
+      if (!frame) {
+        if (!flightFrameActive) return;
+        flightFrameActive = false;
+        viewport.setMechanismFrame(undefined);
+        show(viewport, onError);
+        return;
+      }
+      flightFrameActive = true;
       viewport.setMechanismFrame({ componentId: "assembly:design", transform: flightFrameTransform(frame.attitudeRad) });
       show(viewport, onError);
     },

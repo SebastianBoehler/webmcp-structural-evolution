@@ -27,8 +27,8 @@ import { useExactCadProjectGate } from "./use-exact-cad-project-gate";
 import { useProjectOptionSync } from "./use-project-option-sync";
 import { useActiveProbeUnmount } from "./use-active-probe-unmount";
 import { useWorkspaceInspection } from "./use-workspace-inspection";
+import { topologyLayoutRejection } from "../assembly/layout-probe-authority";
 export type { ExperimentRailApi, ProjectStateOptions } from "./project-state-types";
-
 export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
   const stateRef = useRef<FoundationProjectState | null>(null);
   if (!stateRef.current) stateRef.current = createInitialProjectState(options);
@@ -84,8 +84,7 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
     addReceipt,
   });
 
-  useActiveProbeUnmount(operationRef, (operation) =>
-    cancelActiveProbe(operation, cancellationDependencies()));
+  useActiveProbeUnmount(operationRef, (operation) => cancelActiveProbe(operation, cancellationDependencies()));
 
   const services = useMemo<FoundationServices>(() => ({
     async inspectContext(input) {
@@ -115,10 +114,8 @@ export function useProjectState(options: ProjectStateOptions): ProjectStateApi {
         throw new Error(error);
       };
       if (current.capability.status !== "available") return reject("WebGPU capability is not available");
-      const layout = layoutAuthorityRef.current;
-      if (layout && (layout.state !== "verified" || layout.revision !== parsed.parentRevision)) {
-        return reject(`Layout version ${layout.version} must be validated for the exact current assembly before topology can run.`);
-      }
+      const layoutRejection = topologyLayoutRejection(layoutAuthorityRef.current);
+      if (layoutRejection) return reject(layoutRejection);
       if (operationRef.current || current.operationStatus !== "idle") {
         return reject("A topology optimization is already running");
       }

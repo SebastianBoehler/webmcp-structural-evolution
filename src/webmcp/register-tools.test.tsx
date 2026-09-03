@@ -12,6 +12,7 @@ import type { LayoutAuthority } from "../assembly/layout-validation";
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 
 const revisionA = "a".repeat(64);
+const revisionB = "b".repeat(64);
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   cleanup();
@@ -78,6 +79,8 @@ test("definitions are exactly three narrow annotated tools within Chrome budgets
   expect(definitions[0]?.annotations.readOnlyHint).toBe(true);
   expect(definitions[1]?.annotations.readOnlyHint).toBe(false);
   expect(definitions[2]?.annotations.readOnlyHint).toBe(true);
+  expect(definitions[0]?.description).not.toMatch(/component positions|protected volumes/i);
+  expect(definitions[0]?.description).toMatch(/context snapshot.*candidate revisions.*valid next actions/i);
   expect(JSON.stringify(definitions)).not.toMatch(/promoteBranch|exposedTo|provenance/i);
 });
 
@@ -118,6 +121,13 @@ test("withholds topology registration while a moved layout is unvalidated", asyn
   await waitFor(() => expect([...context.active.keys()]).toEqual(["inspect_design_context"]));
   view.rerender(<FoundationTools services={services(state)} state={state} layoutAuthority={{ ...changed, state: "verified" }} />);
   await waitFor(() => expect(context.active.has("generate_topology_candidate")).toBe(true));
+});
+
+test("keeps a verified assembly layout eligible when branch promotion advances only project context", () => {
+  const state = { ...projectState({ status: "available", message: "ready" }), contextRevision: revisionB };
+  const layout: LayoutAuthority = { revision: revisionA, version: 1, state: "verified" };
+
+  expect(foundationToolDefinitions(services(state), state, layout)[1].enabled).toBe(true);
 });
 
 test("removes topology authority after a real workspace move until that revision validates", async () => {

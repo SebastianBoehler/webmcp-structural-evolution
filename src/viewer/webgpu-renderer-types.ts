@@ -30,7 +30,8 @@ export interface SemanticInteractionHandlers {
   readonly onMove?: (
     semanticId: string,
     position: readonly [number, number, number],
-  ) => void;
+  ) => unknown;
+  readonly onMoveError?: (error: unknown) => void;
   readonly onDragState?: (dragging: boolean, semanticId: string) => void;
 }
 

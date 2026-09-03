@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type * as THREE from "three";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProbeResult } from "../gpu/compute-probe";
@@ -18,16 +19,30 @@ const sparseField = (input: ProbeInput, density: number) => {
 afterEach(() => {
   cleanup();
   browserCleanups.splice(0).forEach((dispose) => dispose());
+  vi.unstubAllGlobals();
 });
 
 function renderJourney(compute: (input: ProbeInput, signal?: AbortSignal) => Promise<ProbeResult>) {
-  return render(
+  const viewer = harness();
+  render(
     <FoundationJourney
       capability={{ status: "available", message: "Test adapter acquired." }}
       compute={compute}
-      viewerEnvironment={harness().environment}
+      viewerEnvironment={viewer.environment}
     />,
   );
+  return viewer;
+}
+
+function renderedScene(viewer: ReturnType<typeof harness>): THREE.Scene {
+  viewer.flushFrame();
+  return viewer.renderer.render.mock.calls.at(-1)?.[0] as THREE.Scene;
+}
+
+function sceneNames(viewer: ReturnType<typeof harness>): readonly string[] {
+  const names: string[] = [];
+  renderedScene(viewer).traverse(({ name }) => { if (name) names.push(name); });
+  return names;
 }
 
 test("reveals only controls that belong to the current engineering step", () => {
@@ -151,6 +166,27 @@ test("completes the exact prediction-to-evidence journey in the CAD workbench", 
   });
 }, 60_000);
 
+test("keeps an unchanged verified assembly layout authoritative after branch promotion", async () => {
+  const compute = vi.fn(async (input: ProbeInput) => ({
+    status: "verified" as const,
+    output: sparseField(input, 0.7 - compute.mock.calls.length * 0.1),
+    elapsedMs: 8,
+    relativeL2: 0,
+    tolerance: 0.000005,
+  }));
+  renderJourney(compute);
+
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /review topology candidate/i }));
+  fireEvent.click(screen.getByRole("button", { name: /use this frame/i }));
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  fireEvent.click(await screen.findByRole("button", { name: /generate lightweight frame/i }));
+
+  await waitFor(() => expect(compute).toHaveBeenCalledTimes(2));
+  expect(await screen.findByRole("button", { name: /generate stiffness-first frame/i })).toBeVisible();
+}, 20_000);
+
 test("recovers from failures without erasing their evidence", async () => {
   const compute = vi.fn(async (input: ProbeInput) => {
     const call = compute.mock.calls.length;
@@ -191,7 +227,7 @@ test("recovers from failures without erasing their evidence", async () => {
 }, 30_000);
 
 test("renders an interactive estimate preview while keeping topology actions gated", async () => {
-  renderJourney(async (input) => ({
+  const viewer = renderJourney(async (input) => ({
     status: "estimate",
     truthLevel: "interactive-estimate",
     output: sparseField(input, 0.5),
@@ -219,10 +255,15 @@ test("renders an interactive estimate preview while keeping topology actions gat
   expect(screen.getByText(/interactive estimate preview.*unverified.*unaccepted/i)).toBeVisible();
   expect(screen.getByLabelText("Topology result")).toBeVisible();
   expect(screen.getByText("Peak displacement")).toBeVisible();
+  expect(screen.getByText(/estimate is not an input to the current-assembly replay/i)).toBeVisible();
   expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
   expect(screen.getByRole("button", { name: /run flight replay/i })).not.toBeDisabled();
+  expect(screen.getByRole("img", { name: /^interactive 3d physical assembly$/i })).toBeVisible();
+  expect(screen.queryByText(/^interactive estimate preview.*unverified/i)).toBeNull();
+  expect(sceneNames(viewer).some((name) => /verified-(?:current-field|topology-surface|delta-)/.test(name))).toBe(false);
+  expect(screen.getByText(/topology estimate is not an input to this current-assembly replay/i)).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /review interactive estimate/i }));
@@ -233,6 +274,35 @@ test("renders an interactive estimate preview while keeping topology actions gat
   expect(within(branches).getByRole("button", { name: /use this frame/i })).toBeDisabled();
   expect(screen.queryByRole("group", { name: /candidate comparison/i })).toBeNull();
   expect(screen.queryByLabelText("Topology result")).toBeNull();
+});
+
+test("clears replay pose, load vectors, and activity when Simulate exits to Review", async () => {
+  let replayFrame: FrameRequestCallback | undefined;
+  vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+    replayFrame = callback;
+    return 41;
+  }));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const viewer = renderJourney(async (input) => ({
+    status: "verified",
+    output: sparseField(input, 0.7),
+    elapsedMs: 8,
+    relativeL2: 0,
+    tolerance: 0.000005,
+  }));
+
+  fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /aggressive roll/i }));
+  fireEvent.click(screen.getByRole("button", { name: /run flight replay/i }));
+  act(() => replayFrame?.(performance.now() + 250));
+  await waitFor(() => expect(sceneNames(viewer).some((name) => name.endsWith("-load-vector"))).toBe(true));
+  expect(Math.abs(renderedScene(viewer).getObjectByName("flight-replay-root")!.rotation.x)).toBeGreaterThan(0);
+
+  fireEvent.click(screen.getByRole("button", { name: /^review$/i }));
+
+  await waitFor(() => expect(sceneNames(viewer).some((name) => name.endsWith("-load-vector"))).toBe(false));
+  expect(renderedScene(viewer).getObjectByName("flight-replay-root")!.rotation.toArray().slice(0, 3)).toEqual([0, 0, 0]);
+  expect(screen.queryByRole("button", { name: /pause flight replay/i })).toBeNull();
 });
 
 test("shows cancellation as immutable evidence and ignores a late result", async () => {

@@ -9,7 +9,9 @@ interface TransformDragOptions {
   readonly onMove: (
     semanticId: string,
     position: readonly [number, number, number],
-  ) => void;
+  ) => unknown;
+  readonly onPreview: () => void;
+  readonly onMoveError: (error: unknown) => void;
   readonly onDragState: (dragging: boolean, semanticId: string) => void;
 }
 
@@ -21,6 +23,7 @@ interface ActiveDrag {
   readonly startParameter: number;
   readonly startPosition: THREE.Vector3;
   readonly orbitWasEnabled: boolean;
+  finalPosition?: THREE.Vector3;
 }
 
 export interface WebGpuTransformDrag {
@@ -66,6 +69,15 @@ export function createWebGpuTransformDrag(
     const completed = active;
     active = undefined;
     options.setOrbitEnabled(completed.orbitWasEnabled);
+    if (completed.finalPosition) {
+      const position = completed.finalPosition;
+      try {
+        void Promise.resolve(options.onMove(completed.semanticId, [position.x, position.y, position.z]))
+          .catch(options.onMoveError);
+      } catch (error) {
+        options.onMoveError(error);
+      }
+    }
     options.onDragState(false, completed.semanticId);
   };
 
@@ -117,7 +129,8 @@ export function createWebGpuTransformDrag(
       active.object.parent?.worldToLocal(localPosition);
       active.object.position.copy(localPosition);
       active.object.updateMatrixWorld(true);
-      options.onMove(active.semanticId, [position.x, position.y, position.z]);
+      active.finalPosition = position;
+      options.onPreview();
     },
     end,
     dispose() {

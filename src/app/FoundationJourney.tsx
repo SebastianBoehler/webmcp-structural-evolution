@@ -202,7 +202,7 @@ export function FoundationJourney({
           <div className="viewport-canvas" data-dock-open={dockOpen}>
             <div className="viewport-scene">
               <FieldViewer
-              current={workspaceMode !== "assembly" && workspace.layoutState === "verified" ? viewerCurrent : null}
+              current={(workspaceMode === "optimize" || workspaceMode === "review") && workspace.layoutState === "verified" ? viewerCurrent : null}
               alternatives={viewerAlternatives}
               selectedRegion={state.context.selection}
               threshold={0.5}
@@ -212,7 +212,7 @@ export function FoundationJourney({
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
               analysisLayer={analysisLayer}
-              statusText={fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
+              statusText={workspaceMode === "simulate" ? "Current assembly replay · topology fields hidden" : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
                 pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
               flightFrameSource={flightFrameChannel}
               environment={viewerEnvironment}
@@ -220,7 +220,9 @@ export function FoundationJourney({
                 setSelectedPart(id);
                 if (workspaceMode === "assembly") setAssemblyPanel("inspector");
               }}
-              onPartMove={workspace.movePart}
+              onPartMove={(id, center) => {
+                return workspace.movePart(id, center).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+              }}
               onPartDragState={workspace.setLayoutDragging}
               />
               {workspace.pending && (

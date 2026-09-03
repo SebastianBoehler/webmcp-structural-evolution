@@ -50,7 +50,7 @@ export interface FieldViewerProps {
   readonly droneOnly?: boolean;
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
-  readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => void;
+  readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => unknown;
   readonly onPartDragState?: (dragging: boolean, partId: string) => void;
 }
 
@@ -255,7 +255,7 @@ export function FieldViewer({
         ref={canvasRef}
         role="img"
         tabIndex={0}
-        aria-label={interactiveEstimate ? "Interactive 3D physical assembly and interactive estimate preview density field" : "Interactive 3D physical assembly and verified density field"}
+        aria-label={interactiveEstimate ? "Interactive 3D physical assembly and interactive estimate preview density field" : current ? "Interactive 3D physical assembly and verified density field" : "Interactive 3D physical assembly"}
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>

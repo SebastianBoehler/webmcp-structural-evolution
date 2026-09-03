@@ -27,6 +27,7 @@ vi.mock("./semantic-model-materializer", () => ({
 
 import { mountSemanticFieldSession } from "./semantic-field-session";
 import type { AssemblyVisualPart } from "./render-envelope";
+import { flightFrameAt } from "../simulation/flight-scenarios";
 
 const model = {
   grid: {
@@ -199,6 +200,27 @@ it("rebuilds current semantic bounds and captures after an assembly pose update"
   expect(artifact.nodes.find((node: { id: string }) => node.id === "component:motor")
     ?.transform.position).toEqual([50, 0, 0]);
   expect(viewport.capture).toHaveBeenCalledOnce();
+  session.dispose();
+});
+
+it("clears the mechanism layer and captures the baseline assembly pose when replay pauses", async () => {
+  const session = await mountSemanticFieldSession(document.createElement("canvas"), exactModel(),
+    "replay:baseline");
+  viewport.setMechanismFrame.mockClear();
+  viewport.capture.mockClear();
+  const frame = flightFrameAt("roll", 0.25, [
+    { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
+    { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },
+  ], 0.515);
+
+  session.setFlightFrame(frame);
+  session.setFlightFrame(undefined);
+
+  expect(viewport.setMechanismFrame.mock.calls).toEqual([
+    [{ componentId: "assembly:design", transform: expect.any(Array) }],
+    [undefined],
+  ]);
+  expect(viewport.capture).toHaveBeenCalledTimes(2);
   session.dispose();
 });
 
