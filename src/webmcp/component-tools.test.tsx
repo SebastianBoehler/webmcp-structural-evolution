@@ -33,20 +33,23 @@ test("registers structured component inspection, staging, and visible movement t
   cleanups.push(installFakeModelContext(context));
   const onMove = vi.fn();
   const onStage = vi.fn((input: ComponentImport) => ({ ...input, id: "pending-1", stagedBy: "agent" as const }));
+  const onValidate = vi.fn(async () => ({ revision: "r".repeat(64), conflicts: [] }));
   const parts = droneAssemblyVisuals(INITIAL_MOTORS, []);
 
   render(<ComponentImportTools
     imports={[]}
     parts={parts}
     layoutVersion={7}
+    layoutState="changed"
     onMove={onMove}
     onStage={onStage}
+    onValidate={onValidate}
   />);
 
   await waitFor(() => expect([...context.active.keys()].sort()).toEqual([
-    "inspect_component_library", "move_assembly_component", "stage_component_import",
+    "inspect_component_library", "move_assembly_component", "stage_component_import", "validate_assembly_layout",
   ]));
-  expect(screen.getByText(/3 of 3 component tools registered/i)).toBeVisible();
+  expect(screen.getByText(/4 of 4 component tools registered/i)).toBeVisible();
   expect(context.active.get("inspect_component_library")?.annotations).toMatchObject({
     readOnlyHint: true,
     untrustedContentHint: true,
@@ -54,6 +57,9 @@ test("registers structured component inspection, staging, and visible movement t
 
   const inspection = readText(await context.execute("inspect_component_library", {}));
   expect(inspection.layoutVersion).toBe(7);
+  expect(inspection.layoutState).toBe("changed");
+  expect(inspection.topologyEvidence).toBe("stale");
+  expect(inspection.nextAction).toBe("validate_assembly_layout");
   expect(inspection.movable).toEqual(expect.arrayContaining([
     expect.objectContaining({ componentId: "motor-east" }),
     expect.objectContaining({ componentId: "motor-east-propeller" }),
@@ -66,6 +72,11 @@ test("registers structured component inspection, staging, and visible movement t
     yMm: 14,
   }))).toMatchObject({ status: "moved-visible-layout-stale" });
   expect(onMove).toHaveBeenCalledWith("motor-east", [118, 14, 3], 7);
+
+  expect(readText(await context.execute("validate_assembly_layout", {
+    expectedLayoutVersion: 7,
+  }))).toMatchObject({ status: "layout-verified", layoutVersion: 7, conflictCount: 0 });
+  expect(onValidate).toHaveBeenCalledWith(7);
 
   expect(readText(await context.execute("stage_component_import", stagedInput))).toMatchObject({
     stagedImportId: "pending-1",

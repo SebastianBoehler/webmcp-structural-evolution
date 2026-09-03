@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
 import type { ComponentDefinition } from "../domain/component-model";
 import type { InventoryItem } from "../domain/design";
 import { defineActionReceipt, type ActionReceipt } from "../domain/receipts";
@@ -13,6 +12,7 @@ import {
   type ComponentInstance,
   type ProtectedRegion,
 } from "./assembly-authoring";
+import { assemblyActionReceipt, type ReceiptSpec } from "./assembly-workspace-actions";
 import { compileAssemblyState } from "./assembly-compile";
 import { inspectAssemblyConflicts } from "./assembly-conflicts";
 import type { ComponentImport, ImportedComponent, PendingComponentImport } from "./component-import";
@@ -29,11 +29,12 @@ import { compileParametricGeometry } from "./parametric-geometry";
 import { decodeStepFile, type CadMesh } from "./step-import";
 import { defineImportedComponent, importedFileAsset } from "./workspace-component-import";
 import { REFERENCE_DISPLAY_RESOURCES } from "./reference-display-resources";
+import { resolvedAssemblyDraft } from "./resolved-assembly-draft";
 
 const identifier = (): string => globalThis.crypto?.randomUUID?.() ?? `component-${Date.now()}`;
 const m = (value: number) => ({ value: value / 1_000, unit: "m" as const });
 const rad = (value: number) => ({ value, unit: "rad" as const });
-type ReceiptSpec = { readonly action: string; readonly inputs: Record<string, string> };
+export type LayoutState = "verified" | "dragging" | "changed" | "validating";
 
 function envelopeSizeMm(definition: ComponentDefinition): [number, number, number] {
   const value = (length: { readonly value: number; readonly unit: "m" | "mm" }) =>
@@ -43,32 +44,10 @@ function envelopeSizeMm(definition: ComponentDefinition): [number, number, numbe
     : [value(definition.envelope.radius) * 2, value(definition.envelope.radius) * 2, value(definition.envelope.height)];
 }
 
-function actionReceipt(action: AssemblyAction): ReceiptSpec {
-  if (action.kind === "stage") return { action: "stage_component_definition", inputs: { parentRevision: action.parentRevision, componentRevision: action.component.revision } };
-  if (action.kind === "place") return { action: "place_component", inputs: { parentRevision: action.parentRevision, instanceId: action.instance.instanceId, componentRevision: action.instance.componentRevision } };
-  if (action.kind === "move") return { action: "move_assembly_component", inputs: { parentRevision: action.parentRevision, instanceId: action.instanceId } };
-  if (action.kind === "constrain") return { action: "constrain_component", inputs: { parentRevision: action.parentRevision, constraintId: action.constraint.id } };
-  return { action: "define_protected_region", inputs: { parentRevision: action.parentRevision, regionId: action.region.id } };
-}
-
 export interface AssemblyWorkspaceOptions {
   readonly initialState?: AssemblyAuthoringState;
   readonly inventory?: readonly InventoryItem[];
   readonly renderParts?: AssemblyVisualRenderer;
-}
-
-function resolvedDraft(state: AssemblyAuthoringState) {
-  const solved = solveAssemblyConstraints(state);
-  return {
-    ...state.draft,
-    components: state.draft.components.map((instance) => {
-      const transform = solved.instances[instance.instanceId]?.transform;
-      return transform ? { ...instance, transform: {
-        position: { x: m(transform.positionMm[0]), y: m(transform.positionMm[1]), z: m(transform.positionMm[2]) },
-        orientation: { roll: rad(transform.orientationRad[0]), pitch: rad(transform.orientationRad[1]), yaw: rad(transform.orientationRad[2]) },
-      } } : instance;
-    }),
-  };
 }
 
 function importedView(state: AssemblyAuthoringState, resources: Readonly<Record<string, ComponentRenderResource>>): readonly ImportedComponent[] {
@@ -93,13 +72,13 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
   );
   const [receipts, setReceipts] = useState<readonly ActionReceipt[]>([]);
   const [pending, setPending] = useState<PendingComponentImport>();
-  const [layoutState, setLayoutState] = useState<"verified" | "dragging" | "changed">("verified");
+  const [layoutState, setLayoutState] = useState<LayoutState>("verified");
   const [layoutVersion, setLayoutVersion] = useState(1);
   const stateRef = useRef(workspace);
   const versionRef = useRef(1);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const blobUrls = useRef(new Set<string>());
-  const draft = useMemo(() => resolvedDraft(workspace), [workspace]);
+  const draft = useMemo(() => resolvedAssemblyDraft(workspace), [workspace]);
   const renderParts = options.renderParts ?? renderPartsForAssembly;
   const parts = useMemo(
     () => renderParts(draft, workspace.catalog, resources),
@@ -148,7 +127,7 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
     queue.current = result.then(() => undefined, () => undefined);
     return result;
   }, []);
-  const dispatch = useCallback((action: AssemblyAction) => transact((current) => applyAssemblyAction(current, action), actionReceipt(action)), [transact]);
+  const dispatch = useCallback((action: AssemblyAction) => transact((current) => applyAssemblyAction(current, action), assemblyActionReceipt(action)), [transact]);
   const stageComponent = useCallback((component: ComponentDefinition, parentRevision: string) =>
     dispatch({ kind: "stage", component, parentRevision }), [dispatch]);
   const placeComponent = useCallback((instance: ComponentInstance, parentRevision: string) =>
@@ -172,6 +151,23 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
     });
     queue.current = compiled.then(() => undefined, () => undefined);
     return compiled;
+  }, [inventory]);
+  const validateLayout = useCallback((expectedVersion: number) => {
+    if (expectedVersion !== versionRef.current) {
+      return Promise.reject(new Error(`Layout is stale. Inspect version ${versionRef.current} before validating.`));
+    }
+    setLayoutState("validating");
+    const validation = queue.current.then(() => {
+      if (expectedVersion !== versionRef.current) throw new Error(`Layout is stale. Inspect version ${versionRef.current} before validating.`);
+      const compiled = compileAssemblyState(stateRef.current, inventory);
+      if (compiled.conflicts.length > 0) throw new Error(`Assembly validation found ${compiled.conflicts.length} blocking conflict(s).`);
+      return compiled;
+    });
+    queue.current = validation.then(() => undefined, () => undefined);
+    return validation.then(
+      (compiled) => { setLayoutState("verified"); return compiled; },
+      (error: unknown) => { setLayoutState("changed"); throw error; },
+    );
   }, [inventory]);
 
   const movePart = useCallback((id: string, center: Vector3Tuple, expectedVersion?: number) => {
@@ -298,7 +294,7 @@ export function useAssemblyWorkspace(options: AssemblyWorkspaceOptions = {}) {
 
   return {
     ...workspace, draft, inventory, motors, parts, conflicts, receipts, imports, pending, layoutState, layoutVersion,
-    setLayoutState, movePart, importFile, replaceDisplayFile, stageImport, approveImport, rejectImport,
-    stageComponent, placeComponent, constrainComponent, protectRegion, compileAssembly,
+    setLayoutDragging: (dragging: boolean) => setLayoutState(dragging ? "dragging" : "changed"), movePart, importFile, replaceDisplayFile, stageImport, approveImport, rejectImport,
+    stageComponent, placeComponent, constrainComponent, protectRegion, compileAssembly, validateLayout,
   };
 }

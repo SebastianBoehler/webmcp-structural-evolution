@@ -143,8 +143,8 @@ export function FoundationJourney({
     workspace.movePart(id, center);
   }, [workspace.movePart]);
   const handlePartDragState = useCallback((dragging: boolean) => {
-    workspace.setLayoutState(dragging ? "dragging" : "changed");
-  }, [workspace.setLayoutState]);
+    workspace.setLayoutDragging(dragging);
+  }, [workspace.setLayoutDragging]);
   const { dockAvailable, dockOpen, receipts } = deriveResponsivePanelState(workspaceMode, dockVisible, viewerCurrent !== null, state.receipts, workspace.receipts);
 
   return (
@@ -274,10 +274,12 @@ export function FoundationJourney({
                 pending={workspace.pending}
                 parts={workspace.parts}
                 layoutVersion={workspace.layoutVersion}
+                layoutState={workspace.layoutState}
                 fixtureId={fixtureId}
                 onGenerateFixture={onFixtureChange}
                 onStage={workspace.stageImport}
                 onMove={workspace.movePart}
+                onValidate={workspace.validateLayout}
                 onChange={setActiveDrawer}
               />
             </aside>

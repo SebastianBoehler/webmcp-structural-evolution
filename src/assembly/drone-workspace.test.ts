@@ -94,6 +94,34 @@ describe("drone assembly workspace", () => {
     expect(view.result.current.layoutVersion).toBe(2);
   });
 
+  it("requires validation of the exact changed layout before topology evidence becomes current", async () => {
+    const view = renderHook(() => useAssemblyWorkspace());
+    const originalRevision = view.result.current.revision;
+
+    await act(() => view.result.current.movePart("motor-east", [118, 14, 3]));
+
+    expect(view.result.current.revision).not.toBe(originalRevision);
+    expect(view.result.current.layoutState).toBe("changed");
+    expect(view.result.current.layoutVersion).toBe(2);
+    await expect(view.result.current.validateLayout(1)).rejects.toThrow(/layout is stale/i);
+    expect(view.result.current.layoutState).toBe("changed");
+
+    let compiled: Awaited<ReturnType<typeof view.result.current.validateLayout>> | undefined;
+    await act(async () => { compiled = await view.result.current.validateLayout(2); });
+
+    expect(compiled).toMatchObject({ revision: view.result.current.revision, conflicts: [] });
+    expect(view.result.current.layoutState).toBe("verified");
+  });
+
+  it("keeps a changed layout blocked when compilation finds a conflict", async () => {
+    const view = renderHook(() => useAssemblyWorkspace());
+
+    await act(() => view.result.current.movePart("motor-east", [0, 0, 3]));
+
+    await expect(view.result.current.validateLayout(2)).rejects.toThrow(/blocking conflict/i);
+    expect(view.result.current.layoutState).toBe("changed");
+  });
+
   it("renders the exact solver-facing protected world volumes", () => {
     const parts = renderPartsForAssembly(referenceDroneAssembly, REFERENCE_DRONE_CATALOG, REFERENCE_DISPLAY_RESOURCES);
     const viewerVolumes = parts.filter((part) =>

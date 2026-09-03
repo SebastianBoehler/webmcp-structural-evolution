@@ -3,6 +3,8 @@ import type { ActionReceipt } from "../domain/receipts";
 import type { FoundationServices } from "../webmcp/executors";
 import type { FoundationProjectState, ProbeComparisonFacts } from "../webmcp/schemas";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import type { CompiledAssembly } from "../assembly/assembly-compile";
+import type { LayoutState } from "../assembly/use-assembly-workspace";
 import type { DemoFixtureId } from "../samples/demo-fixtures";
 import { EvidencePanel } from "./EvidencePanel";
 import { ExperimentRail } from "./ExperimentRail";
@@ -23,10 +25,12 @@ interface WorkbenchReviewDockProps {
   readonly pending?: PendingComponentImport;
   readonly parts: readonly AssemblyVisualPart[];
   readonly layoutVersion: number;
+  readonly layoutState: LayoutState;
   readonly fixtureId: DemoFixtureId;
   readonly onGenerateFixture: (fixture: DemoFixtureId) => void;
   readonly onStage: (component: ComponentImport) => PendingComponentImport;
   readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => void;
+  readonly onValidate: (expectedVersion: number) => Promise<CompiledAssembly>;
   readonly onChange: (view: DrawerView) => void;
 }
 
@@ -65,10 +69,12 @@ export function WorkbenchReviewDock(props: WorkbenchReviewDockProps) {
         pending={props.pending}
         parts={props.parts}
         layoutVersion={props.layoutVersion}
+        layoutState={props.layoutState}
         fixtureId={props.fixtureId}
         onGenerateFixture={props.onGenerateFixture}
         onStage={props.onStage}
         onMove={props.onMove}
+        onValidate={props.onValidate}
       />,
     },
   ];

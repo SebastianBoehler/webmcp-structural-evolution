@@ -10,14 +10,18 @@ import {
 import type { FoundationToolDefinition } from "./register-tools";
 import { useFoundationTools } from "./use-foundation-tools";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
+import type { CompiledAssembly } from "../assembly/assembly-compile";
+import type { LayoutState } from "../assembly/use-assembly-workspace";
 
 export interface ComponentImportToolsProps {
   readonly imports: readonly ImportedComponent[];
   readonly pending?: PendingComponentImport;
   readonly parts: readonly AssemblyVisualPart[];
   readonly layoutVersion: number;
+  readonly layoutState?: LayoutState;
   readonly onStage: (component: ComponentImport) => PendingComponentImport;
   readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => void;
+  readonly onValidate?: (expectedVersion: number) => Promise<Pick<CompiledAssembly, "revision" | "conflicts">>;
 }
 
 const response = (value: unknown, isError = false) => Promise.resolve({
@@ -25,11 +29,12 @@ const response = (value: unknown, isError = false) => Promise.resolve({
   ...(isError ? { isError: true } : {}),
 });
 
-export function ComponentImportTools({ imports, pending, parts, layoutVersion, onStage, onMove }: ComponentImportToolsProps) {
+export function ComponentImportTools({ imports, pending, parts, layoutVersion, layoutState = "verified", onStage, onMove, onValidate }: ComponentImportToolsProps) {
   const movableParts = parts.filter(({ movable }) => movable);
   const hasMovableParts = movableParts.length > 0;
-  const signature = `${imports.map(({ id }) => id).join(":")}:${pending?.id ?? "none"}:${layoutVersion}:${movableParts.map(({ selectionId }) => selectionId).join(":")}`;
-  const expectedToolCount = 1 + (pending ? 0 : 1) + (hasMovableParts ? 1 : 0);
+  const canValidateLayout = onValidate !== undefined;
+  const signature = `${imports.map(({ id }) => id).join(":")}:${pending?.id ?? "none"}:${layoutVersion}:${layoutState}:${canValidateLayout}:${movableParts.map(({ selectionId }) => selectionId).join(":")}`;
+  const expectedToolCount = 1 + (pending ? 0 : 1) + (hasMovableParts ? 1 : 0) + (canValidateLayout && layoutState === "changed" ? 1 : 0);
   const definitions = useMemo<readonly FoundationToolDefinition[]>(() => [
     {
       name: "inspect_component_library",
@@ -48,11 +53,37 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
           partNumber: pending.partNumber,
         } : null,
         layoutVersion,
+        layoutState,
+        topologyEvidence: layoutState === "verified" ? "current" : "stale",
         movable: movableParts.map(({ selectionId, label, center }) => ({
           componentId: selectionId, label, centerMm: center,
         })),
-        nextAction: pending ? "Wait for the human to approve or reject the staged import." : "stage_component_import",
+        nextAction: layoutState === "changed" ? "validate_assembly_layout"
+          : layoutState === "validating" ? "wait_for_layout_validation"
+            : pending ? "Wait for the human to approve or reject the staged import." : "stage_component_import",
       }),
+    },
+    {
+      name: "validate_assembly_layout",
+      description: "Compile and validate the exact current shared assembly layout. Topology remains blocked until this reports no blocking conflicts.",
+      inputSchema: {
+        type: "object",
+        properties: { expectedLayoutVersion: { type: "integer", minimum: 1 } },
+        required: ["expectedLayoutVersion"], additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      enabled: canValidateLayout && layoutState === "changed",
+      execute: async (input) => {
+        try {
+          const expectedLayoutVersion = input && typeof input === "object"
+            ? (input as Record<string, unknown>).expectedLayoutVersion : undefined;
+          if (!Number.isInteger(expectedLayoutVersion)) throw new Error("expectedLayoutVersion must be an integer");
+          const compiled = await onValidate!(expectedLayoutVersion as number);
+          return response({ status: "layout-verified", layoutVersion: expectedLayoutVersion, revision: compiled.revision, conflictCount: compiled.conflicts.length, nextAction: "generate_topology_candidate" });
+        } catch (error) {
+          return response({ error: error instanceof Error ? error.message : String(error), nextAction: "inspect_component_library" }, true);
+        }
+      },
     },
     {
       name: "stage_component_import",
@@ -109,7 +140,7 @@ export function ComponentImportTools({ imports, pending, parts, layoutVersion, o
         }
       },
     },
-  ], [onMove, onStage, signature]);
+  ], [onMove, onStage, onValidate, signature]);
   const state = useFoundationTools(definitions);
   return (
     <section aria-labelledby="component-tool-status">

@@ -106,3 +106,12 @@ test("keeps runnable variants, verified comparison, and verified promotion ahead
   expect(promotion).toMatchObject({ pendingPromotion: expect.objectContaining({ status: "verified" }), primaryLabel: "Review topology candidate" });
   expect(promotion.pendingEstimate).toBeUndefined();
 });
+
+test("blocks topology while the current layout has not been successfully validated", () => {
+  const navigation = deriveOptimizationNavigation(state(), [], false, 0, false);
+
+  expect(navigation).toMatchObject({
+    primaryLabel: "Topology context needs rebuild",
+    primaryDisabled: true,
+  });
+});

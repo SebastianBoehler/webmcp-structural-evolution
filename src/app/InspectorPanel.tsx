@@ -5,6 +5,7 @@ import type { FoundationContextSnapshot } from "../domain/foundation-context";
 import type { AssemblyVisualPart } from "../viewer/render-envelope";
 import type { VoxelGrid } from "../viewer/field-instances";
 import { PanelCloseButton } from "./PanelCloseButton";
+import type { LayoutState } from "../assembly/use-assembly-workspace";
 
 export interface InspectorPanelProps {
   readonly selectedId: string;
@@ -15,7 +16,7 @@ export interface InspectorPanelProps {
   readonly assembly?: Pick<AssemblyDraft, "components">;
   readonly catalog?: readonly ComponentDefinition[];
   readonly conflicts?: readonly { readonly id: string; readonly message?: string; readonly instanceIds?: readonly string[] }[];
-  readonly layoutState: "verified" | "dragging" | "changed";
+  readonly layoutState: LayoutState;
   readonly open: boolean;
   readonly onClose: () => void;
   readonly onLockCableClearance: () => void;
@@ -118,7 +119,7 @@ export function InspectorPanel({
   return (
     <aside className="side-panel inspector-panel" data-open={open} aria-label="Selection inspector" hidden={!open}>
       <div className="panel-heading">
-        <div><h2>Inspector</h2><p>{layoutState === "verified" ? "Assembly aligned" : layoutState === "dragging" ? "Moving component" : "Verification required"}</p></div>
+        <div><h2>Inspector</h2><p>{layoutState === "verified" ? "Assembly aligned" : layoutState === "dragging" ? "Moving component" : layoutState === "validating" ? "Validating assembly" : "Verification required"}</p></div>
         <PanelCloseButton label="Close inspector" onClick={onClose} />
       </div>
       <div className="selection-heading">

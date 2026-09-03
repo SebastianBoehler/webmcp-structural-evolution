@@ -1,6 +1,6 @@
 export function fixtureViewerStatus(input: Readonly<{
   hasTopology: boolean;
-  layoutState: "verified" | "dragging" | "changed";
+  layoutState: "verified" | "dragging" | "changed" | "validating";
   pendingPromotion: boolean;
   pendingEstimate: boolean;
   supportsFlightReplay: boolean;
@@ -12,5 +12,6 @@ export function fixtureViewerStatus(input: Readonly<{
     return `Moving component · ${geometry} follow`;
   }
   if (input.layoutState === "changed") return "Layout changed · previous topology evidence is stale";
+  if (input.layoutState === "validating") return "Validating current layout before topology may resume";
   return input.pendingPromotion ? "Candidate topology · verified and awaiting human acceptance" : undefined;
 }
