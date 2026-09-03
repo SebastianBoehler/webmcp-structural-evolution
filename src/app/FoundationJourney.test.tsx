@@ -69,7 +69,7 @@ test("reveals only controls that belong to the current engineering step", () => 
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
   expect(screen.getByRole("button", { name: /run flight replay/i })).not.toBeDisabled();
-  expect(screen.getByText(/assembly-load and rigid-body replay only.*does not verify topology.*solve structural stress.*flight approval/i)).toBeVisible();
+  expect(screen.getByText(/precomputed linear-static case.*ready to replay/i)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /run flight replay/i }));
   expect(screen.getByRole("button", { name: /pause flight replay/i })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /hide panel/i }));
@@ -255,7 +255,7 @@ test("renders an interactive estimate preview while keeping topology actions gat
   expect(screen.getByText(/interactive estimate preview.*unverified.*unaccepted/i)).toBeVisible();
   expect(screen.getByLabelText("Topology result")).toBeVisible();
   expect(screen.getByText("Peak displacement")).toBeVisible();
-  expect(screen.getByText(/estimate is not an input to the current-assembly replay/i)).toBeVisible();
+  expect(screen.getByText(/replay displays its existing case fields.*promotion.*manufacturing export.*unavailable/i)).toBeVisible();
   expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
