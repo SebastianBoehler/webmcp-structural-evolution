@@ -89,7 +89,7 @@ function prepareViewer(
   const base = assemblyModel(current?.grid ?? fallbackGrid, assemblyParts);
   if (!current) return { model: base, comparisons: [], omittedCount: 0 };
   if (current.result.status === "estimate") {
-    const preview = prepareInteractiveEstimatePreview(current.result, current.grid, threshold, assemblyParts);
+    const preview = prepareInteractiveEstimatePreview(current.result, current.grid, threshold, assemblyParts, analysisLayer);
     return { model: preview.model ?? base, comparisons: [], omittedCount: 0, error: preview.error };
   }
   if (current.result.status !== "verified") {

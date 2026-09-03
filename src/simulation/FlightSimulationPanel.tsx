@@ -18,6 +18,12 @@ export interface FlightSimulationPanelProps {
   readonly onActiveChange?: (active: boolean) => void;
   readonly componentsVisible: boolean;
   readonly onComponentsVisibleChange: (visible: boolean) => void;
+  readonly command?: FlightReplayCommand;
+}
+
+export interface FlightReplayCommand {
+  readonly requestId: number;
+  readonly scenario: FlightScenarioId;
 }
 
 const number = (value: number, digits = 2) => value.toFixed(digits);
@@ -31,6 +37,7 @@ export function FlightSimulationPanel({
   onActiveChange,
   componentsVisible,
   onComponentsVisibleChange,
+  command,
 }: FlightSimulationPanelProps) {
   const [scenario, setScenario] = useState<FlightScenarioId>("hover");
   const [running, setRunning] = useState(false);
@@ -41,6 +48,12 @@ export function FlightSimulationPanel({
   const onActiveChangeRef = useRef(onActiveChange);
   onFrameRef.current = onFrame;
   onActiveChangeRef.current = onActiveChange;
+
+  useEffect(() => {
+    if (!command || motors.length !== 4) return;
+    setScenario(command.scenario);
+    setRunning(true);
+  }, [command?.requestId, command?.scenario, motors.length]);
 
   useEffect(() => {
     if (!running || motors.length !== 4) return;
@@ -70,10 +83,10 @@ export function FlightSimulationPanel({
   if (motors.length !== 4) return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">
-        <div><strong>Current assembly replay</strong><span>4 deterministic load cases</span></div>
+        <div><strong>Topology case replay</strong><span>4 deterministic load cases</span></div>
       </div>
       <p className="flight-simulation__empty" role="status">
-        Generate a verified topology before replaying flight loads.
+        Generate a topology candidate before replaying its load cases.
       </p>
       <button className="flight-simulation__run" type="button" aria-label="Run flight replay" disabled>
         Run replay
@@ -84,7 +97,7 @@ export function FlightSimulationPanel({
   return (
     <aside className="flight-simulation" aria-label="Flight load simulation">
       <div className="flight-simulation__heading">
-        <div><strong>Current assembly replay</strong><span>4 deterministic load cases</span></div>
+        <div><strong>Topology case replay</strong><span>4 deterministic load cases</span></div>
       </div>
       <div className="flight-simulation__view" role="group" aria-label="Replay geometry">
         <button type="button" aria-pressed={!componentsVisible} onClick={() => onComponentsVisibleChange(false)}>Frame only</button>
@@ -116,7 +129,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>Assembly-load and rigid-body replay only. A topology estimate is not an input to this current-assembly replay. It uses the current assembly mass and motor mounts; it does not verify topology, solve structural stress, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
+      <small>The visible candidate uses its existing per-case structural estimate fields. Motion and load vectors use the current assembly mass and motor mounts; replay does not re-solve or verify the topology, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
     </aside>
   );
 }

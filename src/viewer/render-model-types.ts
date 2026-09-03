@@ -12,7 +12,7 @@ export interface ViewerRenderModel {
 }
 
 export interface ScalarAnalysisField {
-  readonly kind: "displacement" | "stress" | "safety" | "temperature" | "heat-flux";
+  readonly kind: "displacement" | "displacement-magnitude" | "stress" | "safety" | "temperature" | "heat-flux";
   readonly values: Float32Array;
   readonly maximum: number;
   readonly vectors?: Float32Array;

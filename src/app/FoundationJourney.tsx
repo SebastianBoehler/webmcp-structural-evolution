@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
-
 import { useAssemblyWorkspace } from "../assembly/use-assembly-workspace";
 import { runTopologyProbeInWorker } from "../optimization/topology-probe-client";
 import { DEMO_FIXTURES } from "../samples/demo-fixtures";
 import { FOUNDATION_SELECTIONS } from "../samples/drone-arm-foundation";
 import { FieldViewer } from "../viewer/FieldViewer";
 import type { ProbeComparisonFacts, ProbeVariant } from "../webmcp/schemas";
-import { createFlightFrameChannel } from "../simulation/flight-frame-channel";
 import { ComponentBrowser } from "./ComponentBrowser";
 import { AlternativeSelector } from "./AlternativeSelector";
 import { InspectorPanel } from "./InspectorPanel";
@@ -26,6 +24,7 @@ import { buildProbeInput } from "./project-probe";
 import { probeCopy } from "./probe-copy";
 import { useVisibleAssemblyParts } from "./use-visible-assembly-parts";
 import { deriveResponsivePanelState, useWorkbenchUiState } from "./use-workbench-ui-state";
+import { useAgentSimulation } from "./use-agent-simulation";
 export function FoundationJourney({
   capability,
   compute,
@@ -70,7 +69,6 @@ export function FoundationJourney({
       ? "arm-design-region"
       : fixture.initialState.draft.components[0]?.instanceId ?? initialContext.selection.id,
   );
-  const flightFrameChannel = useMemo(createFlightFrameChannel, []);
   const [comparison, setComparison] = useState<ProbeComparisonFacts>();
   const [error, setError] = useState<string>();
 
@@ -135,10 +133,10 @@ export function FoundationJourney({
     mode: workspaceMode, analysisLayer, showComponents, showConstraints,
     simulationActive, hasTopology: viewerCurrent !== null,
   });
-  const flightMotors = useMemo(() => workspace.motors.flatMap((motor, index) => {
-    const mount = liveTopology.input.motorMounts[index];
-    return mount ? [{ id: motor.id, centerM: mount.centerM }] : [];
-  }), [liveTopology, workspace.motors]);
+  const simulation = useAgentSimulation({
+    motors: workspace.motors, motorMounts: liveTopology.input.motorMounts,
+    setWorkspaceMode, setAnalysisLayer, setShowComponents, setShowConstraints, setDockVisible,
+  });
   const { dockAvailable, dockOpen, receipts } = deriveResponsivePanelState(workspaceMode, dockVisible, viewerCurrent !== null, state.receipts, workspace.receipts);
 
   return (
@@ -202,7 +200,7 @@ export function FoundationJourney({
           <div className="viewport-canvas" data-dock-open={dockOpen}>
             <div className="viewport-scene">
               <FieldViewer
-              current={(workspaceMode === "optimize" || workspaceMode === "review") && workspace.layoutState === "verified" ? viewerCurrent : null}
+              current={workspaceMode !== "assembly" && workspace.layoutState === "verified" ? viewerCurrent : null}
               alternatives={viewerAlternatives}
               selectedRegion={state.context.selection}
               threshold={0.5}
@@ -212,9 +210,9 @@ export function FoundationJourney({
               selectedAlternative={selectedAlternative}
               selectedPart={selectedPart}
               analysisLayer={analysisLayer}
-              statusText={workspaceMode === "simulate" ? "Current assembly replay · topology fields hidden" : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
+              statusText={workspaceMode === "simulate" ? undefined : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
                 pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
-              flightFrameSource={flightFrameChannel}
+              flightFrameSource={simulation.frameChannel}
               environment={viewerEnvironment}
               onPartSelect={(id) => {
                 setSelectedPart(id);
@@ -250,11 +248,12 @@ export function FoundationJourney({
             {workspaceMode === "simulate" && dockOpen && <FixtureSimulationDock
                 supportsFlightReplay={fixture.supportsFlightReplay}
                 topology={liveTopology.input}
-                motors={fixture.supportsFlightReplay ? flightMotors : []}
-                onFrame={flightFrameChannel.emit}
+                motors={fixture.supportsFlightReplay ? simulation.motors : []}
+                onFrame={simulation.frameChannel.emit}
                 onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}
                 onComponentsVisibleChange={setShowComponents}
+                command={simulation.command}
             />}
             <FoundationJourneyReviewDock
                 hidden={workspaceMode !== "review" || !dockOpen}
@@ -278,6 +277,9 @@ export function FoundationJourney({
                 onMove={workspace.movePart}
                 onValidate={workspace.validateLayout}
                 onChange={setActiveDrawer}
+                simulationMotors={fixture.supportsFlightReplay ? simulation.motors : []}
+                simulationMassKg={liveTopology.input.assemblyMassKg}
+                onSimulationViewCommand={simulation.showCase}
             />
           </div>
         </section>

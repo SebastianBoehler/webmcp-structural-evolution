@@ -17,7 +17,7 @@ Can we work on the reference drone? Set it up so I can inspect it before we try 
 After the reference drone is visible and you have inspected it, continue with:
 
 ```text
-That setup looks right. Find a balanced way to reduce the frame material and walk me through the result. Leave the final decision to me.
+That setup looks right. Find a balanced way to reduce the frame material, then test it under the main flight loads. Show me how it behaves and flag the worst case. Leave the final decision to me.
 ```
 
 ## Recording setup
@@ -51,7 +51,8 @@ recording request, arrives:
 After the presenter has inspected the drone and sends the continuation request:
 
 3. Confirm **Reference FPV drone** is visibly loaded and **Review → Agents**
-   shows fresh assembly, structural, and component registrations without error.
+   shows fresh assembly, structural, simulation-review, and component
+   registrations without error.
    Refetch the available tool set and use only those fresh registrations. Call
    `inspect_component_library` once with `{}` to read the exact layout state and
    movable-component centers. Then call `inspect_design_context` once with
@@ -61,16 +62,27 @@ After the presenter has inspected the drone and sends the continuation request:
    `variant: "balanced"`, hypothesis
    `Explore a connected frame candidate`, and prediction
    `The bounded field completes within the browser budget`.
-5. Leave the returned branch unverified and unaccepted. Make no component move,
+5. Use the returned exact `branchRevision` for these
+   `review_topology_case` calls, one at a time, reading each returned structural
+   estimate and replay sample before continuing:
+   - `{ caseId: "hover", display: "loads", geometry: "full-assembly" }`
+   - `{ caseId: "roll", display: "stress", geometry: "frame-only" }`
+   - `{ caseId: "pitch", display: "displacement", geometry: "frame-only" }`
+   - `{ caseId: "yaw", display: "stress", geometry: "full-assembly" }`
+   Include `branchRevision` in every call. Compare the returned per-case maximum
+   displacement and axial-stress estimates. Identify the highest of each; do
+   not invent a pass/fail threshold or treat the replay sample as a solve.
+6. Leave the returned branch unverified and unaccepted. Make no component move,
    import, geometry edit, layout validation, comparison, promotion, acceptance,
    or export. Do not claim topology verification, stress FEA, manufacturing
-   readiness, or flight approval. Stop after a concise summary of the returned
-   estimate and the human review boundary.
+   readiness, or flight approval. Stop after a concise summary of the topology
+   estimate, reviewed case extrema, and the human review boundary.
 
 Between requests, the presenter returns to **Assemble**, toggles **Safety zones**
 on, and orbits the camera. Those display actions do not alter layout authority.
-Safety zones expose protected geometry and mounted parts; load vectors appear
-only during replay.
+Safety zones expose protected geometry and mounted parts. Static load vectors
+belong only to the Simulate/replay context; vector motion and changing readouts
+belong to active playback.
 
 ## Presenter choreography
 
@@ -81,15 +93,17 @@ only during replay.
 2. When optimization switches the workbench to **Optimize**, leave the safety
    geometry visible at the start of the solve. Do not claim its display includes
    load vectors.
-3. When the viewport shows **Interactive estimate preview** and **Unverified ·
-   unaccepted**, hold it still long enough to read. Open **Review → Branches**,
-   **Evidence**, and **History** in that order.
-4. In **History**, show only what the post-remount ledger actually records: the
-   design-context inspection and topology-candidate receipts. Assembly generation
-   and component-library inspection do not create receipts in this flow.
-5. Click **Simulate**, select **Full assembly** and one named scenario, then
-   press **Run replay** once. Show moving load vectors/readouts only while replay
-   is active, then pause it.
+3. Let the agent's case-review calls switch **Simulate** among **Loads**,
+   **Stress**, and **Displacement**, and between **Frame only** and **Full
+   assembly**. Hold each view briefly. The generated topology must remain
+   visible in both geometry modes. The agent starts each selected replay; pause
+   the final replay after its moving vectors/readouts have been visible.
+4. After the agent identifies the worst case and requests human review, hold the
+   viewport on **Interactive estimate preview** and **Unverified · unaccepted**.
+   Open **Review → Branches**, **Evidence**, and **History** in that order.
+5. In **History**, show only what the post-remount ledger actually records: the
+   design-context inspection and topology-candidate receipts. Assembly generation,
+   component-library inspection, and view-only case review do not create receipts.
 
 ## Truth checkpoints
 
@@ -99,9 +113,11 @@ only during replay.
   exported, or presented as manufacturing-ready.
 - **Evidence** separates agent prediction, interactive output, plan state, and
   human authority. **History** has the two post-remount receipts named above.
-- Replay uses the current reference assembly's mass and motor mounts for
-  deterministic loads and rigid-body motion only. It is not flight approval,
-  CFD, thermal analysis, transient continuum FEA, or topology validation.
+- Each case review combines the candidate's existing interactive structural
+  estimate fields with a deterministic current-assembly load/rigid-body replay.
+  The replay is not a new structural solve and the candidate is not an input to
+  its dynamics. Neither surface is flight approval, CFD, thermal analysis,
+  transient continuum FEA, verified stress FEA, or topology validation.
 
 ## Recording edit rule
 

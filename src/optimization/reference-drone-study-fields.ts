@@ -36,7 +36,7 @@ export function referenceDroneStudyFields(
   const differential = (motor: MotorMount, axis: 0 | 1) =>
     motor.loadN.map((value) => value * (motor.centerM[axis] >= support.centerM[axis] ? 0.65 : -0.65)) as unknown as Point;
   const loadCases: SolverLoadCase[] = [
-    { id: "hover", loads: loads((motor) => motor.loadN) },
+    { id: "collective-thrust", loads: loads((motor) => motor.loadN) },
     { id: "roll-differential", loads: loads((motor) => differential(motor, 1)) },
     { id: "pitch-differential", loads: loads((motor) => differential(motor, 0)) },
     { id: "yaw-torsion", loads: loads((motor) => {

@@ -11,7 +11,7 @@ The Devpost draft project exists, but it should be treated as author-only until 
 ## What works today
 
 - A public, credential-free dashboard for a reference FPV drone and an SE-6 cobot assembly, with an editable shared 3D view and workflow steps for assembly, optimization, simulation, and review.
-- Six typed WebMCP tools for inspecting the exact active design context, selecting an approved typed assembly, generating a topology candidate, inspecting the component library, staging an import for human review, and moving a permitted component in the shared layout.
+- Typed WebMCP tools for inspecting the exact active design context, selecting an approved assembly, generating a topology candidate, reviewing its named structural/replay cases in the shared viewport, validating layout state, staging imports for human review, and moving permitted components.
 - Browser-local topology work in a module worker with Rust/Wasm, protected volumes, named load cases, connected load paths, immutable receipts, and explicit stale-state handling after an edit.
 - A review surface that keeps agent prediction, output/evidence, plan state, and human authority separate. Component imports remain staged until human approval; an agent cannot promote a candidate or authorize manufacturing export.
 - Separate raw verification routes exist for browser engineering gates. They are not the product demo; the shared dashboard is the judge-facing product.

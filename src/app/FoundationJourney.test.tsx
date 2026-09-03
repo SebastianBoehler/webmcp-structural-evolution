@@ -227,7 +227,7 @@ test("recovers from failures without erasing their evidence", async () => {
 }, 30_000);
 
 test("renders an interactive estimate preview while keeping topology actions gated", async () => {
-  const viewer = renderJourney(async (input) => ({
+  renderJourney(async (input) => ({
     status: "estimate",
     truthLevel: "interactive-estimate",
     output: sparseField(input, 0.5),
@@ -257,13 +257,6 @@ test("renders an interactive estimate preview while keeping topology actions gat
   expect(screen.getByText("Peak displacement")).toBeVisible();
   expect(screen.getByText(/estimate is not an input to the current-assembly replay/i)).toBeVisible();
   expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
-
-  fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
-  expect(screen.getByRole("button", { name: /run flight replay/i })).not.toBeDisabled();
-  expect(screen.getByRole("img", { name: /^interactive 3d physical assembly$/i })).toBeVisible();
-  expect(screen.queryByText(/^interactive estimate preview.*unverified/i)).toBeNull();
-  expect(sceneNames(viewer).some((name) => /verified-(?:current-field|topology-surface|delta-)/.test(name))).toBe(false);
-  expect(screen.getByText(/topology estimate is not an input to this current-assembly replay/i)).toBeVisible();
 
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /review interactive estimate/i }));

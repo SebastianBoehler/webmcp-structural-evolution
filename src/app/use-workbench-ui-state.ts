@@ -59,10 +59,7 @@ export function useWorkbenchUiState(operationStatus: OperationStatus) {
   };
   const setSimulationActivity = (active: boolean) => {
     setSimulationActive(active);
-    if (active) {
-      setAnalysisLayer("stress");
-      setShowConstraints(false);
-    }
+    if (active) setShowConstraints(false);
   };
 
   return {

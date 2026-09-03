@@ -9,6 +9,8 @@ import type { DemoFixtureId } from "../samples/demo-fixtures";
 import { AssemblyTemplateTools } from "../webmcp/assembly-template-tools";
 import { FoundationTools } from "../webmcp/FoundationTools";
 import { ComponentImportTools } from "../webmcp/component-tools";
+import { SimulationAgentTools, type SimulationViewCommand } from "../webmcp/simulation-tools";
+import type { FlightMotor } from "../simulation/flight-scenarios";
 
 export interface WorkbenchAgentToolsProps {
   readonly state: FoundationProjectState;
@@ -25,13 +27,27 @@ export interface WorkbenchAgentToolsProps {
   readonly onStage: (component: ComponentImport) => PendingComponentImport;
   readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => Promise<{ readonly revision: string; readonly layoutVersion: number }>;
   readonly onValidate: (expectedVersion: number) => Promise<CompiledAssembly>;
+  readonly simulationMotors: readonly FlightMotor[];
+  readonly simulationMassKg: number;
+  readonly onSimulationViewCommand: (command: SimulationViewCommand) => void;
 }
 
 export function WorkbenchAgentTools(props: WorkbenchAgentToolsProps) {
+  const simulationCandidate = [...props.state.stagedBranches].reverse().find((branch) =>
+    branch.parentRevision === props.state.contextRevision && !branch.stale
+    && (branch.result?.status === "estimate" || branch.result?.status === "verified"),
+  );
   return (
     <div className="agent-tool-grid">
       <AssemblyTemplateTools current={props.fixtureId} onGenerate={props.onGenerateFixture} />
       <FoundationTools state={props.state} services={props.services} layoutAuthority={props.layoutAuthority} />
+      <SimulationAgentTools
+        candidate={simulationCandidate}
+        contextRevision={props.state.contextRevision}
+        motors={props.simulationMotors}
+        massKg={props.simulationMassKg}
+        onViewCommand={props.onSimulationViewCommand}
+      />
       <ComponentImportTools
         imports={props.imports}
         pending={props.pending}

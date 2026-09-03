@@ -1,4 +1,4 @@
-export type ResultLayer = "topology" | "displacement" | "stress" | "temperature" | "flux" | "mechanism";
+export type ResultLayer = "topology" | "displacement" | "displacementMagnitude" | "stress" | "temperature" | "flux" | "mechanism";
 export interface FieldGrid {
   readonly dimensions: readonly [number, number, number];
   readonly cellSize: readonly [number, number, number];
@@ -10,6 +10,7 @@ export interface ResultLayerPayloads {
   readonly topology: FieldGrid & { readonly density: Float32Array };
   readonly displacement: ScalarField & { readonly vectors: Float32Array;
     readonly displacementUnit: "mm"; readonly sourceDisplacementUnit?: "m" | "mm" };
+  readonly displacementMagnitude: ScalarField;
   readonly stress: ScalarField;
   readonly temperature: ScalarField;
   readonly flux: ScalarField & { readonly vectors: Float32Array; readonly vectorUnit: "W/m^2" };
@@ -21,7 +22,7 @@ export interface ResultLayers {
   snapshot(): Readonly<Partial<ResultLayerPayloads>>;
 }
 
-const order: readonly ResultLayer[] = ["topology", "displacement", "stress", "temperature", "flux", "mechanism"];
+const order: readonly ResultLayer[] = ["topology", "displacement", "displacementMagnitude", "stress", "temperature", "flux", "mechanism"];
 
 function finiteTuple(value: unknown, length: number, positive: boolean, label: string): readonly number[] {
   if (!Array.isArray(value) || value.length !== length

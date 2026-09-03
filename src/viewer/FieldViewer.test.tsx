@@ -260,7 +260,7 @@ describe("FieldViewer", () => {
     expect(renderedScene(test).getObjectByName("assembly-part:motor-envelope")).toBeDefined();
   });
 
-  it("visibly rejects legacy scalar-only displacement instead of inventing direction", () => {
+  it("colors scalar displacement magnitude without inventing deformation direction", () => {
     const test = harness();
     const result = { ...verified([1, 1, 0, 1]),
       analysis: { displacement: new Float32Array([0, 1, 2, 3]),
@@ -272,6 +272,8 @@ describe("FieldViewer", () => {
       alternatives={[]} selectedRegion={region} threshold={.5} mode="overlay"
       analysisLayer="displacement" environment={test.environment}/>);
 
-    expect(screen.getByRole("alert").textContent).toMatch(/signed displacement vectors.*hidden/i);
+    expect(screen.queryByRole("alert")).toBeNull();
+    const surface = renderedScene(test).getObjectByName("verified-topology-surface") as THREE.Mesh;
+    expect(surface.geometry.getAttribute("color")).toBeDefined();
   });
 });

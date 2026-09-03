@@ -37,13 +37,15 @@ function show(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, onEr
   void viewport.capture().catch((error) => { if (current()) onError?.(error); });
 }
 
-function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel) {
+function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel,
+  solverCase?: string) {
   const { dimensions, cellSize, anchor } = model.grid;
   const grid = { dimensions: [dimensions.width, dimensions.height, dimensions.depth] as const, cellSize, origin: anchor.position, active: new Uint8Array(dimensions.width * dimensions.height * dimensions.depth).map((_value, index) => model.currentInstances.includes(index) ? 1 : 0) };
   if (model.densityField) viewport.setResultLayer("topology", { density: model.densityField, ...grid });
   const field = model.analysisField;
   if (!field) return;
-  const scalar = { values: field.values, maximum: field.maximum, ...grid };
+  const active = solverCase ? field.cases?.[solverCase] : undefined;
+  const scalar = { values: active?.values ?? field.values, maximum: active?.maximum ?? field.maximum, ...grid };
   if (field.kind === "heat-flux") {
     if (!field.vectors || field.vectorUnit !== "W/m^2") {
       throw new Error("heat-flux fields require signed W/m^2 vectors");
@@ -56,6 +58,8 @@ function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewpo
     viewport.setResultLayer("displacement", { ...scalar, vectors: field.vectors,
       displacementUnit: field.displacementUnit,
       ...(field.sourceDisplacementUnit ? { sourceDisplacementUnit: field.sourceDisplacementUnit } : {}) });
+  } else if (field.kind === "displacement-magnitude") {
+    viewport.setResultLayer("displacementMagnitude", scalar);
   } else viewport.setResultLayer(field.kind === "safety" ? "stress" : field.kind, scalar);
 }
 
@@ -85,6 +89,7 @@ export async function mountSemanticFieldSession(
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
   let flightFrameActive = false;
+  let activeSolverCase: string | undefined;
   let generation = 0;
   const current = (request: number) => !disposed && generation === request;
   const setDocument = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
@@ -94,8 +99,9 @@ export async function mountSemanticFieldSession(
     const artifact = semanticArtifactFromViewerModel({ ...source, assemblyParts }, sourceRevision);
     currentArtifact = artifact;
     viewport.setDocument(artifact);
-    for (const layer of ["topology", "displacement", "stress", "temperature", "flux"] as const) viewport.setResultLayer(layer, undefined);
+    for (const layer of ["topology", "displacement", "displacementMagnitude", "stress", "temperature", "flux"] as const) viewport.setResultLayer(layer, undefined);
     analysisLayers(viewport, source);
+    activeSolverCase = undefined;
     return true;
   };
   const captureRevision = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
@@ -179,11 +185,17 @@ export async function mountSemanticFieldSession(
       if (!frame) {
         if (!flightFrameActive) return;
         flightFrameActive = false;
+        activeSolverCase = undefined;
+        analysisLayers(viewport, currentModel);
         viewport.setMechanismFrame(undefined);
         show(viewport, onError);
         return;
       }
       flightFrameActive = true;
+      if (activeSolverCase !== frame.solverCase) {
+        activeSolverCase = frame.solverCase;
+        analysisLayers(viewport, currentModel, frame.solverCase);
+      }
       viewport.setMechanismFrame({ componentId: "assembly:design", transform: flightFrameTransform(frame.attitudeRad) });
       show(viewport, onError);
     },

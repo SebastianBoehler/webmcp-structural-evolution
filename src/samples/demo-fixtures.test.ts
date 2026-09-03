@@ -12,6 +12,13 @@ test.each(Object.values(DEMO_FIXTURES))("$label exposes the exact compiled topol
   ]);
 });
 
+test("reference drone fixture exposes every named flight replay load case", () => {
+  const fixture = DEMO_FIXTURES["reference-drone"];
+  expect(fixture.compileTopology(fixture.initialState).input.loadCases.map(({ id }) => id)).toEqual([
+    "collective-thrust", "roll-differential", "pitch-differential", "yaw-torsion",
+  ]);
+});
+
 test("SE-6 fixture exposes its upper-arm study and detailed visual adapter", () => {
   const fixture = DEMO_FIXTURES["se6-cobot"];
   expect(fixture.context.locks).toEqual(["j2-upper-arm-support"]);

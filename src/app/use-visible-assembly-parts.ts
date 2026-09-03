@@ -24,7 +24,7 @@ export function useVisibleAssemblyParts(
 ) {
   const { mode, analysisLayer, showComponents, showConstraints, simulationActive, hasTopology } = options;
   return useMemo(() => {
-    const topologyVisible = (mode === "optimize" || mode === "review") && hasTopology;
+    const topologyVisible = mode !== "assembly" && hasTopology;
     const visible = parts.filter((part) =>
       (showConstraints || part.appearance !== "constraint")
       && (showComponents || part.appearance !== "component")

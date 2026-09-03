@@ -21,8 +21,8 @@ describe("FlightSimulationPanel", () => {
     expect(screen.getByRole("button", { name: "Pitch brake" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Yaw burst" })).toBeVisible();
     expect(screen.getByText(/mass model: 515 g.*36 attached parts.*battery 254 g/i)).toBeVisible();
-    expect(screen.getByText(/assembly-load and rigid-body replay only.*does not verify topology.*solve structural stress.*flight approval/i)).toBeVisible();
-    expect(screen.getByText(/topology estimate is not an input to this current-assembly replay/i)).toBeVisible();
+    expect(screen.getByText(/visible candidate uses its existing per-case structural estimate fields/i)).toBeVisible();
+    expect(screen.getByText(/replay does not re-solve or verify the topology.*flight approval/i)).toBeVisible();
   });
 
   it("starts a selected replay and can isolate the drone", () => {
@@ -47,6 +47,19 @@ describe("FlightSimulationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pause flight replay" }));
     expect(onFrame).toHaveBeenLastCalledWith(undefined);
     expect(onActiveChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("starts the exact named replay requested by an external agent command", () => {
+    const props = {
+      motors, massKg: 0.515, componentCount: 36, batteryMassKg: 0.254,
+      onFrame: vi.fn(), componentsVisible: true, onComponentsVisibleChange: vi.fn(),
+    };
+    const view = render(<FlightSimulationPanel {...props} />);
+
+    view.rerender(<FlightSimulationPanel {...props} command={{ requestId: 1, scenario: "yaw" }} />);
+
+    expect(screen.getByRole("button", { name: "Yaw burst" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Pause flight replay" })).toBeVisible();
   });
 
   it("clears the replay frame and parent activity when unmounted while running", () => {
@@ -74,7 +87,7 @@ describe("FlightSimulationPanel", () => {
     render(<FlightSimulationPanel motors={[]} massKg={0.515} componentCount={36} batteryMassKg={0.254}
       onFrame={vi.fn()} componentsVisible onComponentsVisibleChange={vi.fn()} />);
 
-    expect(screen.getByText(/generate a verified topology before replaying flight loads/i)).toBeVisible();
+    expect(screen.getByText(/generate a topology candidate before replaying its load cases/i)).toBeVisible();
     expect(screen.getByRole("button", { name: "Run flight replay" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Aggressive roll" })).toBeNull();
   });

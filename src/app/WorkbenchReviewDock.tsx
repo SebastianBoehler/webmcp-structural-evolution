@@ -13,6 +13,8 @@ import { ReceiptLedger } from "./ReceiptLedger";
 import type { ExperimentRailApi } from "./project-state-types";
 import { WorkbenchAgentTools } from "./WorkbenchAgentTools";
 import { WorkbenchDrawer, type DrawerItem, type DrawerView } from "./WorkbenchDrawer";
+import type { FlightMotor } from "../simulation/flight-scenarios";
+import type { SimulationViewCommand } from "../webmcp/simulation-tools";
 
 interface WorkbenchReviewDockProps {
   readonly active: DrawerView;
@@ -35,6 +37,9 @@ interface WorkbenchReviewDockProps {
   readonly onMove: (id: string, center: readonly [number, number, number], expectedVersion?: number) => Promise<{ readonly revision: string; readonly layoutVersion: number }>;
   readonly onValidate: (expectedVersion: number) => Promise<CompiledAssembly>;
   readonly onChange: (view: DrawerView) => void;
+  readonly simulationMotors: readonly FlightMotor[];
+  readonly simulationMassKg: number;
+  readonly onSimulationViewCommand: (command: SimulationViewCommand) => void;
 }
 
 export function WorkbenchReviewDock(props: WorkbenchReviewDockProps) {
@@ -80,6 +85,9 @@ export function WorkbenchReviewDock(props: WorkbenchReviewDockProps) {
         onStage={props.onStage}
         onMove={props.onMove}
         onValidate={props.onValidate}
+        simulationMotors={props.simulationMotors}
+        simulationMassKg={props.simulationMassKg}
+        onSimulationViewCommand={props.onSimulationViewCommand}
       />,
     },
   ];

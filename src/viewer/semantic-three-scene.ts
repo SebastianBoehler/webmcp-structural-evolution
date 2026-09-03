@@ -17,6 +17,7 @@ export type SemanticPbrMaterialFactory = (
 function resultColor(three: typeof THREE, state: SemanticRenderState): THREE.Color {
   if (state.resultLayers.temperature) return new three.Color(0xf2a24a);
   if (state.resultLayers.flux) return new three.Color(0x3be2ff);
+  if (state.resultLayers.displacementMagnitude) return new three.Color(0x7b6ee6);
   if (state.resultLayers.stress) return new three.Color(0xd85744);
   return new three.Color(0x5c94d4);
 }
@@ -40,7 +41,7 @@ function addField(
   state: SemanticRenderState,
   pbr: SemanticPbrMaterialFactory,
 ) {
-  const layer = state.resultLayers.displacement ?? state.resultLayers.stress
+  const layer = state.resultLayers.displacement ?? state.resultLayers.displacementMagnitude ?? state.resultLayers.stress
     ?? state.resultLayers.temperature ?? state.resultLayers.flux ?? state.resultLayers.topology;
   if (!layer?.dimensions || !layer.cellSize || !layer.origin || !layer.active) return;
   const values = "values" in layer ? layer.values : layer.density;

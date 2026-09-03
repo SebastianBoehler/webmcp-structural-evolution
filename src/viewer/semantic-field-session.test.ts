@@ -248,6 +248,30 @@ it("clears the mechanism layer and captures the baseline assembly pose when repl
   session.dispose();
 });
 
+it("shows one case field per replay selection and restores the envelope on pause", async () => {
+  const envelope = new Float32Array([40]);
+  const roll = new Float32Array([12]);
+  const replayModel = { ...(model as object), currentInstances: new Uint32Array([0]),
+    densityField: new Float32Array([1]), analysisField: { kind: "stress", values: envelope,
+      maximum: 40, cases: { "roll-differential": { values: roll, maximum: 40 } } } } as never;
+  const session = await mountSemanticFieldSession(document.createElement("canvas"), replayModel, "replay:case");
+  viewport.setResultLayer.mockClear();
+  const frame = flightFrameAt("roll", 0.25, [
+    { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
+    { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },
+  ], 0.515);
+
+  session.setFlightFrame(frame);
+  session.setFlightFrame({ ...frame, timeS: 0.5 });
+  expect(viewport.setResultLayer.mock.calls.filter(([layer]) => layer === "stress")).toEqual([
+    ["stress", expect.objectContaining({ values: roll })],
+  ]);
+  session.setFlightFrame(undefined);
+  expect(viewport.setResultLayer).toHaveBeenLastCalledWith("stress",
+    expect.objectContaining({ values: envelope }));
+  session.dispose();
+});
+
 it("publishes only the newest revision when model materialization completes out of order", async () => {
   const materialized = (id: string) => [{ id, selectionId: id, label: id, appearance: "component",
     kind: "mesh" as const, center: [0, 0, 0], mesh: { surfaces: [{ name: id,

@@ -125,6 +125,8 @@ describe("FieldViewer flight replay", () => {
       environment={test.environment}
     />);
     const surface = renderedScene(test).getObjectByName("verified-topology-surface") as THREE.Mesh;
+    const geometry = surface.geometry;
+    const material = surface.material;
     const before = Array.from(surface.geometry.getAttribute("color").array);
 
     channel.emit(flightFrameAt("roll", 0.25, [
@@ -146,6 +148,16 @@ describe("FieldViewer flight replay", () => {
         expect(value).toBeCloseTo(cold[axis]!, 6);
       });
     }
+    for (let frame = 1; frame <= 24; frame += 1) {
+      channel.emit(flightFrameAt("roll", frame / 24, [
+        { id: "east", centerM: [0.105, 0, 0] }, { id: "north", centerM: [0, 0.105, 0] },
+        { id: "west", centerM: [-0.105, 0, 0] }, { id: "south", centerM: [0, -0.105, 0] },
+      ], 0.495));
+    }
+    const replaySurface = renderedScene(test).getObjectByName("verified-topology-surface") as THREE.Mesh;
+    expect(replaySurface).toBe(surface);
+    expect(replaySurface.geometry).toBe(geometry);
+    expect(replaySurface.material).toBe(material);
     expect(test.environment.createRenderer).toHaveBeenCalledTimes(1);
   });
 });

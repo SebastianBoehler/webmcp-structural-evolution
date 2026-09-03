@@ -9,13 +9,14 @@ describe("result layers", () => {
     layers.set("topology", { density: new Float32Array([.2, .8]), ...grid });
     layers.set("displacement", { values: new Float32Array([.01, .02]), maximum: .02,
       vectors: new Float32Array([-.01, 0, 0, .02, 0, 0]), displacementUnit: "mm", ...grid });
+    layers.set("displacementMagnitude", { values: new Float32Array([.01, .02]), maximum: .02, ...grid });
     layers.set("stress", { values: new Float32Array([12, 8]), maximum: 12, ...grid });
     layers.set("temperature", { values: new Float32Array([320, 330]), maximum: 330, ...grid });
     layers.set("flux", { values: new Float32Array([4, 2]), maximum: 4,
       vectors: new Float32Array([-4, 0, 0, 2, 0, 0]), vectorUnit: "W/m^2", ...grid });
     layers.set("mechanism", { componentId: "component:arm", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 2, 1, 1] });
 
-    expect(layers.visible()).toEqual(["topology", "displacement", "stress", "temperature", "flux", "mechanism"]);
+    expect(layers.visible()).toEqual(["topology", "displacement", "displacementMagnitude", "stress", "temperature", "flux", "mechanism"]);
     layers.set("stress", undefined);
     expect(layers.snapshot()).toMatchObject({
       topology: { density: expect.any(Float32Array) },
