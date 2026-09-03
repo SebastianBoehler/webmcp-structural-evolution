@@ -217,6 +217,7 @@ test("renders an interactive estimate preview while keeping engineering actions 
   expect(screen.getByText(/interactive estimate preview.*unverified.*unaccepted/i)).toBeVisible();
   expect(screen.getByLabelText("Topology result")).toBeVisible();
   expect(screen.getByText("Peak displacement")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /export/i })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
   expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
