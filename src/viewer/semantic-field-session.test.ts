@@ -11,6 +11,7 @@ const viewport = vi.hoisted(() => ({
   setInteractionHandlers: vi.fn(),
   setMeasurements: vi.fn(),
   setMechanismFrame: vi.fn(),
+  setReplayScales: vi.fn(),
   setResultLayer: vi.fn(),
   setSectionPlane: vi.fn(),
   setSelection: vi.fn(),
@@ -252,7 +253,7 @@ it("clears the mechanism layer and captures the baseline assembly pose when repl
   session.dispose();
 });
 
-it("publishes signed case deformation and scalar load phase on every replay frame", async () => {
+it("publishes a case once and updates only replay scales on subsequent frames", async () => {
   const envelope = new Float32Array([40]);
   const roll = new Float32Array([12]);
   const vectors = new Float32Array([1, -2, 3]);
@@ -273,10 +274,11 @@ it("publishes signed case deformation and scalar load phase on every replay fram
   session.setFlightFrame(frame);
   session.setFlightFrame({ ...frame, timeS: 0.5 });
   expect(viewport.setResultLayer.mock.calls.filter(([layer, payload]) => layer === "stress" && payload))
-    .toHaveLength(2);
+    .toHaveLength(1);
   expect(viewport.setResultLayer).toHaveBeenCalledWith("displacement", expect.objectContaining({
     vectors, deformationScale: expect.any(Number),
   }));
+  expect(viewport.setReplayScales).toHaveBeenCalledWith(expect.any(Number), expect.any(Number));
   expect(viewport.present).toHaveBeenCalled();
   session.setFlightFrame(undefined);
   expect(viewport.setResultLayer).toHaveBeenLastCalledWith("stress",

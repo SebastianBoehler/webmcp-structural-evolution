@@ -66,6 +66,7 @@ export interface SemanticViewport {
     layer: K,
     payload: ResultLayerPayloads[K] | undefined,
   ): void;
+  setReplayScales(scalarScale: number, deformationScale: number): void;
   setMechanismFrame(frame: ResultLayerPayloads["mechanism"] | undefined): void;
   setSectionPlane(plane: SemanticRenderState["sectionPlane"]): void;
   setMeasurements(measurements: SemanticRenderState["measurements"]): void;

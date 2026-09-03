@@ -44,7 +44,10 @@ const REPLAY_PRESENT_INTERVAL_MS = 50;
 function analysisLayers(viewport: Awaited<ReturnType<typeof createSemanticViewport>>, model: ViewerRenderModel,
   solverCase?: string, replay?: ReplayScales) {
   const { dimensions, cellSize, anchor } = model.grid;
-  const grid = { dimensions: [dimensions.width, dimensions.height, dimensions.depth] as const, cellSize, origin: anchor.position, active: new Uint8Array(dimensions.width * dimensions.height * dimensions.depth).map((_value, index) => model.currentInstances.includes(index) ? 1 : 0) };
+  const occupancy = new Uint8Array(dimensions.width * dimensions.height * dimensions.depth);
+  model.currentInstances.forEach((index) => { occupancy[index] = 1; });
+  const grid = { dimensions: [dimensions.width, dimensions.height, dimensions.depth] as const,
+    cellSize, origin: anchor.position, active: occupancy };
   if (model.densityField) viewport.setResultLayer("topology", { density: model.densityField, ...grid });
   for (const layer of ["displacement", "displacementMagnitude", "stress", "temperature", "flux"] as const) {
     viewport.setResultLayer(layer, undefined);
@@ -103,6 +106,7 @@ export async function mountSemanticFieldSession(
   let transformSpace: "world" | "local" = "world";
   let translationSnap: number | null = null;
   let flightFrameActive = false;
+  let replaySolverCase: string | undefined;
   let presenting = false, presentPending = false;
   let generation = 0;
   const current = (request: number) => !disposed && generation === request;
@@ -132,6 +136,7 @@ export async function mountSemanticFieldSession(
     viewport.setDocument(artifact);
     viewport.setResultLayer("topology", undefined);
     analysisLayers(viewport, source);
+    replaySolverCase = undefined;
     return true;
   };
   const captureRevision = async (source: ViewerRenderModel, sourceRevision: string, request: number) => {
@@ -215,6 +220,7 @@ export async function mountSemanticFieldSession(
       if (!frame) {
         if (!flightFrameActive) return;
         flightFrameActive = false;
+        replaySolverCase = undefined;
         analysisLayers(viewport, currentModel);
         viewport.setMechanismFrame(undefined);
         presentLatest();
@@ -222,10 +228,13 @@ export async function mountSemanticFieldSession(
       }
       flightFrameActive = true;
       const interpolation = structuralReplayInterpolation(frame);
-      analysisLayers(viewport, currentModel, frame.solverCase, {
-        scalar: Math.abs(interpolation),
-        deformation: interpolation * STRUCTURAL_DEFORMATION_EXAGGERATION,
-      });
+      const scalar = Math.abs(interpolation);
+      const deformation = interpolation * STRUCTURAL_DEFORMATION_EXAGGERATION;
+      if (replaySolverCase === frame.solverCase) viewport.setReplayScales(scalar, deformation);
+      else {
+        analysisLayers(viewport, currentModel, frame.solverCase, { scalar, deformation });
+        replaySolverCase = frame.solverCase;
+      }
       viewport.setMechanismFrame({ componentId: "assembly:design", transform: flightFrameTransform(frame.attitudeRad) });
       presentLatest();
     },

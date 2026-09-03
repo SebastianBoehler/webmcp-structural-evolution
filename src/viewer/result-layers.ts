@@ -20,6 +20,7 @@ export interface ResultLayerPayloads {
 }
 export interface ResultLayers {
   set<K extends ResultLayer>(layer: K, payload: ResultLayerPayloads[K] | undefined): void;
+  setReplayScales(scalarScale: number, deformationScale: number): void;
   visible(): readonly ResultLayer[];
   snapshot(): Readonly<Partial<ResultLayerPayloads>>;
 }
@@ -110,6 +111,22 @@ export function createResultLayers(): ResultLayers {
         }
       } else validateField(layer, payload as never);
       Object.assign(values, { [layer]: payload });
+    },
+    setReplayScales(scalarScale, deformationScale) {
+      if (!Number.isFinite(scalarScale) || scalarScale < 0) {
+        throw new RangeError("replay scalar scale must be non-negative and finite");
+      }
+      if (!Number.isFinite(deformationScale)) {
+        throw new RangeError("replay deformation scale must be finite");
+      }
+      const colorLayer = (["stress", "temperature", "flux", "displacementMagnitude", "displacement"] as const)
+        .find((layer) => values[layer] !== undefined);
+      if (colorLayer) Object.assign(values, {
+        [colorLayer]: { ...values[colorLayer], scalarScale },
+      });
+      if (values.displacement) Object.assign(values, {
+        displacement: { ...values.displacement, deformationScale },
+      });
     },
     visible: () => order.filter((layer) => values[layer] !== undefined),
     snapshot: () => ({ ...values }),

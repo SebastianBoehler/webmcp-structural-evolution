@@ -75,4 +75,20 @@ describe("result layers", () => {
     expect(() => layers.set("displacement", { ...base, vectors: new Float32Array(3),
       displacementUnit: "mm", deformationScale: Number.NaN })).toThrow("deformation scale");
   });
+
+  it("updates replay scales without republishing immutable field arrays", () => {
+    const layers = createResultLayers();
+    const grid = { dimensions: [1, 1, 1] as const, cellSize: [1, 1, 1] as const,
+      origin: [0, 0, 0] as const, active: new Uint8Array([1]) };
+    const stress = new Float32Array([12]), vectors = new Float32Array([.1, 0, 0]);
+    layers.set("stress", { ...grid, values: stress, maximum: 12 });
+    layers.set("displacement", { ...grid, values: new Float32Array([.1]), maximum: .1,
+      vectors, displacementUnit: "mm" });
+
+    layers.setReplayScales(.4, -100);
+
+    expect(layers.snapshot().stress).toMatchObject({ values: stress, scalarScale: .4 });
+    expect(layers.snapshot().displacement).toMatchObject({ vectors, deformationScale: -100 });
+    expect(() => layers.setReplayScales(-1, 1)).toThrow("scalar scale");
+  });
 });

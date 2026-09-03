@@ -88,6 +88,9 @@ export async function createSemanticViewport(
     setResultLayer(layer, payload) {
       if (!disposed) layers.set(layer, payload);
     },
+    setReplayScales(scalarScale, deformationScale) {
+      if (!disposed) layers.setReplayScales(scalarScale, deformationScale);
+    },
     setMechanismFrame(frame) {
       if (!disposed) layers.set("mechanism", frame);
     },
