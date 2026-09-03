@@ -220,9 +220,8 @@ export function FoundationJourney({
                 setSelectedPart(id);
                 if (workspaceMode === "assembly") setAssemblyPanel("inspector");
               }}
-              onPartMove={(id, center) => {
-                return workspace.movePart(id, center).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-              }}
+              onPartMove={workspace.movePart}
+              onPartMoveError={(cause) => setError(cause instanceof Error ? cause.message : String(cause))}
               onPartDragState={workspace.setLayoutDragging}
               />
               {workspace.pending && (

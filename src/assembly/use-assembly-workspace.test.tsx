@@ -195,3 +195,61 @@ test("commits one authoritative final workspace position after continuous WebGPU
     .toEqual([expect.objectContaining({ outcome: expect.objectContaining({ status: "succeeded" }) })]);
   expect(errors).toEqual([]);
 });
+
+test("rolls a rejected final drag back before resyncing a concurrent authoritative workspace move", async () => {
+  const { result } = renderHook(() => useAssemblyWorkspace());
+  const selected = result.current.parts.find(({ selectionId }) => selectionId === "motor-east")!;
+  const start = selected.center;
+  const concurrentCenter = [start[0] + 5, start[1], start[2]] as const;
+  const object = new THREE.Group();
+  object.position.set(...start);
+  object.updateMatrixWorld(true);
+  const finalCommits: Promise<unknown>[] = [];
+  const errors: unknown[] = [];
+  let poseAtError: readonly number[] | undefined;
+  const down = (x: number) => new THREE.Ray(
+    new THREE.Vector3(x, start[1], start[2] + 100),
+    new THREE.Vector3(0, 0, -1),
+  );
+  const drag = createWebGpuTransformDrag({
+    orbitEnabled: () => true,
+    setOrbitEnabled: () => undefined,
+    onPreview: () => undefined,
+    onMove: (id, position) => {
+      const pending = result.current.movePart(id, position);
+      finalCommits.push(pending);
+      return pending;
+    },
+    onMoveError: (error) => {
+      errors.push(error);
+      poseAtError = object.position.toArray();
+      object.position.set(...concurrentCenter);
+      object.updateMatrixWorld(true);
+    },
+    onDragState: () => undefined,
+  });
+
+  drag.begin("motor-east", object, "x", down(start[0]));
+  drag.move(down(start[0] + 20));
+  const concurrent = result.current.movePart("motor-east", concurrentCenter);
+  drag.end();
+  let finalResults: PromiseSettledResult<unknown>[] = [];
+  await act(async () => {
+    await concurrent;
+    finalResults = await Promise.allSettled(finalCommits);
+  });
+
+  expect(finalCommits).toHaveLength(1);
+  expect(finalResults).toEqual([expect.objectContaining({ status: "rejected" })]);
+  expect(poseAtError).toEqual(start);
+  expect(object.position.toArray()).toEqual(concurrentCenter);
+  expect(result.current.parts.find(({ selectionId }) => selectionId === "motor-east")?.center)
+    .toEqual(concurrentCenter);
+  expect(result.current.layoutVersion).toBe(2);
+  expect(result.current.receipts.filter(({ action }) => action === "move_assembly_component"))
+    .toEqual([
+      expect.objectContaining({ outcome: expect.objectContaining({ status: "succeeded" }) }),
+      expect.objectContaining({ outcome: expect.objectContaining({ status: "failed" }) }),
+    ]);
+  expect(errors).toEqual([expect.objectContaining({ message: expect.stringMatching(/parent revision is stale/i) })]);
+});

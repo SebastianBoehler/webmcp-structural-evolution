@@ -83,7 +83,7 @@ describe("WebGPU semantic transform drag", () => {
     expect(position[2]).toBeCloseTo(0);
   });
 
-  it("commits only the final continuous position and reports a rejected commit", async () => {
+  it("restores the preview after an asynchronous final commit rejection", async () => {
     const object = new THREE.Group();
     object.position.set(1, 2, 3);
     object.updateMatrixWorld(true);
@@ -113,8 +113,32 @@ describe("WebGPU semantic transform drag", () => {
 
     expect(onMove).toHaveBeenCalledOnce();
     expect(onMove).toHaveBeenCalledWith("component:arm", [2.5, 2, 3]);
-    expect(onPreview).toHaveBeenCalledTimes(2);
+    expect(object.position.toArray()).toEqual([1, 2, 3]);
+    expect(onPreview).toHaveBeenCalledTimes(3);
     expect(onMoveError).toHaveBeenCalledWith(error);
+  });
+
+  it("restores the preview before reporting a synchronous final commit rejection", () => {
+    const object = new THREE.Group();
+    object.position.set(1, 2, 3);
+    object.updateMatrixWorld(true);
+    const error = new Error("synchronous stale layout");
+    const poseAtError: number[][] = [];
+    const drag = createWebGpuTransformDrag({
+      orbitEnabled: () => true,
+      setOrbitEnabled: vi.fn(),
+      onMove: () => { throw error; },
+      onPreview: vi.fn(),
+      onMoveError: () => poseAtError.push(object.position.toArray()),
+      onDragState: vi.fn(),
+    });
+
+    drag.begin("component:arm", object, "x", down(1, 2));
+    drag.move(down(2.74, 2));
+    drag.end();
+
+    expect(object.position.toArray()).toEqual([1, 2, 3]);
+    expect(poseAtError).toEqual([[1, 2, 3]]);
   });
 
   it("rejects a ray parallel to the selected axis without changing orbit state", () => {

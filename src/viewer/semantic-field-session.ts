@@ -111,6 +111,13 @@ export async function mountSemanticFieldSession(
       throw error;
     }
   };
+  const restoreAuthoritativeModel = async (error: unknown) => {
+    if (interactions.onMoveError) interactions.onMoveError(error);
+    else onError?.(error);
+    const request = ++generation;
+    try { await captureRevision(currentModel, currentRevision, request); }
+    catch (restoreError) { if (current(request)) onError?.(restoreError); }
+  };
   try {
     viewport.setInteractionHandlers({
       onSelect: (semanticId) => {
@@ -124,7 +131,7 @@ export async function mountSemanticFieldSession(
         const source = sourceSelectionForSemantic(currentArtifact, semanticId);
         return source ? interactions.onMove?.(source, position) : undefined;
       },
-      onMoveError: (error) => onError?.(error),
+      onMoveError: restoreAuthoritativeModel,
       onDragState: (dragging, semanticId) => {
         const source = sourceSelectionForSemantic(currentArtifact, semanticId);
         if (source) interactions.onDragState?.(dragging, source);

@@ -203,6 +203,30 @@ it("rebuilds current semantic bounds and captures after an assembly pose update"
   session.dispose();
 });
 
+it("replays the newest authoritative assembly model after a final move rejects", async () => {
+  const onMoveError = vi.fn();
+  const session = await mountSemanticFieldSession(document.createElement("canvas"), exactModel(),
+    "pose:initial", undefined, { onMoveError });
+  const handlers = viewport.setInteractionHandlers.mock.calls.at(-1)?.[0];
+  const initialPart = (exactModel() as { assemblyParts: readonly AssemblyVisualPart[] })
+    .assemblyParts[0]!;
+  await session.updateModel({ ...(exactModel() as object),
+    assemblyParts: [{ ...initialPart, center: [50, 0, 0] }] } as never, "pose:concurrent");
+  viewport.setDocument.mockClear();
+  viewport.capture.mockClear();
+  const error = new Error("Assembly action parent revision is stale");
+
+  await handlers.onMoveError(error);
+
+  const artifact = viewport.setDocument.mock.calls.at(-1)?.[0];
+  expect(artifact.revision).toBe("pose:concurrent");
+  expect(artifact.nodes.find((node: { id: string }) => node.id === "component:motor")
+    ?.transform.position).toEqual([50, 0, 0]);
+  expect(viewport.capture).toHaveBeenCalledOnce();
+  expect(onMoveError).toHaveBeenCalledWith(error);
+  session.dispose();
+});
+
 it("clears the mechanism layer and captures the baseline assembly pose when replay pauses", async () => {
   const session = await mountSemanticFieldSession(document.createElement("canvas"), exactModel(),
     "replay:baseline");

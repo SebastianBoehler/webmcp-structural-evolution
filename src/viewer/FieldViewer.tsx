@@ -51,6 +51,7 @@ export interface FieldViewerProps {
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
   readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => unknown;
+  readonly onPartMoveError?: (error: unknown) => void;
   readonly onPartDragState?: (dragging: boolean, partId: string) => void;
 }
 
@@ -162,6 +163,7 @@ export function FieldViewer({
   environment,
   onPartSelect,
   onPartMove,
+  onPartMoveError,
   onPartDragState,
 }: FieldViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -198,7 +200,7 @@ export function FieldViewer({
     model: prepared.model,
     revision: current?.branchRevision ?? "assembly",
     stateRef: semanticState,
-    interactions: { onSelect: onPartSelect, onMove: onPartMove, onDragState: onPartDragState },
+    interactions: { onSelect: onPartSelect, onMove: onPartMove, onMoveError: onPartMoveError, onDragState: onPartDragState },
     onAttempt: () => setRenderError(undefined),
     onError: (error) => setRenderError(
       `The WebGPU renderer failed. ${error instanceof Error ? error.message : String(error)}`,
@@ -214,7 +216,7 @@ export function FieldViewer({
         canvas,
         prepared.model,
         viewerEnvironment(environment),
-        { onSelect: onPartSelect, onMove: onPartMove, onDragState: onPartDragState },
+        { onSelect: onPartSelect, onMove: onPartMove, onMoveError: onPartMoveError, onDragState: onPartDragState },
         { preserveDrawingBuffer },
       );
       sessionRef.current = session;
@@ -228,7 +230,7 @@ export function FieldViewer({
       setRenderError(`The 3D renderer failed. ${error instanceof Error ? error.message : String(error)}`);
       return failed ? () => failed.dispose() : undefined;
     }
-  }, [current?.branchRevision, environment, onPartDragState, onPartMove, onPartSelect, prepared.model, preserveDrawingBuffer]);
+  }, [current?.branchRevision, environment, onPartDragState, onPartMove, onPartMoveError, onPartSelect, prepared.model, preserveDrawingBuffer]);
 
   useEffect(() => sessionRef.current?.setHighlightedBranch(selectedAlternative), [prepared.model, selectedAlternative]);
   useEffect(() => {

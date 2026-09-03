@@ -36,6 +36,7 @@ export function createSemanticSessionMount(
   const interactions: PartInteractionHandlers = {
     onSelect: (partId) => options.interactions().onSelect?.(partId),
     onMove: (partId, position) => options.interactions().onMove?.(partId, position),
+    onMoveError: (error) => options.interactions().onMoveError?.(error),
     onDragState: (dragging, partId) => options.interactions().onDragState?.(dragging, partId),
   };
   const fail = (failed: SemanticFieldRendererSession, error: unknown) => {

@@ -5,6 +5,7 @@ import { selectableAssemblyMeshes, type AssemblyMeshSet } from "./assembly-meshe
 export interface PartInteractionHandlers {
   readonly onSelect?: (partId: string) => void;
   readonly onMove?: (partId: string, center: readonly [number, number, number]) => unknown;
+  readonly onMoveError?: (error: unknown) => void;
   readonly onDragState?: (dragging: boolean, partId: string) => void;
 }
 

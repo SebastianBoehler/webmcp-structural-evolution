@@ -56,6 +56,13 @@ function snapValue(value: number, snap: number): number {
   return Math.round(value / snap) * snap;
 }
 
+function setWorldPosition(object: THREE.Object3D, position: THREE.Vector3): void {
+  const localPosition = position.clone();
+  object.parent?.worldToLocal(localPosition);
+  object.position.copy(localPosition);
+  object.updateMatrixWorld(true);
+}
+
 export function createWebGpuTransformDrag(
   options: TransformDragOptions,
 ): WebGpuTransformDrag {
@@ -71,11 +78,20 @@ export function createWebGpuTransformDrag(
     options.setOrbitEnabled(completed.orbitWasEnabled);
     if (completed.finalPosition) {
       const position = completed.finalPosition;
+      const reject = (error: unknown) => {
+        try {
+          setWorldPosition(completed.object, completed.startPosition);
+          options.onPreview();
+        } catch (rollbackError) {
+          options.onMoveError(rollbackError);
+        }
+        options.onMoveError(error);
+      };
       try {
         void Promise.resolve(options.onMove(completed.semanticId, [position.x, position.y, position.z]))
-          .catch(options.onMoveError);
+          .catch(reject);
       } catch (error) {
-        options.onMoveError(error);
+        reject(error);
       }
     }
     options.onDragState(false, completed.semanticId);
@@ -125,10 +141,7 @@ export function createWebGpuTransformDrag(
       if (snap !== null) displacement = snapValue(displacement, snap);
       const position = active.startPosition.clone()
         .addScaledVector(active.axisDirection, displacement);
-      const localPosition = position.clone();
-      active.object.parent?.worldToLocal(localPosition);
-      active.object.position.copy(localPosition);
-      active.object.updateMatrixWorld(true);
+      setWorldPosition(active.object, position);
       active.finalPosition = position;
       options.onPreview();
     },
