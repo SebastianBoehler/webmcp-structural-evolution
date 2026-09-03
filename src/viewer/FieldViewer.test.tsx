@@ -116,6 +116,20 @@ describe("FieldViewer", () => {
     expect(camera.position.z).toBeGreaterThan(targetZ);
   });
 
+  it("keeps only camera guidance and display controls outside assembly editing", () => {
+    const test = harness();
+    render(<FieldViewer
+      current={null} alternatives={[]} selectedRegion={region} threshold={0.5} mode="overlay"
+      grid={grid} assemblyParts={[part]} editingEnabled={false} environment={test.environment}
+    />);
+
+    expect(screen.getByText(/drag to orbit.*scroll to zoom/i)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "World coordinates" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Snap 10 millimetres" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Toggle reference grid" })).toBeVisible();
+    expect(screen.getByRole("group", { name: "Viewport orientation" })).toBeVisible();
+  });
+
   it("can re-anchor navigation on the selected component and documents free pan", () => {
     const test = harness();
     render(

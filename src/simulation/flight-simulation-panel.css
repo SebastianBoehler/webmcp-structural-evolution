@@ -1,4 +1,5 @@
 .flight-simulation {
+  container-type: inline-size;
   position: absolute;
   z-index: 5;
   inset: auto auto 3.4rem 0.75rem;
@@ -35,7 +36,7 @@
 .flight-simulation__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem 0.8rem; }
 .flight-simulation__metrics dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .flight-simulation__run { width: 100%; min-height: 2.25rem; color: var(--accent-ink); background: var(--accent); box-shadow: none; }
-@media (max-width: 42rem) {
+@container (max-width: 26rem) {
   .flight-simulation__scenarios { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .flight-simulation__metrics { grid-template-columns: 1fr; }
 }

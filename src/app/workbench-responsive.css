@@ -1,3 +1,11 @@
+@media (max-width: 82rem) {
+  .brand-lockup p, .fixture-select > span, .workspace-status small, .selection-context { display: none; }
+  .workbench-header { grid-template-columns: minmax(11rem, 1fr) auto auto auto auto; gap: 0.55rem; }
+  .workflow-navigation button span { display: none; }
+  .viewport-toolbar { grid-template-columns: minmax(8rem, 0.6fr) minmax(10rem, 0.8fr) minmax(0, 1.8fr); gap: 0.55rem; }
+  .viewport-canvas[data-dock-open="true"] { grid-template-columns: minmax(0, 1fr) 20rem; }
+}
+
 @media (max-width: 68rem) {
   .workbench-header { grid-template-columns: minmax(11rem, 1fr) auto auto auto; }
   .header-status { display: none; }

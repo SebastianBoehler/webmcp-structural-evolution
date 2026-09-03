@@ -129,7 +129,7 @@ export function FlightSimulationPanel({
         disabled={motors.length !== 4}
         onClick={toggleRunning}
       >{running ? "Pause replay" : "Run replay"}</button>
-      <small>The visible candidate uses its existing per-case structural estimate fields. Motion and load vectors use the current assembly mass and motor mounts; replay does not re-solve or verify the topology, or provide flight approval, CFD, thermal analysis, or transient continuum FEA.</small>
+      <small>Shows the candidate's existing case estimate. Replay follows the current assembly; it does not re-solve, verify, or approve the design.</small>
     </aside>
   );
 }

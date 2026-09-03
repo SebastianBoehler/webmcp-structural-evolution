@@ -48,6 +48,7 @@ export interface FieldViewerProps {
   readonly flightFrame?: FlightFrame;
   readonly flightFrameSource?: FlightFrameSource;
   readonly droneOnly?: boolean;
+  readonly editingEnabled?: boolean;
   readonly environment?: FieldViewerEnvironment;
   readonly onPartSelect?: (partId: string) => void;
   readonly onPartMove?: (partId: string, center: readonly [number, number, number]) => unknown;
@@ -160,6 +161,7 @@ export function FieldViewer({
   flightFrame,
   flightFrameSource,
   droneOnly = false,
+  editingEnabled = true,
   environment,
   onPartSelect,
   onPartMove,
@@ -261,7 +263,7 @@ export function FieldViewer({
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
-        Select a part · X/Y/Z move · left-drag orbit · right-drag pan · scroll zoom
+        {editingEnabled ? "Select a part · X/Y/Z move · left-drag orbit · right-drag pan · scroll zoom" : "Drag to orbit · right-drag to pan · scroll to zoom"}
       </p>
       <div className="field-viewer__top-overlay" aria-label="Viewport status and controls">
         <p className="field-viewer__field-status" role="status">
@@ -272,11 +274,13 @@ export function FieldViewer({
             onClick={() => sessionRef.current?.focusSelectedPart()}>Focus</button>
           <button type="button" aria-label="Toggle reference grid" aria-pressed={gridVisible}
             onClick={() => setGridVisible((visible) => !visible)}>Grid</button>
-          <button type="button" aria-label={worldCoordinates ? "World coordinates" : "Local coordinates"}
-            aria-pressed={worldCoordinates}
-            onClick={() => setWorldCoordinates((world) => !world)}>{worldCoordinates ? "World" : "Local"}</button>
-          <button type="button" aria-label="Snap 10 millimetres" aria-pressed={snapEnabled}
-            onClick={() => setSnapEnabled((enabled) => !enabled)}>10 mm</button>
+          {editingEnabled && <>
+            <button type="button" aria-label={worldCoordinates ? "World coordinates" : "Local coordinates"}
+              aria-pressed={worldCoordinates}
+              onClick={() => setWorldCoordinates((world) => !world)}>{worldCoordinates ? "World" : "Local"}</button>
+            <button type="button" aria-label="Snap 10 millimetres" aria-pressed={snapEnabled}
+              onClick={() => setSnapEnabled((enabled) => !enabled)}>10 mm</button>
+          </>}
         </div>
         <div className="cad-view-controls" role="group" aria-label="Viewport orientation">
           {(["isometric", "top", "front", "right"] as const).map((preset) => (

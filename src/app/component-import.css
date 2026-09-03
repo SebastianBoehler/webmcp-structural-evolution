@@ -58,6 +58,7 @@
 .agent-tool-grid section { padding: 0.85rem; background: var(--surface-subtle); border-radius: var(--radius-md); }
 .agent-tool-grid h2 { font-size: var(--text-heading); }
 .agent-tool-grid p { margin-top: 0.4rem; color: var(--text-secondary); font-size: var(--text-caption); line-height: 1.45; }
+.review-dock .agent-tool-grid { grid-template-columns: 1fr; }
 
 @media (max-width: 48rem) {
   .agent-tool-grid { grid-template-columns: 1fr; }

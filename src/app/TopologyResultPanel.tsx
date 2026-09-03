@@ -43,14 +43,19 @@ export function TopologyResultPanel({
         <div><dt>Peak axial stress</dt><dd>{megapascals(metrics.maxStress)} MPa</dd></div>
         <div><dt>Minimum safety factor</dt><dd>{compact(metrics.minimumSafetyFactor)}×</dd></div>
         <div><dt>Calibration</dt><dd>Continuum FEA pending</dd></div>
-        {metrics.assemblyMassKg !== undefined && <div><dt>Accounted assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
-        {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated {materialLabel} {topologySubject} mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
-        {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
-        <div><dt>Structural cases</dt><dd>{loadCaseIds.join(" · ")}</dd></div>
-        <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(result.elapsedMs)} ms</dd></div>
       </dl>
-      <p className="topology-result__export">{estimate
-        ? "Interactive estimate only. The estimate is not an input to the current-assembly replay. Candidate comparison, promotion, and manufacturing export remain unavailable."
+      <details className="topology-result__details">
+        <summary>Solve details</summary>
+        <dl>
+          {metrics.assemblyMassKg !== undefined && <div><dt>Assembly mass</dt><dd>{compact(metrics.assemblyMassKg * 1_000)} g</dd></div>}
+          {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated {materialLabel} {topologySubject}</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
+          {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
+          <div><dt>Structural cases</dt><dd>{loadCaseIds.join(" · ")}</dd></div>
+          <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(result.elapsedMs)} ms</dd></div>
+        </dl>
+      </details>
+      <p className="topology-result__note">{estimate
+        ? "Interactive estimate only. Replay displays its existing case fields; promotion and manufacturing export remain unavailable."
         : "Manufacturing export requires promoted post-extraction evidence."}</p>
     </section>
   );

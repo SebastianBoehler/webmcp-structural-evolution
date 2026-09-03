@@ -32,7 +32,10 @@
 .topology-result__status--unsafe { color: var(--danger, #e66c54) !important; }
 .topology-result dl { display: grid; gap: 0.35rem; margin: 0.7rem 0; }
 .topology-result dd { margin: 0; font-variant-numeric: tabular-nums; font-size: var(--text-caption); }
-.topology-result__export { width: 100%; background: var(--accent); color: var(--accent-ink); }
+.topology-result__details { border-top: 1px solid var(--separator); padding-top: 0.55rem; }
+.topology-result__details summary { color: var(--text-secondary); cursor: pointer; font-size: var(--text-caption); }
+.topology-result__details dl { margin-bottom: 0; }
+.topology-result__note { margin: 0.65rem 0 0; padding: 0.55rem; border-radius: var(--radius-sm); background: var(--surface-subtle); color: var(--text-secondary); font-size: var(--text-caption); line-height: 1.35; }
 
 @media (max-width: 760px) {
   .topology-result { bottom: 0.5rem; right: 0.5rem; width: calc(100% - 1rem); }

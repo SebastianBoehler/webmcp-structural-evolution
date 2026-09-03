@@ -213,6 +213,7 @@ export function FoundationJourney({
               statusText={workspaceMode === "simulate" ? undefined : fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
                 pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
               flightFrameSource={simulation.frameChannel}
+              editingEnabled={workspaceMode === "assembly"}
               environment={viewerEnvironment}
               onPartSelect={(id) => {
                 setSelectedPart(id);

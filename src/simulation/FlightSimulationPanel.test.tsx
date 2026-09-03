@@ -21,8 +21,8 @@ describe("FlightSimulationPanel", () => {
     expect(screen.getByRole("button", { name: "Pitch brake" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Yaw burst" })).toBeVisible();
     expect(screen.getByText(/mass model: 515 g.*36 attached parts.*battery 254 g/i)).toBeVisible();
-    expect(screen.getByText(/visible candidate uses its existing per-case structural estimate fields/i)).toBeVisible();
-    expect(screen.getByText(/replay does not re-solve or verify the topology.*flight approval/i)).toBeVisible();
+    expect(screen.getByText(/shows the candidate's existing case estimate/i)).toBeVisible();
+    expect(screen.getByText(/does not re-solve, verify, or approve the design/i)).toBeVisible();
   });
 
   it("starts a selected replay and can isolate the drone", () => {
