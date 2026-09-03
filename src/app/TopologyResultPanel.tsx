@@ -23,16 +23,18 @@ const megapascals = (value: number) => compact(value / 1_000_000);
 export function TopologyResultPanel({
   branch, variant = "balanced", topologySubject, materialLabel, loadCaseIds,
 }: TopologyResultPanelProps) {
-  if (branch.result.status !== "verified" || !branch.result.topology) return null;
-  const metrics = branch.result.topology;
+  const result = branch.result;
+  if ((result.status !== "verified" && result.status !== "estimate") || !result.topology) return null;
+  const estimate = result.status === "estimate";
+  const metrics = result.topology;
   const removed = 1 - metrics.materialFraction;
   const improvement = 1 - metrics.finalCompliance / metrics.initialCompliance;
   const safe = metrics.minimumSafetyFactor >= 1;
   return (
     <section className="topology-result" aria-label="Topology result">
       <div className="topology-result__header">
-        <div><strong>Optimized {topologySubject}</strong><span>{variant} · {materialLabel}</span></div>
-        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{safe ? "Provisional axial screen" : "Fails provisional axial screen"}</span>
+        <div><strong>{estimate ? "Interactive estimate preview" : `Optimized ${topologySubject}`}</strong><span>{variant} · {materialLabel}</span></div>
+        <span className={`topology-result__status ${safe ? "" : "topology-result__status--unsafe"}`}>{estimate ? "Unverified · unaccepted" : safe ? "Provisional axial screen" : "Fails provisional axial screen"}</span>
       </div>
       <dl>
         <div><dt>Material removed</dt><dd>{percent(removed)}</dd></div>
@@ -45,9 +47,11 @@ export function TopologyResultPanel({
         {metrics.estimatedFrameMassKg !== undefined && <div><dt>Estimated {materialLabel} {topologySubject} mass</dt><dd>{compact(metrics.estimatedFrameMassKg * 1_000)} g</dd></div>}
         {metrics.planarCenterOfMassOffsetM !== undefined && <div><dt>Planar CG offset</dt><dd>{compact(metrics.planarCenterOfMassOffsetM * 1_000)} mm</dd></div>}
         <div><dt>Structural cases</dt><dd>{loadCaseIds.join(" · ")}</dd></div>
-        <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(branch.result.elapsedMs)} ms</dd></div>
+        <div><dt>Physical solve</dt><dd>{loadCaseIds.length} cases · {metrics.iterations} iter · {compact(result.elapsedMs)} ms</dd></div>
       </dl>
-      <p className="topology-result__export">Manufacturing export requires promoted post-extraction evidence.</p>
+      <p className="topology-result__export">{estimate
+        ? "Interactive estimate only. Candidate comparison, promotion, manufacturing export, and flight simulation remain unavailable."
+        : "Manufacturing export requires promoted post-extraction evidence."}</p>
     </section>
   );
 }

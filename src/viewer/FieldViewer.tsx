@@ -18,6 +18,7 @@ import { viewerEnvironment, type FieldViewerEnvironment } from "./field-renderer
 import type { SemanticSessionState } from "./semantic-session-state";
 import { useSemanticSessionMount } from "./use-semantic-session-mount";
 import { visibleInstances, type VoxelGrid } from "./field-instances";
+import { prepareInteractiveEstimatePreview } from "./interactive-estimate-preview";
 import type { AssemblyVisualPart, ScalarAnalysisField } from "./render-envelope";
 import { analysisRenderField } from "./analysis-render-field";
 import type { FlightFrame } from "../simulation/flight-scenarios";
@@ -86,13 +87,16 @@ function prepareViewer(
 ): PreparedViewer {
   const base = assemblyModel(current?.grid ?? fallbackGrid, assemblyParts);
   if (!current) return { model: base, comparisons: [], omittedCount: 0 };
+  if (current.result.status === "estimate") {
+    const preview = prepareInteractiveEstimatePreview(current.result, current.grid, threshold, assemblyParts);
+    return { model: preview.model ?? base, comparisons: [], omittedCount: 0, error: preview.error };
+  }
   if (current.result.status !== "verified") {
     return {
       model: base,
       comparisons: [],
       omittedCount: 0,
-      error: `${current.result.status}: ${current.result.status === "estimate"
-        ? "interactive estimate only" : current.result.message}; the unverified field is hidden.`,
+      error: `${current.result.status}: ${current.result.message}; the unverified field is hidden.`,
     };
   }
   try {
@@ -244,13 +248,14 @@ export function FieldViewer({
   useEffect(() => sessionRef.current?.setTranslationSnap(snapEnabled ? 10 : null), [prepared.model, snapEnabled]);
 
   const issue = prepared.error ?? renderError;
+  const interactiveEstimate = current?.result.status === "estimate";
   return (
     <section className={`field-viewer${droneOnly ? " field-viewer--drone-only" : ""}${preserveDrawingBuffer ? " field-viewer--gate-capture" : ""}`} aria-label="3D engineering viewport">
       <canvas
         ref={canvasRef}
         role="img"
         tabIndex={0}
-        aria-label="Interactive 3D physical assembly and verified density field"
+        aria-label={interactiveEstimate ? "Interactive 3D physical assembly and interactive estimate preview density field" : "Interactive 3D physical assembly and verified density field"}
         aria-describedby={descriptionId}
       />
       <p className="field-viewer__help" id={descriptionId}>
@@ -258,9 +263,7 @@ export function FieldViewer({
       </p>
       <div className="field-viewer__top-overlay" aria-label="Viewport status and controls">
         <p className="field-viewer__field-status" role="status">
-          {statusText ?? (current
-            ? `Verified field · ${selectedRegion.label}`
-            : "Assembly ready · Generate topology to add the density field")}
+          {statusText ?? (current ? interactiveEstimate ? `Interactive estimate preview · unverified and unaccepted · ${selectedRegion.label}` : `Verified field · ${selectedRegion.label}` : "Assembly ready · Generate topology to add the density field")}
         </p>
         <div className="cad-transform-controls" role="group" aria-label="CAD display and transforms">
           <button type="button" aria-label="Focus selected part" disabled={!selectedPart}

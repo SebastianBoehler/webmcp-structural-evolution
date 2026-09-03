@@ -188,7 +188,7 @@ test("recovers from failures without erasing their evidence", async () => {
   expect(compute).toHaveBeenCalledTimes(4);
 }, 30_000);
 
-test("reviews an interactive estimate without rendering it as an accepted topology", async () => {
+test("renders an interactive estimate preview while keeping engineering actions gated", async () => {
   renderJourney(async (input) => ({
     status: "estimate",
     truthLevel: "interactive-estimate",
@@ -209,7 +209,20 @@ test("reviews an interactive estimate without rendering it as an accepted topolo
   }));
   fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
   fireEvent.click(screen.getByRole("button", { name: /generate balanced frame/i }));
-  fireEvent.click(await screen.findByRole("button", { name: /review interactive estimate/i }));
+  await screen.findByRole("button", { name: /review interactive estimate/i });
+
+  expect(screen.getByRole("img", {
+    name: /interactive 3d physical assembly and interactive estimate preview density field/i,
+  })).toBeVisible();
+  expect(screen.getByText(/interactive estimate preview.*unverified.*unaccepted/i)).toBeVisible();
+  expect(screen.getByLabelText("Topology result")).toBeVisible();
+  expect(screen.getByText("Peak displacement")).toBeVisible();
+
+  fireEvent.click(screen.getByRole("button", { name: /^simulate$/i }));
+  expect(screen.getByRole("button", { name: /run flight replay/i })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: /^optimize$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /review interactive estimate/i }));
 
   const branches = screen.getByRole("list", { name: /experiment branches/i });
   expect(within(branches).getByText("50.0%")).toBeVisible();

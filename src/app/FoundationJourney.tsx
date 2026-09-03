@@ -182,7 +182,7 @@ export function FoundationJourney({
             analysisLayer={analysisLayer}
             comparisonMode={comparisonMode}
             hasCandidate={viewerCurrent !== null}
-            canCompare={alternatives.length > 1}
+            canCompare={viewerCurrent?.result.status === "verified" && alternatives.length > 1}
             primaryLabel={primaryLabel}
             primaryDisabled={primaryDisabled}
             cancelVisible={state.operationStatus === "running"}
@@ -219,7 +219,7 @@ export function FoundationJourney({
               selectedPart={selectedPart}
               analysisLayer={analysisLayer}
               statusText={fixtureViewerStatus({ hasTopology: viewerCurrent !== null, layoutState: workspace.layoutState,
-                pendingPromotion: pendingPromotion !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
+                pendingPromotion: pendingPromotion !== undefined, pendingEstimate: pendingEstimate !== undefined, supportsFlightReplay: fixture.supportsFlightReplay })}
               flightFrameSource={flightFrameChannel}
               environment={viewerEnvironment}
               onPartSelect={(id) => {
@@ -239,7 +239,7 @@ export function FoundationJourney({
                   onReject={workspace.rejectImport}
                 />
               )}
-              {workspaceMode === "review" && viewerCurrent && <AlternativeSelector
+              {workspaceMode === "review" && viewerCurrent?.result.status === "verified" && <AlternativeSelector
                 alternatives={alternatives}
                 selected={selectedAlternative}
                 onSelect={setSelectedAlternative}
@@ -255,7 +255,7 @@ export function FoundationJourney({
             {workspaceMode === "simulate" && dockOpen && <FixtureSimulationDock
                 supportsFlightReplay={fixture.supportsFlightReplay}
                 topology={liveTopology.input}
-                motors={viewerCurrent ? flightMotors : []}
+                motors={viewerCurrent?.result.status === "verified" ? flightMotors : []}
                 onFrame={handleFlightFrame}
                 onActiveChange={setSimulationActivity}
                 componentsVisible={showComponents}

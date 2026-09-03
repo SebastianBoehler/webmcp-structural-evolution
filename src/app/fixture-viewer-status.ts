@@ -2,9 +2,11 @@ export function fixtureViewerStatus(input: Readonly<{
   hasTopology: boolean;
   layoutState: "verified" | "dragging" | "changed";
   pendingPromotion: boolean;
+  pendingEstimate: boolean;
   supportsFlightReplay: boolean;
 }>): string | undefined {
   if (!input.hasTopology) return input.pendingPromotion ? "Verified branch ready for human review" : undefined;
+  if (input.pendingEstimate) return "Interactive estimate preview · unverified and unaccepted";
   if (input.layoutState === "dragging") {
     const geometry = input.supportsFlightReplay ? "rotor safety geometry" : "design constraints";
     return `Moving component · ${geometry} follow`;
