@@ -127,7 +127,7 @@ export function addSemanticScene(three: typeof THREE, scene: THREE.Scene, state:
   const pbr: SemanticPbrMaterialFactory = materialFactory
     ?? ((_role, parameters) => new three.MeshStandardMaterial(parameters));
   const groups = new Map<string, THREE.Group>();
-  const { selected } = selectedNodes(state);
+  const { nodes, selected } = selectedNodes(state);
   for (const node of state.document.nodes) {
     const group = new three.Group();
     group.name = `semantic:${node.id}`;
@@ -156,7 +156,10 @@ export function addSemanticScene(three: typeof THREE, scene: THREE.Scene, state:
     grid.rotation.x = Math.PI / 2;
     root.add(grid);
   }
-  addField(three, content, state, pbr);
+  const fieldParent = frame && nodes.get(frame.componentId)?.kind === "assembly"
+    ? groups.get(frame.componentId) ?? content
+    : content;
+  addField(three, fieldParent, state, pbr);
   scene.add(root);
   let disposed = false;
   return () => {

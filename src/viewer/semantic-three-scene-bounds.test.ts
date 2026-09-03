@@ -47,6 +47,30 @@ it("fits semantic content only and derives a z-up XY grid from its 0.42m envelop
   expect(new THREE.Box3().setFromObject(grid).max.x).toBeGreaterThan(bounds.max.x);
 });
 
+it("keeps topology result geometry in the replayed assembly frame", () => {
+  const scene = new THREE.Scene();
+  addSemanticScene(THREE, scene, {
+    ...state,
+    resultLayers: {
+      topology: {
+        dimensions: [1, 1, 1], cellSize: [0.1, 0.1, 0.1], origin: [0.2, 0, 0],
+        active: new Uint8Array([1]), density: new Float32Array([1]),
+      },
+      mechanism: {
+        componentId: "assembly:test",
+        transform: [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      },
+    },
+  }, false);
+
+  const assembly = scene.getObjectByName("semantic:assembly:test")!;
+  const topology = scene.getObjectByProperty("isInstancedMesh", true)!;
+  expect(topology.parent).toBe(assembly);
+  expect(topology.getWorldQuaternion(new THREE.Quaternion()).angleTo(
+    assembly.getWorldQuaternion(new THREE.Quaternion()),
+  )).toBeCloseTo(0, 6);
+});
+
 it("highlights all component descendants but only the exact selected leaf", () => {
   const document = { ...state.document, nodes: [
     ...state.document.nodes,
