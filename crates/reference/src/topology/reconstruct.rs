@@ -117,16 +117,19 @@ fn connect_retained_components(grid: &Grid, solved_density: &[f32], occupied: &m
     }
 }
 
+fn target_occupied_count(grid: &Grid, target: f32) -> usize {
+    let non_void_count = grid.passive_void.iter().filter(|void| !**void).count();
+    ((target * non_void_count as f32 - 0.02 * non_void_count as f32) / 0.98)
+        .round()
+        .clamp(0.0, non_void_count as f32) as usize
+}
+
 fn grow_face_connected_by_density(
     grid: &Grid,
     solved_density: &[f32],
     occupied: &mut [bool],
-    target: f32,
+    target_count: usize,
 ) {
-    let non_void_count = grid.passive_void.iter().filter(|void| !**void).count();
-    let target_count = ((target * non_void_count as f32 - 0.02 * non_void_count as f32) / 0.98)
-        .round()
-        .clamp(0.0, non_void_count as f32) as usize;
     let mut occupied_count = occupied.iter().filter(|occupied| **occupied).count();
     while occupied_count < target_count {
         let mut candidate = vec![false; occupied.len()];
@@ -181,8 +184,15 @@ pub(crate) fn reconstruct_load_path_web(
         .zip(&grid.passive_void)
         .map(|((path, solid), void)| !void && (*path || *solid))
         .collect::<Vec<_>>();
+    let seed_count = occupied.iter().filter(|occupied| **occupied).count();
+    let target_count = target_occupied_count(grid, target);
     connect_retained_components(grid, solved_density, &mut occupied);
-    grow_face_connected_by_density(grid, solved_density, &mut occupied, target);
+    if seed_count <= target_count
+        && occupied.iter().filter(|occupied| **occupied).count() > target_count
+    {
+        panic!("material budget cannot connect retained seeds");
+    }
+    grow_face_connected_by_density(grid, solved_density, &mut occupied, target_count);
     occupied
         .iter()
         .enumerate()

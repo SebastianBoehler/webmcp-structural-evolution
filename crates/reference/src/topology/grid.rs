@@ -105,8 +105,10 @@ pub(crate) fn assembly_grid(input: &AssemblySolverInput) -> Result<Grid, String>
                 coordinates.push(point);
                 // Access and component keep-outs win over generated/required material.
                 // Loads are applied only to explicit retained structural interfaces.
-                passive_solid.push(!access && (supported || (required && !void)));
-                passive_void.push(access || (!supported && (void || !inside_domain)));
+                let structural = !access && (supported || (required && inside_domain && !void));
+                let cell_void = access || (!supported && (void || !inside_domain));
+                passive_solid.push(structural);
+                passive_void.push(cell_void);
                 let index = x + width * (y + height * z);
                 if supported && !access {
                     support_nodes.push(index);

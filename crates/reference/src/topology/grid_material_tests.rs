@@ -39,7 +39,7 @@ fn load_interface_input() -> AssemblySolverInput {
         }],
         required_solids: vec![SolverVolume::Cylinder {
             center_m: [0.1, 0.0, 0.0],
-            radius_m: 0.01,
+            radius_m: 0.012,
             height_m: 0.005,
             yaw_rad: 0.0,
         }],
@@ -62,15 +62,20 @@ fn load_interface_input() -> AssemblySolverInput {
 fn loads_use_explicit_interfaces_without_retaining_their_full_footprint() {
     let grid = assembly_grid(&load_interface_input()).expect("grid with explicit load interface");
     let loaded_only = grid.index(28, 15, 4);
+    let required_outside_domain = grid.index(27, 15, 4);
 
     assert!(!grid.passive_solid[loaded_only]);
     assert!(grid.passive_void[loaded_only]);
+    assert!(!grid.passive_solid[required_outside_domain]);
+    assert!(grid.passive_void[required_outside_domain]);
     assert!(grid
         .load_cases
         .iter()
-        .all(|load| load[loaded_only * 3..loaded_only * 3 + 3]
+        .all(|load| [loaded_only, required_outside_domain]
             .iter()
-            .all(|force| *force == 0.0)));
+            .all(|index| load[index * 3..index * 3 + 3]
+                .iter()
+                .all(|force| *force == 0.0))));
     assert!(
         grid.load_cases[0]
             .chunks_exact(3)

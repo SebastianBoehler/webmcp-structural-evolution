@@ -150,10 +150,18 @@ fn reconstruction_targets_the_returned_density_fraction() {
 #[test]
 fn reconstruction_connects_separated_retained_seeds_before_target_growth() {
     let grid = line_fixture(5, &[0, 4], &[]);
-    let result = reconstruct_load_path_web(&grid, &[0.5; 5], &[false; 5], 0.4);
+    let result = reconstruct_load_path_web(&grid, &[0.5; 5], &[false; 5], 0.99);
 
     assert!(occupied_cells_are_face_connected(&grid, &result, 0.32));
     assert!(result[1..4].iter().all(|density| *density >= 0.32));
+    assert!((material_fraction(&grid, &result) - 0.99).abs() <= 1.0 / non_void_count(&grid) as f32);
+}
+
+#[test]
+#[should_panic(expected = "material budget cannot connect retained seeds")]
+fn reconstruction_rejects_connectivity_that_exceeds_the_material_budget() {
+    let grid = line_fixture(5, &[0, 4], &[]);
+    reconstruct_load_path_web(&grid, &[0.5; 5], &[false; 5], 0.4);
 }
 
 #[test]
@@ -165,7 +173,7 @@ fn connector_prefers_the_high_density_shortest_path() {
         &grid,
         &[1.0, 0.9, 0.9, 0.1, 0.1, 0.9, 0.1, 0.1, 1.0],
         &[false; 9],
-        0.3,
+        0.565,
     );
 
     assert!(result[1] >= 0.32 && result[2] >= 0.32 && result[5] >= 0.32);
