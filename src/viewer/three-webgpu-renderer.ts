@@ -24,6 +24,7 @@ import type {
   SemanticView,
   ViewportGpuDevice,
 } from "./webgpu-renderer-types";
+import { updateRetainedSemanticReplay } from "./semantic-three-replay";
 
 interface InitializableRenderer {
   init(): Promise<unknown>;
@@ -79,6 +80,7 @@ export async function createThreeWebGpuRenderer(
   let disposed = false;
   let transformSpace: "world" | "local" = "world";
   let gizmo: WebGpuTransformGizmo | undefined;
+  let retainedState: Parameters<SemanticRenderer["render"]>[0] | undefined;
   const navigation = await initializeThreeRenderer(renderer, async () => {
     const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
     return createWebGpuCameraControls(
@@ -131,7 +133,7 @@ export async function createThreeWebGpuRenderer(
     gizmo: () => gizmo,
   });
 
-  const present = async (state: Parameters<SemanticRenderer["render"]>[0]) => {
+  const rebuild = async (state: Parameters<SemanticRenderer["render"]>[0]) => {
     gizmo?.dispose();
     gizmo = undefined;
     release();
@@ -158,14 +160,23 @@ export async function createThreeWebGpuRenderer(
     navigation.frame(bounds, target, width / height);
     sizeWebGpuCanvas(renderer, width, height);
     await renderer.render(scene, camera);
+    retainedState = state;
   };
 
   return {
     async render(state) {
-      await present(state);
+      await rebuild(state);
       return blobFromCanvas(canvas);
     },
-    present,
+    async present(state) {
+      if (!retainedState || !updateRetainedSemanticReplay(three, scene, retainedState, state)) {
+        await rebuild(state);
+        return;
+      }
+      retainedState = state;
+      gizmo?.sync();
+      await renderer.render(scene, camera);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

@@ -62,6 +62,14 @@ function addField(
   const material = pbr("field", { vertexColors: true, roughness: .55,
     metalness: .05, transparent: true, opacity: .72 });
   const mesh = new three.InstancedMesh(geometry, material, samples.length);
+  mesh.name = "semantic-result-field";
+  const fieldIndices = new Uint32Array(samples.length);
+  let visibleIndex = 0;
+  layer.active.forEach((visible, index) => {
+    if (visible) fieldIndices[visibleIndex++] = index;
+  });
+  mesh.userData.fieldIndices = fieldIndices;
+  mesh.userData.fieldShape = [...layer.dimensions, ...layer.cellSize, ...layer.origin];
   const matrix = new three.Matrix4(), color = new three.Color();
   samples.forEach((sample, index) => {
     matrix.makeTranslation(...sample.center);
@@ -141,6 +149,9 @@ export function addSemanticScene(three: typeof THREE, scene: THREE.Scene, state:
       group.position.set(...node.transform.position);
       group.rotation.set(...node.transform.rotation);
     }
+    group.userData.semanticBasePosition = group.position.toArray();
+    group.userData.semanticBaseQuaternion = group.quaternion.toArray();
+    group.userData.semanticBaseScale = group.scale.toArray();
     ((node.parentId ? groups.get(node.parentId) : undefined) ?? content).add(group);
     groups.set(node.id, group);
     addNode(three, group, node, selected.has(node.id), state, pbr);
