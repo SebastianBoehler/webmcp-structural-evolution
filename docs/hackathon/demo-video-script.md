@@ -14,6 +14,10 @@ Target: 2:20–2:45, with roughly 320-380 spoken words. Record the deployed dash
 
 ## Paste-ready prompts
 
+For the controlled one-prompt recording path, use
+[`demo-agent-runbook.md`](./demo-agent-runbook.md). The two-step prompts below
+remain useful when recording inspection and generation as separate sections.
+
 Prompt 1:
 
 ```text
